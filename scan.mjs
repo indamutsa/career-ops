@@ -143,6 +143,90 @@ export function matchedTitleKeywords(title, titleFilter) {
     .map(({ raw: kw }) => kw);
 }
 
+// ── WebSearch handoff query construction ────────────────────────────
+//
+// A `websearch` entry in portals.yml carries a hand-written `scan_query`. That
+// string is a *snapshot* of the keywords its author cared about the day they
+// wrote it, and nothing ever reconciles it with `title_filter.positive`. In
+// practice the two drift hard: a portals.yml whose title_filter covers MLOps,
+// LLM Engineer, ML Platform and Data Engineer still handed the agent
+// `"Machine Learning" OR "AI Infrastructure" OR "Research Engineer"`, so
+// whole configured categories were never searched for at any websearch
+// company — silently, because a query that returns results looks like it
+// worked.
+//
+// So the site scope comes from the entry (it is the only thing the entry
+// actually knows) and the keywords come from title_filter (the single place
+// the user states what they want). Search engines truncate long OR-chains,
+// so the keyword set is emitted as several chunked queries rather than one
+// unusable monster.
+
+const WEBSEARCH_CHUNK_SIZE = 6;
+
+// Pulls the `site:` scope out of a hand-written scan_query. Author-chosen
+// scoping is preserved verbatim — it can encode board paths and multi-site
+// OR groups that careers_url cannot express.
+export function extractSiteScope(scanQuery) {
+  if (typeof scanQuery !== 'string') return '';
+  const tokens = scanQuery.match(/site:[^\s()]+/gi);
+  if (!tokens || tokens.length === 0) return '';
+  const unique = [...new Set(tokens.map(t => t.trim()))];
+  return unique.length === 1 ? unique[0] : unique.join(' OR ');
+}
+
+// Derives a `site:` scope from a careers URL when scan_query has none.
+export function siteScopeFromUrl(careersUrl) {
+  if (typeof careersUrl !== 'string' || !careersUrl.trim()) return '';
+  try {
+    const u = new URL(careersUrl.trim());
+    const path = u.pathname.replace(/\/+$/, '');
+    return `site:${u.host}${path}`;
+  } catch {
+    return '';
+  }
+}
+
+// title_filter keywords carry `word:`/`stem:` prefixes for the matcher; those
+// are matcher syntax, not search syntax, and must not reach the query string.
+function keywordForSearch(raw) {
+  if (typeof raw !== 'string') return '';
+  const bare = raw.trim().replace(/^(word:|stem:)/i, '').trim();
+  if (!bare) return '';
+  return /\s/.test(bare) ? `"${bare}"` : bare;
+}
+
+/**
+ * Builds the full set of websearch queries for one portals.yml entry.
+ *
+ * @param {object} entry - The portals.yml company/board entry.
+ * @param {object} [titleFilter] - The parsed `title_filter` block.
+ * @param {{ chunkSize?: number }} [options]
+ * @returns {string[]} One or more queries covering every title_filter positive.
+ *   Falls back to the entry's own scan_query (then careers_url) when no
+ *   title_filter is configured, so existing setups behave exactly as before.
+ */
+export function buildWebSearchQueries(entry, titleFilter, { chunkSize = WEBSEARCH_CHUNK_SIZE } = {}) {
+  const authored = entry?.scan_query || entry?.search_query || '';
+  const scope = extractSiteScope(authored) || siteScopeFromUrl(entry?.careers_url);
+
+  const positives = (Array.isArray(titleFilter?.positive) ? titleFilter.positive : [])
+    .map(keywordForSearch)
+    .filter(Boolean);
+
+  // No title_filter to expand, or nothing to scope the search to: preserve the
+  // legacy single-query behaviour rather than inventing an unscoped query.
+  if (positives.length === 0 || !scope) {
+    const fallback = authored || entry?.careers_url || '';
+    return fallback ? [fallback] : [];
+  }
+
+  const queries = [];
+  for (let i = 0; i < positives.length; i += chunkSize) {
+    queries.push(`${scope} ${positives.slice(i, i + chunkSize).join(' OR ')}`);
+  }
+  return queries;
+}
+
 // ── Location filter ─────────────────────────────────────────────────
 // Optional. If `location_filter` is absent from portals.yml, all locations pass.
 // Semantics (case-insensitive substring, in this order):
@@ -2493,10 +2577,14 @@ async function main() {
       if (!resolved) {
         skippedCount++;
         if (entry.scan_method === 'websearch') {
+          const queries = buildWebSearchQueries(entry, config.title_filter);
           agentHandoff.push({
             company: entry.name,
             method: 'websearch',
-            query: entry.scan_query || entry.search_query || entry.careers_url || '',
+            // `query` stays the first query for backward compatibility with
+            // existing consumers; `queries` is the full covering set.
+            query: queries[0] || '',
+            queries,
           });
         }
         continue;
@@ -2913,8 +3001,15 @@ async function main() {
   if (agentHandoff.length > 0) {
     console.log(`Agent/WebSearch handoff: ${agentHandoff.length} compan${agentHandoff.length === 1 ? 'y' : 'ies'} not handled by zero-token providers`);
     for (const item of agentHandoff.slice(0, 25)) {
-      const hint = item.query ? ` — ${item.query}` : '';
-      console.log(`  • ${item.company} (${item.method})${hint}`);
+      const queries = Array.isArray(item.queries) && item.queries.length > 0
+        ? item.queries
+        : (item.query ? [item.query] : []);
+      if (queries.length === 0) {
+        console.log(`  • ${item.company} (${item.method})`);
+        continue;
+      }
+      console.log(`  • ${item.company} (${item.method})`);
+      for (const q of queries) console.log(`      — ${q}`);
     }
     if (agentHandoff.length > 25) {
       console.log(`  … ${agentHandoff.length - 25} more omitted; narrow with --company or inspect portals.yml`);
