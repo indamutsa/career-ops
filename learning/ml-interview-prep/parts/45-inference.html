@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inference &amp; efficiency — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 45</p>
+<h1>Inference &amp; efficiency
+  <span class="lede">Training happens once; serving happens forever. This is the module an
+  <em>engineer</em> is expected to own, and the one where a candidate who has actually deployed a model
+  is instantly distinguishable from one who has only read papers.</span>
+</h1>
+
+<h2 data-n="45.1">The one distinction everything else hangs off</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Prefill</th><th>Decode</th></tr>
+<tr><td>What it does</td><td>Processes the whole prompt at once</td><td>Generates one token at a
+    time</td></tr>
+<tr><td>Parallelism</td><td>All prompt tokens in parallel</td><td>Strictly sequential</td></tr>
+<tr><td>Bottleneck</td><td><strong>Compute-bound</strong> — the GPU's FLOPs</td><td><strong>
+    Memory-bandwidth-bound</strong> — reading the weights</td></tr>
+<tr><td>Arithmetic intensity</td><td>High</td><td>~1 op per byte loaded, catastrophically low</td></tr>
+<tr><td>Metric it sets</td><td>Time to first token (TTFT)</td><td>Time per output token (TPOT)</td></tr>
+<tr><td>Fix it with</td><td>Better kernels, chunked prefill</td><td>Batching, quantisation, fewer KV
+    reads</td></tr>
+</table>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>Decode is a chef who must walk to the pantry and carry back <em>every ingredient in the kitchen</em>
+  just to chop one onion. The chopping (the FLOPs) takes no time at all; the walking (loading 14 GB of
+  weights from HBM) is the whole cost. Batching is chopping thirty onions per trip — the walk is
+  amortised, and throughput multiplies for free.</p>
+  <p>That is why the single most valuable inference optimisation is usually not a clever kernel. It is
+  putting more requests in the batch.</p>
+</div>
+
+<h2 data-n="45.2">The techniques</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">KV cache <span class="tag">mid</span></div>
+    <p>Store the keys and values already computed for every previous token, so generating token
+       <em>n</em> costs one new K and V rather than recomputing all <em>n</em>.</p>
+    <div class="eq">size = 2 × L × n × d<sub>kv</sub> × bytes × batch<span class="note">2 for K and V ·
+       L layers · n tokens · d<sub>kv</sub> total head dim · precision</span></div>
+    <p class="warn-inline">Turns generation from O(n²) into O(n) per token — and it is also the thing
+       that eats your GPU memory. It grows linearly with context and batch size, so it, not the weights,
+       usually caps your batch.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">MQA / GQA <span class="tag">senior</span></div>
+    <p>Multi-Query Attention shares a single K/V head across all query heads; Grouped-Query Attention
+       shares one per group of heads — the middle ground everyone actually ships.</p>
+    <p class="wh">Shrinks the KV cache by the sharing factor. Llama-2-70B uses 8 KV heads for 64 query
+       heads: an 8× smaller cache, and near-identical quality. Bigger batches follow directly.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Continuous batching <span class="tag">senior</span></div>
+    <p>Instead of running a fixed batch to completion, admit and evict sequences <em>per decoding step</em>
+       as they finish.</p>
+    <p class="wh">Static batching wastes the GPU waiting for the longest sequence in the batch. This is
+       the single biggest throughput win in a real serving stack — often several times, not percent.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">PagedAttention <span class="tag">senior</span></div>
+    <p>Store the KV cache in fixed-size non-contiguous blocks with a lookup table — virtual memory
+       paging, applied to attention.</p>
+    <p class="an">Naive allocation reserves the maximum possible length per request and wastes most of
+       it, exactly like fixed-partition memory allocation did. Paging cuts that fragmentation to a few
+       percent, and it makes prefix sharing across requests nearly free.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Quantisation <span class="tag">mid</span></div>
+    <p>Store weights (and sometimes activations and the KV cache) in fewer bits — INT8, INT4, FP8.</p>
+    <p class="wh">Since decode is bandwidth-bound, halving the bytes nearly halves the latency. INT8 is
+       essentially free in quality; INT4 with a good method (GPTQ, AWQ) costs little; below that, quality
+       falls off sharply.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Speculative decoding <span class="tag">senior</span></div>
+    <p>A small draft model proposes k tokens; the big model verifies all k in <em>one</em> forward pass
+       and accepts the longest correct prefix.</p>
+    <p class="wh">Exploits the fact that verification is parallel while generation is sequential. Output
+       is provably identical to the target model's sampling — it is a latency trick, not an
+       approximation. Typical speedups 2–3×.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">FlashAttention <span class="tag">senior</span></div>
+    <p>Compute attention in tiles inside SRAM without ever materialising the n×n matrix in HBM.</p>
+    <p class="warn-inline">Exact, not approximate — the mathematics is unchanged. It is an IO-aware
+       kernel, and this is the correction to make if an interviewer calls it an approximation.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">LoRA / QLoRA <span class="tag">mid</span></div>
+    <p>Freeze the base weights and train a low-rank update ΔW = BA with rank r ≪ d. QLoRA additionally
+       keeps the frozen base in 4-bit.</p>
+    <p class="wh">Trains &lt;1 % of the parameters, and the adapter is a few MB. At serving time you can
+       hold one base model and hot-swap hundreds of adapters — the reason per-customer fine-tuning is
+       economically viable at all.</p>
+  </div>
+
+</div>
+
+<h2 data-n="45.3">Watch the KV cache grow</h2>
+
+<div class="viz" data-viz="kvcache"></div>
+
+<h2 data-n="45.4">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the KV cache and why does it matter?</summary>
+  <div class="a">
+    <div class="tldr">It stores the keys and values of all previous tokens so each new token attends to
+    them without recomputation — turning per-token cost from O(n²) into O(n). It is also the dominant
+    consumer of GPU memory at serving time, so it sets your maximum batch size and therefore your
+    throughput.</div>
+    <p><strong>Why it is correct to cache.</strong> With a causal mask, token <em>i</em>'s key and value
+    depend only on tokens ≤ i, so they never change as generation continues. Only the query is new at
+    each step. Without the cache you would recompute the entire prefix's K and V every step — quadratic
+    work for an identical result.</p>
+    <p><strong>The number that makes it real.</strong> Llama-2-13B: 40 layers, 40 heads × 128 dim, fp16.
+    Per token: 2 × 40 × 5120 × 2 bytes = 800 KB. At 4,096 context that is 3.3 GB <em>per sequence</em>.
+    On an 80 GB A100 holding 26 GB of weights, you fit about 16 concurrent sequences — and the model
+    weights were never the constraint. That arithmetic is the whole reason GQA, quantised KV and paging
+    exist.</p>
+    <p><strong>The consequences worth naming:</strong> the cache scales linearly in context length, so
+    long-context serving is a memory problem before it is a compute problem; it makes decode
+    bandwidth-bound, since you re-read the whole cache every step; and it creates the prefix-sharing
+    opportunity — a shared system prompt across users can be computed and stored once, which is
+    frequently the cheapest large win available in a production stack.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your 7B model serves 8 requests/second at 2s p99. You need 50 rps at the same latency. What do you do?</summary>
+  <div class="a">
+    <div class="tldr">Measure first to find out whether I am prefill-bound or decode-bound, then work
+    the free wins in order: continuous batching, GQA/paging, quantisation, speculative decoding — and
+    only add hardware once the software is not leaving 5× on the table.</div>
+    <p><strong>Step 0 — measure.</strong> Split TTFT from TPOT, get the input/output length
+    distribution, and check GPU utilisation. If utilisation is low, this is a batching problem, not a
+    capacity problem, and buying GPUs would be burning money. I would not propose a single change before
+    seeing these numbers.</p>
+    <p><strong>Then, in cost order:</strong></p>
+    <ul>
+      <li><strong>Continuous batching</strong> (vLLM / TGI). If the stack is doing static batching, this
+          alone is often 3–5× throughput with no quality change. Highest value, lowest risk.</li>
+      <li><strong>PagedAttention.</strong> Recovers the memory lost to over-allocation and enables
+          prefix sharing — bigger batches for free.</li>
+      <li><strong>GQA</strong> if the model supports it, or KV-cache quantisation to INT8. A smaller
+          cache <em>is</em> a bigger batch.</li>
+      <li><strong>Weight quantisation to INT8/FP8.</strong> Decode is bandwidth-bound, so this cuts
+          latency roughly proportionally. Validate quality on the held-out set — this is the first
+          change that can move the metric.</li>
+      <li><strong>Speculative decoding</strong> if p99 latency, not throughput, is the binding
+          constraint. It buys latency, and it costs the extra memory of the draft model.</li>
+      <li><strong>Horizontal scaling</strong> last, once per-replica throughput is actually maximised.</li>
+    </ul>
+    <p><strong>The product levers I would put on the table too,</strong> because they are often the
+    cheapest of all: cap max output length; cache responses to repeated prompts; route easy requests to
+    a smaller model; and separate the interactive path from a batch path with a much looser SLO. A
+    latency budget is a product decision as much as an engineering one.</p>
+    <p><strong>What I would explicitly avoid:</strong> jumping to a distilled or smaller model first.
+    That is the only option in the list that changes output quality, and I would exhaust the
+    quality-neutral ones before spending accuracy on a problem that is probably a batching bug.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How does speculative decoding work, and why is it not an approximation?</summary>
+  <div class="a">
+    <div class="tldr">A small draft model generates k tokens cheaply; the large model scores all k in a
+    single forward pass; a rejection-sampling rule accepts a prefix and corrects the first rejected
+    token. The acceptance rule is constructed so the output distribution is exactly the large model's.</div>
+    <p><strong>The mechanism.</strong> Decode is bandwidth-bound, so a forward pass over k tokens costs
+    barely more than over one — the weights are loaded once either way. That is the free lunch being
+    exploited: verification is parallel, generation is sequential.</p>
+    <p><strong>The acceptance rule.</strong> For a draft token with draft probability q(x) and target
+    probability p(x), accept with probability min(1, p(x)/q(x)). On rejection, sample the replacement
+    from the normalised residual distribution max(0, p−q). Leviathan et al. prove this yields exactly
+    p — the same theorem structure as rejection sampling. So the output is distributionally identical to
+    running the big model alone; there is no quality/latency trade-off to negotiate, which is unusual
+    and worth saying explicitly.</p>
+    <p><strong>What governs the speedup:</strong> the acceptance rate, which is how well the draft model
+    agrees with the target. A draft from the same family works well; an unrelated one does not. And k has
+    an optimum — too large and you waste compute on tokens that will be rejected. Typical results are
+    2–3×.</p>
+    <p><strong>The variants that avoid the second model:</strong> Medusa adds extra prediction heads to
+    the target model itself; EAGLE drafts in feature space; n-gram / prompt-lookup decoding drafts by
+    copying from the prompt, which is startlingly effective for summarisation and code editing where
+    output repeats input. All the same theorem, no separate model to host.</p>
+    <p><strong>When it does not pay:</strong> under large batches. The technique trades spare compute for
+    latency, and at high batch sizes there is no spare compute — you are already compute-bound, so the
+    verification pass is no longer nearly free. It is a low-batch, latency-sensitive optimisation.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain LoRA. Why does it work?</summary>
+  <div class="a">
+    <div class="tldr">Freeze W and learn a low-rank update ΔW = BA where B is d×r, A is r×d and r is
+    small. It works because the weight <em>update</em> needed for adaptation has low intrinsic rank, even
+    though the weight matrix does not.</div>
+    <p><strong>The mechanics.</strong> Forward becomes h = Wx + BAx, with B initialised to zero so
+    training starts exactly at the base model. For d = 4096 and r = 8, ΔW would be 16.7 M parameters but
+    BA is 65 K — about 0.4 %. Only A and B get gradients and optimiser state, which is where the memory
+    saving actually comes from: Adam's states are 2× the trainable parameters.</p>
+    <p><strong>Why low rank is enough.</strong> Aghajanyan et al. showed fine-tuning has a low intrinsic
+    dimension — you can reparameterise into a few thousand dimensions and still match full fine-tuning.
+    Adaptation moves the model within a small subspace of behaviours it can already express; it is not
+    learning new capability from scratch. That connects straight back to the elicitation framing in
+    module 44.</p>
+    <p><strong>The serving property that matters most.</strong> BA can be merged into W after training,
+    so there is <em>zero</em> added inference latency — unlike adapter layers, which insert extra
+    computation. Or you keep it unmerged and hot-swap adapters per request against one shared base: a
+    few MB per customer instead of a few GB. That is what makes per-tenant fine-tuning economic.</p>
+    <p><strong>QLoRA</strong> adds 4-bit NF4 quantisation of the frozen base, double quantisation, and
+    paged optimisers — enough to fine-tune a 65 B model on a single 48 GB GPU. The base is quantised;
+    the LoRA weights stay in bf16, so gradient quality is preserved.</p>
+    <p><strong>The honest limits:</strong> LoRA slightly underperforms full fine-tuning when the task
+    genuinely requires new knowledge rather than new behaviour; r and which modules to target (attention
+    projections, or the FFN too) both need tuning; and stacking many adapters degrades unpredictably.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What breaks when you push context from 8K to 1M?</summary>
+  <div class="a">
+    <div class="tldr">Attention's n² compute, the KV cache's linear memory, positional extrapolation,
+    and — the one people forget — retrieval quality inside the context itself.</div>
+    <p><strong>Memory.</strong> The KV cache is linear in n, so 1 M tokens on a 13 B model is roughly
+    800 GB per sequence at fp16 — multiple nodes for a single request. This is the binding constraint,
+    and it is why long-context serving relies on GQA, KV quantisation, and eviction schemes like
+    StreamingLLM that keep the attention sinks plus a sliding window.</p>
+    <p><strong>Compute.</strong> Prefill is O(n²d): 1 M tokens is ~15,000× the attention work of 8 K.
+    FlashAttention removes the memory blow-up but not the FLOPs. Chunked prefill and ring attention
+    across devices are the standard responses.</p>
+    <p><strong>Positions.</strong> A model trained at 8 K has never seen position 900,000. RoPE
+    extrapolates badly; position interpolation and YaRN rescale the frequencies so trained positions
+    cover the new range, and both need a fine-tuning stage at the target length. ALiBi extrapolates more
+    gracefully by construction.</p>
+    <p><strong>Quality — the part that gets skipped.</strong> "Lost in the middle" (Liu et al.): accuracy
+    on information placed mid-context is markedly worse than at either end, and the effect persists in
+    models that advertise long context. Needle-in-a-haystack tests pass while multi-hop reasoning over
+    the same context fails, because retrieving one fact is not the same as using many. A 1 M context
+    window is not equivalent to 1 M tokens of usable working memory, and I would benchmark on the real
+    task rather than trusting the advertised number.</p>
+    <p><strong>So the engineering call:</strong> for most applications retrieval into a 32 K window beats
+    stuffing 1 M — cheaper, faster, and often more accurate, because the model attends over relevant
+    content instead of hunting through noise. Long context earns its cost when the input is genuinely
+    irreducible and cross-referential: a whole codebase, a long trial transcript.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Prefill vs decode, and which resource each is bound by.</li>
+    <li>The KV cache formula, and the 13B/4K arithmetic that gives ~3.3 GB per sequence.</li>
+    <li>Why continuous batching is usually the largest single win.</li>
+    <li>The speculative-decoding acceptance rule, and why the output is exact.</li>
+    <li>LoRA in three sentences, including the zero-latency merge.</li>
+    <li>Four things that break at 1M context — including the quality one.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#44" target="_top"><span class="k">Back</span>← 44 · Post-training</a>
+  <a href="../index.html#46" target="_top"><span class="k">Next</span>46 · LLM systems →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

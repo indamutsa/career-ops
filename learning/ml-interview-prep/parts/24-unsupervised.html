@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unsupervised learning — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 24</p>
+<h1>Unsupervised learning
+  <span class="lede">Finding structure with no answer key: clustering, dimensionality reduction, and
+  anomaly detection. The last of those is how every fraud system starts life, before anybody has
+  labels — which makes this module a direct prerequisite for the walkthrough in Part G.</span>
+</h1>
+
+<h2 data-n="24.1">The three jobs</h2>
+
+<p>Unsupervised is not one technique but three quite different goals that happen to share the
+property of having no labels:</p>
+
+<div class="tw">
+<table>
+<tr><th>Goal</th><th>Question it answers</th><th>Main tools</th></tr>
+<tr><td><strong>Clustering</strong></td><td>Which of these things belong together?</td>
+    <td>k-means, GMM, DBSCAN, hierarchical</td></tr>
+<tr><td><strong>Dimensionality reduction</strong></td><td>Can I describe this with fewer numbers
+    without losing much?</td><td>PCA, SVD, autoencoders, UMAP</td></tr>
+<tr><td><strong>Anomaly detection</strong></td><td>Which of these does not belong at all?</td>
+    <td>Isolation Forest, LOF, one-class SVM, reconstruction error</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">The thing that makes all of it hard</span>
+  <p>There is no held-out accuracy to check. Every one of these methods will return an answer on pure
+  noise, confidently and without complaint. k-means asked for 5 clusters will produce 5 clusters in
+  uniformly random data. <strong>The main skill in unsupervised learning is scepticism</strong>, and
+  interviewers probe for it — they want to hear that you would validate the structure against
+  something external, not just admire it.</p>
+</div>
+
+<h2 data-n="24.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">k-means <span class="tag">basic</span></div>
+    <p>Pick k centres, assign every point to its nearest, move each centre to the mean of its
+       assigned points, repeat until nothing moves.</p>
+    <p class="an">Placing k ice-cream vans in a park: each person walks to the nearest van, then each
+       van moves to the middle of its own crowd, and you repeat until the vans stop moving.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">k-means++ <span class="tag">mid</span></div>
+    <p>A smarter initialisation: choose the first centre at random, then choose each subsequent one
+       with probability proportional to its squared distance from the nearest existing centre.</p>
+    <p class="wh">The default in every library, because random initialisation gets stuck in bad local
+       optima often enough to matter. k-means is non-convex, so the starting point genuinely
+       decides the outcome.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Inertia / WCSS <span class="tag">basic</span></div>
+    <p>The total squared distance from each point to its own centre. What k-means minimises.</p>
+    <p class="wh">It falls monotonically as k grows — which is exactly why you cannot pick k by
+       minimising it, and why the elbow method exists.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Silhouette score <span class="tag">mid</span></div>
+    <p>For each point: how much closer it is to its own cluster than to the next-nearest one, scaled
+       to [−1, 1]. Averaged over all points.</p>
+    <p class="wh">A more defensible way to choose k than the elbow, because it has an interpretable
+       scale — but it still assumes convex, roughly spherical clusters.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GMM &amp; EM <span class="tag">mid</span></div>
+    <p>Model the data as a mixture of Gaussians. <strong>E-step</strong>: given the current Gaussians,
+       compute each point's probability of belonging to each. <strong>M-step</strong>: given those
+       responsibilities, refit each Gaussian. Repeat.</p>
+    <p class="an">k-means makes every point pick a team. A GMM lets each point be 70 % on one team and
+       30 % on another.</p>
+    <p class="wh">k-means is literally the limiting case of a GMM with spherical, equal-variance
+       components and hard assignment.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">DBSCAN <span class="tag">mid</span></div>
+    <p>Cluster by <em>density</em>: a point is a core point if at least <code>minPts</code> neighbours
+       sit within <code>eps</code>. Connected core points form a cluster; everything else is noise.</p>
+    <p class="an">Finding cities from a map of house locations. You do not decide there are seven
+       cities in advance — you look for places where houses are packed together.</p>
+    <p class="wh">Two properties nothing else gives you at once: it finds the number of clusters
+       itself, and it has an explicit category for "this point is not in any cluster".</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Hierarchical clustering <span class="tag">mid</span></div>
+    <p>Repeatedly merge the two closest clusters (agglomerative), producing a dendrogram you can cut
+       at any level.</p>
+    <p class="wh">You get every k at once. Costs O(n²) memory, so it is for thousands of points, not
+       millions.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">PCA <span class="tag">basic</span></div>
+    <p>Find the directions of greatest variance and re-express the data in those coordinates, keeping
+       the top few.</p>
+    <p class="an">Photographing a chair. Some angles show you a chair; the angle straight down the
+       seat shows you almost nothing. PCA finds the informative angles.</p>
+    <p class="wh">Module 10's eigenvectors and SVD, applied. The principal components are the
+       eigenvectors of the covariance matrix, equivalently the right singular vectors of the centred
+       data.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Explained variance ratio <span class="tag">basic</span></div>
+    <p>What fraction of total variance each component accounts for. The usual way to decide how many
+       to keep — a cumulative 90–95 % is the common convention.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">t-SNE / UMAP <span class="tag">mid</span></div>
+    <p>Non-linear methods that place points in 2D so that <em>neighbourhoods</em> are preserved.</p>
+    <p class="warn-inline">Visualisation tools. Distances between clusters, cluster sizes, and empty
+       space in the plot are all meaningless — see the trap in the questions.</p>
+    <p class="wh">UMAP is faster, preserves more global structure, and unlike t-SNE can transform new
+       points without refitting — which matters if you ever wanted it in a pipeline.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Autoencoder <span class="tag">mid</span></div>
+    <p>A network trained to reconstruct its own input through a narrow bottleneck. The bottleneck is
+       a learned, non-linear compression.</p>
+    <p class="wh">A linear autoencoder with squared error recovers exactly the PCA subspace. The
+       non-linearity is the whole difference.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Isolation Forest <span class="tag">senior</span></div>
+    <p>Build trees on random splits. Anomalies get isolated in very few splits, because there is
+       nothing around them to keep splitting.</p>
+    <p class="an">Twenty questions to identify someone in a crowd. A person standing alone in the
+       corner takes two questions; someone in the middle of the crowd takes fifteen.</p>
+    <p class="wh">The default unsupervised anomaly detector: linear time, handles high dimensions
+       reasonably, few parameters. First thing I would try in a fraud cold start.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">LOF — Local Outlier Factor <span class="tag">senior</span></div>
+    <p>Compares a point's local density to that of its neighbours. Catches points that are anomalous
+       <em>relative to their own neighbourhood</em>, even if not globally unusual.</p>
+    <p class="wh">The one that catches a €300 transaction from a customer who has never spent above
+       €40 — globally unremarkable, locally extreme. That is most fraud.</p>
+  </div>
+
+</div>
+
+<h2 data-n="24.3">k-means: the assumptions that break it</h2>
+
+<p>k-means is asked about constantly because its failure modes are all consequences of assumptions
+that are easy to state and easy to violate:</p>
+
+<div class="tw">
+<table>
+<tr><th>It assumes</th><th>So it fails when</th><th>Use instead</th></tr>
+<tr><td>Clusters are spherical</td><td>Clusters are elongated or curved — two concentric rings get
+    sliced in half</td><td>GMM (elliptical) or DBSCAN (any shape)</td></tr>
+<tr><td>Clusters are similar in size</td><td>One cluster has 10,000 points and another 50 — the
+    large one gets split and the small one absorbed</td><td>GMM, DBSCAN</td></tr>
+<tr><td>Clusters have similar density</td><td>Density varies a lot</td><td>GMM; note DBSCAN also
+    struggles here, since <code>eps</code> is global</td></tr>
+<tr><td>Every point belongs somewhere</td><td>There is genuine noise, which gets forced into a
+    cluster and drags its centre</td><td>DBSCAN, which has a noise label</td></tr>
+<tr><td>Euclidean distance is meaningful</td><td>Features are on different scales, or the data is
+    very high-dimensional</td><td>Scale first; reduce dimension first; use cosine on embeddings</td></tr>
+<tr><td>You know k</td><td>You do not</td><td>Silhouette, gap statistic, or DBSCAN/hierarchical</td></tr>
+</table>
+</div>
+
+<p>The compensations: k-means is fast — roughly linear in n — trivially parallel, and scales to
+enormous data via mini-batch variants. That is why it remains the default despite the list above.</p>
+
+<h2 data-n="24.4">PCA: what it does and what it does not</h2>
+
+<p>Centre the data, compute the covariance matrix, take its eigenvectors. The eigenvector with the
+largest eigenvalue is the direction of greatest variance; the next is the largest-variance direction
+orthogonal to it; and so on. Keep the top k and you have projected onto the best possible
+k-dimensional subspace in the least-squares sense — which is the Eckart–Young theorem from
+module 10.</p>
+
+<p>Uses: compression, decorrelation, noise reduction (small components are frequently noise),
+visualisation, and speeding up downstream models. In practice you compute it by SVD on the centred
+matrix rather than by forming the covariance matrix, because forming XᵀX squares the condition
+number.</p>
+
+<div class="box trap">
+  <span class="lbl">The three things PCA does not do</span>
+  <ul>
+    <li><strong>It does not preserve discriminative information.</strong> Variance is not relevance.
+        The direction separating your two classes may have small variance and get discarded, and the
+        largest-variance direction may be an irrelevant global effect. If you have labels and want a
+        discriminative projection, that is LDA, not PCA.</li>
+    <li><strong>It does not give interpretable features.</strong> Each component is a dense mixture
+        of every original feature. "Component 3 increased by 2" means nothing to a stakeholder, and
+        it destroys the explainability that a credit model needs.</li>
+    <li><strong>It does not handle non-linear structure.</strong> It is a linear projection. Data on
+        a curved manifold — the classic Swiss roll — is not helped. Kernel PCA, autoencoders or UMAP
+        are the answers there.</li>
+  </ul>
+  <p>And the one that bites in production: <strong>you must scale before PCA</strong>. Variance is
+  measured in the feature's own units, so a feature in euros dominates one in years automatically.
+  Fit the scaler and the PCA on the training fold only — otherwise it is preprocessing leakage from
+  module 20.</p>
+</div>
+
+<h2 data-n="24.5">Anomaly detection — the fraud cold start</h2>
+
+<p>Every fraud system has a period at the beginning with no labels: nobody has confirmed a
+chargeback yet, or the product is new. Unsupervised anomaly detection is what runs then, and it is
+also what keeps running afterwards to catch attack patterns the supervised model has never seen.</p>
+
+<div class="tw">
+<table>
+<tr><th>Method</th><th>Catches</th><th>Cost / caveat</th></tr>
+<tr><td><strong>Statistical rules</strong> (z-score, IQR, hand-written thresholds)</td><td>Gross
+    outliers on one feature</td><td>Trivial to build and explain; misses everything multivariate.
+    Still the first thing to ship</td></tr>
+<tr><td><strong>Isolation Forest</strong></td><td>Globally unusual combinations of features</td>
+    <td>Linear time, few parameters. Needs a contamination estimate that you are guessing at</td></tr>
+<tr><td><strong>LOF</strong></td><td>Locally unusual — normal-looking overall, abnormal for
+    <em>this</em> entity</td><td>The right shape for fraud, but O(n²) naively and needs a
+    neighbourhood definition</td></tr>
+<tr><td><strong>One-class SVM</strong></td><td>A boundary around "normal"</td><td>Sensitive to
+    parameters, scales poorly. Rarely the practical choice</td></tr>
+<tr><td><strong>Autoencoder reconstruction error</strong></td><td>Anything unlike the training
+    distribution</td><td>Handles high dimensions and mixed data types; needs enough clean data and a
+    training pipeline</td></tr>
+<tr><td><strong>Per-entity baselines</strong></td><td>Deviation from this customer's own history</td>
+    <td>Often the strongest signal in fraud, and it is feature engineering rather than a model —
+    which is why it belongs in the feature store, module 51</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">The sentence that shows you have done this</span>
+  <p>"Anomalous is not the same as fraudulent." A customer's first large legitimate purchase is
+  anomalous. A wealthy customer's routine behaviour is anomalous relative to the population. An
+  unsupervised detector produces a review queue, not decisions — and its real job is to
+  <strong>generate the labels</strong> that let you train a supervised model later. Framing it as a
+  bootstrapping step rather than as the solution is the answer senior interviewers are listening
+  for.</p>
+</div>
+
+<h2 data-n="24.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>How does k-means work, and how do you choose k?</summary>
+  <div class="a">
+    <div class="tldr">Assign each point to the nearest of k centres, move each centre to the mean of
+    its points, repeat until stable. Choose k with the silhouette score or the gap statistic — the
+    elbow method is a heuristic that is often ambiguous.</div>
+    <p>Two properties of the algorithm worth stating: it always converges, because each of the two
+    steps can only reduce the objective; and it converges to a <em>local</em> optimum, so the
+    initialisation matters, which is why k-means++ is the default.</p>
+    <p><strong>Choosing k:</strong></p>
+    <ul>
+      <li><strong>Elbow</strong> — plot inertia against k and look for the bend. Note that inertia
+          always decreases with k, so there is no minimum to find; you are looking for a change in
+          slope, and on real data there is often no clear one.</li>
+      <li><strong>Silhouette</strong> — bounded in [−1, 1] with an interpretable meaning, so you can
+          pick the k that maximises it. My default.</li>
+      <li><strong>Gap statistic</strong> — compares inertia against what you would get on uniform
+          random data of the same shape. Principled, and slower.</li>
+      <li><strong>The business</strong> — very often the honest answer. If the clusters become
+          customer segments that a marketing team will act on, then k is about how many campaigns
+          they can run, and a statistically optimal 23 clusters is useless.</li>
+    </ul>
+    <p>And the check I would insist on: run it several times with different seeds and see whether the
+    clustering is stable. If the assignments change substantially between runs, the structure is not
+    really there and no choice of k will fix that.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>When does k-means fail, and what would you use instead?</summary>
+  <div class="a">
+    <div class="tldr">It assumes spherical, similarly-sized, similarly-dense clusters with no noise,
+    on scaled features, with k known. Break any of those and it fails in a predictable way.</div>
+    <p>The two canonical failures I would describe: <strong>concentric rings</strong>, where the true
+    structure is two rings sharing a centre and k-means cuts them into pie slices, because it can only
+    produce convex regions; and <strong>very unequal cluster sizes</strong>, where a large cluster gets
+    split in two and a small nearby cluster gets absorbed, because splitting the large one reduces
+    inertia more.</p>
+    <p><strong>What I would reach for:</strong> GMM when the clusters are elongated or overlapping,
+    since it fits full covariances and gives soft assignments; DBSCAN when shapes are arbitrary, when
+    there is genuine noise, or when I do not know k; hierarchical when the dataset is small and I want
+    to inspect structure at several granularities; and on high-dimensional data, reduce the dimension
+    first or move to cosine similarity over embeddings, because Euclidean distance in raw
+    high-dimensional space has stopped discriminating.</p>
+    <p>The precondition underneath all of it: <strong>scale the features first</strong>. Unscaled
+    k-means is clustering by whichever feature happens to have the largest units, and that is the most
+    common real-world failure of the lot.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>DBSCAN is not a universal upgrade. It has a single global <code>eps</code>, so it struggles
+      exactly where cluster densities differ — and it degrades in high dimensions for the same
+      distance-concentration reason as everything else. HDBSCAN relaxes the global-density
+      assumption and is worth naming.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain PCA — and when is it a bad idea?</summary>
+  <div class="a">
+    <div class="tldr">PCA re-expresses the data in the directions of greatest variance and keeps the
+    top few. It is a bad idea when you need interpretability, when the important signal has small
+    variance, or when the structure is non-linear.</div>
+    <p>Mechanically: centre the data, take the eigenvectors of the covariance matrix, order them by
+    eigenvalue, project onto the top k. Each eigenvalue is the variance captured along its direction.
+    Equivalently, and how it is actually computed, take the SVD of the centred matrix — numerically
+    better, because forming XᵀX squares the condition number.</p>
+    <p><strong>When I would not use it:</strong></p>
+    <ul>
+      <li><strong>Interpretability is required.</strong> Components are dense mixtures of all
+          features. In credit or fraud, where I have to state why a decision was made, PCA destroys
+          exactly the property I need.</li>
+      <li><strong>Variance is not the signal.</strong> PCA is blind to labels. A low-variance
+          direction can be the one that separates the classes, and PCA will discard it first. If I
+          have labels and want a projection, LDA optimises the right thing.</li>
+      <li><strong>The manifold is curved.</strong> A linear projection cannot unroll a Swiss roll.
+          Kernel PCA, an autoencoder, or UMAP.</li>
+      <li><strong>The features are already few and meaningful.</strong> Then it is pure downside.</li>
+    </ul>
+    <p>And the operational note: PCA must be fitted on the training fold and applied to validation and
+    test, inside the pipeline — fitting it on everything is textbook preprocessing leakage.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"PCA reduces overfitting." Only incidentally, by reducing dimensionality. It is not a
+      regulariser, it is blind to your target, and it can discard exactly the direction that
+      mattered. Regularisation is the tool for overfitting.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your t-SNE plot shows two well-separated blobs. What can you conclude?</summary>
+  <div class="a">
+    <div class="tldr">Very little. t-SNE preserves local neighbourhoods and actively distorts global
+    structure — distances between clusters, relative cluster sizes and the empty space between them
+    are all artefacts.</div>
+    <p>What is going on: t-SNE minimises a KL divergence between neighbour distributions in the
+    original and the embedded space. It is optimised to keep near things near. It has no objective at
+    all for keeping far things at a proportionate distance, so:</p>
+    <ul>
+      <li><strong>Distance between clusters means nothing.</strong> Two blobs on opposite sides of the
+          plot may be adjacent in the original space.</li>
+      <li><strong>Cluster size means nothing.</strong> t-SNE expands sparse regions and compresses
+          dense ones, so a large blob is not a large cluster.</li>
+      <li><strong>Perplexity changes everything.</strong> The same data at perplexity 5 and 50 can
+          produce entirely different pictures, and neither is more correct.</li>
+      <li><strong>It finds clusters in random data.</strong> This is the demonstration worth citing —
+          run t-SNE on pure noise and you get convincing blobs.</li>
+    </ul>
+    <p><strong>What I would actually do:</strong> treat the plot as a hypothesis generator, then verify
+    the separation with something quantitative — cluster in the original space and check whether the
+    partition agrees, or check whether the groups differ on features I can name and defend. Run it at
+    several perplexities and several seeds; structure that survives all of them is more likely real.
+    And I would use UMAP instead when global structure matters, since it preserves more of it and can
+    project new points without refitting.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Never cluster on t-SNE coordinates, and never feed them into a downstream model. It is a
+      non-parametric visualisation with no meaningful transform for unseen points — t-SNE cannot even
+      place a new point without rerunning the optimisation.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>You need to detect fraud and you have no labels. What do you build?</summary>
+  <div class="a">
+    <div class="tldr">A layered system: rules for the obvious, per-entity baselines for the real
+    signal, an unsupervised model for the unknown — all feeding a human review queue whose decisions
+    become the labels for a supervised model later.</div>
+    <p><strong>The framing first,</strong> because it is the actual answer: with no labels the goal is
+    not a fraud detector, it is a <em>label-generating machine</em>. Everything I build is judged by
+    how efficiently it fills an analyst review queue with cases worth looking at.</p>
+    <ol>
+      <li><strong>Rules, immediately.</strong> Velocity checks, impossible-travel, mismatched
+          BIN/country, card-testing patterns of many tiny authorisations. Cheap, explainable, catch
+          the crude attacks, and they ship on day one.</li>
+      <li><strong>Per-entity baselines.</strong> The strongest signal in fraud is deviation from a
+          customer's own history — amount versus their trailing median, a merchant category they have
+          never used, a device they have never had. This is feature engineering, not modelling, and
+          it belongs in the feature store with point-in-time correctness so it does not leak later.</li>
+      <li><strong>Unsupervised models</strong> on top. Isolation Forest as the general detector, LOF
+          for the locally-anomalous cases that are globally unremarkable. Ensemble them — agreement
+          across methods is a much better ranking than any single score.</li>
+      <li><strong>A review queue with capacity in mind.</strong> If analysts can handle 200 cases a
+          day, my threshold produces 200 cases a day. This turns an unbounded scoring problem into a
+          ranking problem, which is far better posed.</li>
+      <li><strong>Capture every decision as a label.</strong> This is the part people forget. Each
+          reviewed case is a labelled example, and within weeks there is a supervised training set.</li>
+      <li><strong>Then switch,</strong> keeping the unsupervised layer running permanently for novel
+          attack patterns the supervised model has never seen — a supervised model cannot detect a
+          fraud type absent from its training data, and attackers change tactics deliberately.</li>
+    </ol>
+    <p><strong>The bias I would flag out loud:</strong> the labels I generate are only for cases the
+    system flagged, so the supervised model trains on a biased sample and inherits my blind spots.
+    Mitigating that means reviewing a small random sample of unflagged traffic too — expensive, and
+    the only way to measure the false-negative rate at all. That is the feedback-loop problem from
+    module 12 arriving in concrete form, and module 54 deals with it in production.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>k-means or GMM — what is the actual difference?</summary>
+  <div class="a">
+    <div class="tldr">k-means makes hard assignments and assumes spherical, equal-variance clusters.
+    A GMM makes soft, probabilistic assignments and fits a full covariance per cluster, so it handles
+    elliptical and overlapping ones. k-means is the limiting case of a GMM.</div>
+    <p>The precise relationship: take a GMM, force every component to be spherical with the same
+    variance, then let that variance go to zero. The soft responsibilities collapse to hard 0/1
+    assignments and EM becomes exactly Lloyd's algorithm. So k-means is not a different family of
+    method, it is a constrained special case.</p>
+    <p><strong>What the extra generality buys:</strong> elliptical clusters, because each component
+    has its own covariance; overlapping clusters, because a point can be 60/40 between two; a genuine
+    likelihood, so you can use BIC or AIC to choose the number of components rather than relying on a
+    heuristic; and a density estimate, which makes it usable for anomaly detection — low density under
+    the fitted mixture means unusual.</p>
+    <p><strong>What it costs:</strong> more parameters to estimate, so it needs more data, particularly
+    with full covariances in high dimensions; slower; sensitive to initialisation, usually seeded by
+    running k-means first; and it can degenerate, with a component collapsing onto a single point and
+    sending the likelihood to infinity, which is why implementations add a small ridge to the
+    covariance.</p>
+    <p>My practical rule: k-means when I want fast segmentation and the clusters look convex; GMM when
+    I need soft membership, elliptical shapes, or a density I can threshold.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The k-means loop, and why the initialisation matters at all.</li>
+    <li>Three assumptions k-means makes and the failure each one produces.</li>
+    <li>PCA in two sentences, plus the three things it does not do.</li>
+    <li>Why a t-SNE plot's inter-cluster distances mean nothing.</li>
+    <li>The layered no-label fraud approach, and why its real output is labels.</li>
+    <li>"Anomalous is not fraudulent" — and the sampling bias the review queue creates.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#23" target="_top"><span class="k">Back</span>← 23 · SVM, kNN &amp; Naive Bayes</a>
+  <a href="../index.html#25" target="_top"><span class="k">Next</span>25 · Metrics &amp; evaluation →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

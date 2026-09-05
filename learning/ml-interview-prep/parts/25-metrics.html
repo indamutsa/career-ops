@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metrics &amp; evaluation — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 25</p>
+<h1>Metrics &amp; evaluation
+  <span class="lede">The module you cannot skip. More interviews are lost on "what's your metric and
+  why" than on any algorithm question, because it is where modelling meets the business — and because
+  imbalanced problems like fraud make every naive metric lie to you.</span>
+</h1>
+
+<h2 data-n="25.1">Start here: accuracy is almost always the wrong metric</h2>
+
+<div class="box warn">
+  <span class="lbl">The 99.9 % model that is worthless</span>
+  <p>Fraud is 0.1 % of transactions. A model that outputs "not fraud" for everything is
+  <strong>99.9 % accurate</strong> and has caught zero fraud. It cost nothing to build and it is
+  strictly worse than useless, because it consumes a serving budget to do nothing.</p>
+  <p>Accuracy weights every error equally. Real problems never do — a missed fraud costs €200, a false
+  alarm costs thirty seconds of a customer's patience. Any metric that treats those as equal is
+  measuring the wrong thing.</p>
+</div>
+
+<p>So the first question in any evaluation discussion is not "which metric" but <strong>"what does
+each kind of mistake cost?"</strong> Everything else follows from that answer.</p>
+
+<h2 data-n="25.2">The confusion matrix and everything derived from it</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Predicted fraud</th><th>Predicted legit</th></tr>
+<tr><td><strong>Actually fraud</strong></td><td>TP — caught it</td><td>FN — <em>missed fraud, you
+    eat the loss</em></td></tr>
+<tr><td><strong>Actually legit</strong></td><td>FP — <em>blocked a good customer</em></td>
+    <td>TN — correctly left alone</td></tr>
+</table>
+</div>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Precision <span class="tag">basic</span>
+        <span class="sym">TP / (TP + FP)</span></div>
+    <p>Of everything you flagged, how much was actually fraud.</p>
+    <p class="an">"When I raise the alarm, how often am I right?"</p>
+    <p class="wh">The metric your operations team feels. Low precision means analysts wading through
+       junk and customers being blocked for nothing.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Recall / sensitivity / TPR <span class="tag">basic</span>
+        <span class="sym">TP / (TP + FN)</span></div>
+    <p>Of all the actual fraud, how much you caught.</p>
+    <p class="an">"How much of the real problem did I find?"</p>
+    <p class="wh">The metric your finance team feels — it maps directly to loss avoided.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">F1 <span class="tag">basic</span></div>
+    <p>The harmonic mean of precision and recall. Harmonic, so it punishes imbalance between them —
+       0.9 and 0.1 gives 0.18, not 0.5.</p>
+    <p class="wh">A reasonable default when you have no cost information. As soon as you <em>do</em>,
+       F1 is inferior to a cost-weighted metric, because it silently asserts that precision and recall
+       matter equally, and they never do.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Specificity / TNR <span class="tag">mid</span>
+        <span class="sym">TN / (TN + FP)</span></div>
+    <p>Of all the legitimate traffic, how much you correctly left alone. FPR = 1 − specificity.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">ROC-AUC <span class="tag">basic</span></div>
+    <p>Plot TPR against FPR across every threshold; the area beneath is the probability that a random
+       positive scores above a random negative.</p>
+    <p class="wh">Threshold-free, so it measures pure <em>ranking</em> ability. Its
+       interpretation is genuinely useful and its behaviour under imbalance is genuinely
+       misleading — see 25.4.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">PR-AUC / average precision <span class="tag">mid</span></div>
+    <p>Precision against recall across thresholds. Baseline equals the positive rate, so 0.001 for
+       fraud rather than 0.5.</p>
+    <p class="wh"><strong>The right summary metric for a heavily imbalanced problem.</strong></p>
+  </div>
+
+  <div class="term">
+    <div class="t">Log loss <span class="tag">mid</span></div>
+    <p>Cross-entropy on the predicted probabilities. Punishes confident mistakes severely.</p>
+    <p class="wh">The only common metric that scores <em>calibration</em> and ranking together. A
+       model can have excellent AUC and terrible log loss if its probabilities are systematically
+       off.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Brier score <span class="tag">mid</span></div>
+    <p>Mean squared error on the predicted probabilities. Like log loss but bounded and far less
+       brutal about confident errors.</p>
+    <p class="wh">Decomposes into calibration plus refinement, which makes it a nice diagnostic
+       rather than just a number.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Calibration <span class="tag">senior</span></div>
+    <p>Whether a predicted 0.7 actually happens about 70 % of the time.</p>
+    <p class="an">A weather forecaster who says 30 % rain and is right 30 % of the time is
+       calibrated. One who says 30 % and it always rains has good <em>discrimination</em> in the sense
+       of ordering days, and terrible calibration.</p>
+    <p class="wh">Non-negotiable whenever the score feeds a decision with money attached — an
+       expected-value calculation, a cost-matrix threshold, or an amount to hold.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">ECE — expected calibration error <span class="tag">senior</span></div>
+    <p>Bin predictions by confidence, compare each bin's average prediction to its actual rate,
+       average the gaps weighted by bin size.</p>
+    <p class="wh">Bin-count-sensitive and it can hide compensating errors in opposite directions, so
+       show the reliability diagram alongside it rather than the number alone.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Precision@k <span class="tag">mid</span></div>
+    <p>Precision restricted to the top k highest-scoring cases.</p>
+    <p class="wh">Often the <em>real</em> production metric: if analysts review 200 cases a day, only
+       precision within the top 200 matters. Metrics over the whole distribution are academic when
+       capacity is fixed.</p>
+  </div>
+
+</div>
+
+<h2 data-n="25.3">Picking the threshold from a cost matrix</h2>
+
+<p>A classifier outputs a probability. The threshold is a business decision, and it has a derivable
+optimum rather than a conventional 0.5.</p>
+
+<p>Flag a case when the expected cost of flagging is lower than the expected cost of not flagging.
+With p = P(fraud), C<sub>FP</sub> the cost of a false alarm and C<sub>FN</sub> the cost of a miss:</p>
+
+<div class="eq">
+  flag when&nbsp; p · C<sub>FN</sub> &gt; (1 − p) · C<sub>FP</sub>
+  &nbsp;⟹&nbsp; threshold = C<sub>FP</sub> / (C<sub>FP</sub> + C<sub>FN</sub>)
+  <span class="note">0.5 is only correct when the two costs are equal</span>
+</div>
+
+<p>Put fraud numbers in: a miss costs €200, a false alarm costs €2 of analyst time plus customer
+friction. Threshold = 2 / 202 ≈ <strong>0.01</strong>. You should flag anything above a 1 %
+probability of fraud — fifty times more aggressive than the default. That single calculation is one
+of the highest-value things in this whole course, because it reframes "tuning the threshold" from
+guesswork into arithmetic.</p>
+
+<div class="box mem">
+  <span class="lbl">Two caveats to say out loud</span>
+  <p><strong>It requires calibration.</strong> The formula uses p as a real probability. If your model
+  is a boosted tree with <code>scale_pos_weight</code> set, the number it emits is not a probability
+  and the derived threshold is meaningless. Calibrate first, then threshold.</p>
+  <p><strong>It ignores capacity.</strong> A 1 % threshold may generate 40,000 alerts a day for a team
+  that can review 200. In practice you take the cost-optimal threshold as your ceiling and then set
+  the operating point at whatever fills the queue — which is precisely why precision@k is the metric
+  that gets reported.</p>
+</div>
+
+<h2 data-n="25.4">ROC-AUC versus PR-AUC — the imbalance question</h2>
+
+<p>This is the single most common evaluation question for fraud, medical, and any rare-event role.
+The mechanism is worth understanding rather than memorising.</p>
+
+<p>ROC uses FPR = FP / (FP + TN). With 0.1 % fraud, TN is enormous — around a million per thousand
+positives. So you can produce 1,000 false positives and move FPR by only 0.001. <strong>The huge
+denominator hides your false positives.</strong> A model can look excellent on ROC while its flagged
+queue is 90 % junk.</p>
+
+<p>PR uses precision = TP / (TP + FP). No TN anywhere. Those same 1,000 false positives crush
+precision immediately. PR-AUC reports what the operations team will actually experience.</p>
+
+<div class="tw">
+<table>
+<tr><th></th><th>ROC-AUC</th><th>PR-AUC</th></tr>
+<tr><td>Baseline for a random model</td><td>0.5 always</td><td>The positive rate — 0.001 for
+    fraud</td></tr>
+<tr><td>Uses true negatives</td><td>Yes, in the FPR denominator</td><td>No</td></tr>
+<tr><td>Under heavy imbalance</td><td>Optimistic; differences between models get compressed</td>
+    <td>Sensitive; shows the real difference</td></tr>
+<tr><td>Changes if you resample</td><td>Invariant to class balance</td><td>Changes — so never compare
+    PR-AUC across differently-balanced sets</td></tr>
+<tr><td>Best for</td><td>Balanced problems; comparing ranking across populations with different base
+    rates</td><td>Rare positives where the flagged queue is what matters</td></tr>
+</table>
+</div>
+
+<p>The nuance that earns credit: ROC-AUC's invariance to class balance is a genuine advantage in one
+specific situation — comparing a model across segments or time periods with different fraud rates,
+where PR-AUC would move purely because the base rate moved. Report both, and know why each one is
+there.</p>
+
+<h2 data-n="25.5">Class imbalance — what actually helps</h2>
+
+<div class="tw">
+<table>
+<tr><th>Technique</th><th>What it does</th><th>Honest verdict</th></tr>
+<tr><td><strong>Adjust the threshold</strong></td><td>Nothing to training; move the operating
+    point</td><td><strong>Try this first.</strong> It is free, it does not distort probabilities, and
+    it solves the stated problem in most cases</td></tr>
+<tr><td><strong>Class weights</strong> / <code>scale_pos_weight</code></td><td>Weight the minority
+    class more heavily in the loss</td><td>Improves ranking; <strong>destroys calibration</strong>.
+    Fine if you only need an ordering, wrong if a cost threshold depends on the score</td></tr>
+<tr><td><strong>Random undersampling</strong></td><td>Discard majority rows</td><td>Fast and it works,
+    at the cost of throwing away data. Shifts the base rate, so recalibrate afterwards. Good when the
+    majority class is enormous</td></tr>
+<tr><td><strong>Random oversampling</strong></td><td>Duplicate minority rows</td><td>Encourages
+    memorising the duplicated points. Roughly equivalent to class weights, with more overfitting
+    risk</td></tr>
+<tr><td><strong>SMOTE</strong></td><td>Synthesise new minority points by interpolating between
+    neighbours</td><td>Popular, and weaker than its reputation — see the trap below</td></tr>
+<tr><td><strong>Get more positives</strong></td><td>Better labelling, longer history, active
+    learning</td><td>Always the best answer when available; almost never mentioned by candidates</td></tr>
+<tr><td><strong>Anomaly detection</strong></td><td>Reframe as "unlike normal" rather than
+    classification</td><td>The right move at extreme imbalance — under roughly 0.01 % — where there
+    are simply not enough positives to learn a boundary</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The SMOTE trap — worth knowing in detail</span>
+  <p>SMOTE interpolates between a minority point and one of its neighbours. Three problems:</p>
+  <ul>
+    <li><strong>It destroys calibration.</strong> You have changed the class prior, so the model's
+        output is no longer P(fraud) on real traffic.</li>
+    <li><strong>It interpolates in feature space</strong> — which is meaningless for categorical or
+        one-hot features, where the midpoint between "Spain" and "Poland" is not a country.</li>
+    <li><strong>Fraud positives are not one cluster.</strong> They are many distinct attack patterns.
+        Interpolating between two unrelated attacks produces a synthetic point that corresponds to no
+        real fraud at all, and the model learns a boundary around fiction.</li>
+  </ul>
+  <p>And the implementation error that invalidates results: applying SMOTE <em>before</em> the split,
+  so synthetic points derived from training rows land in validation. Published comparisons repeatedly
+  find that a well-tuned model with a properly chosen threshold matches or beats SMOTE. Saying that
+  calmly, with the reasoning, is a strong signal.</p>
+</div>
+
+<h2 data-n="25.6">Offline metrics are not the goal</h2>
+
+<p>The senior version of this whole module is knowing that AUC is a proxy. Three layers, and you
+should be able to connect them:</p>
+
+<ol>
+  <li><strong>Model metrics</strong> — AUC, PR-AUC, log loss. Fast, cheap, computed offline.
+      Necessary for iteration, and they do not pay anyone.</li>
+  <li><strong>Decision metrics</strong> — precision@capacity, alert volume, review time per case,
+      block rate. What the operating point produces once a threshold exists.</li>
+  <li><strong>Business metrics</strong> — fraud loss in euros, false-decline revenue lost, analyst
+      cost, customer churn from wrongful blocks. The actual objective.</li>
+</ol>
+
+<p>Two things follow. First, a model improvement that does not move layer 3 is not an improvement,
+and it is common for a 2-point AUC gain to change nothing because the operating point sits in a
+region the gain did not touch. Second, layers 1 and 3 can diverge: catching more fraud by blocking
+more transactions can lose more revenue in false declines than it saves in fraud. That is why fraud
+teams measure <strong>net</strong> value, and why the interview answer is "I would A/B test against
+the business metric," not "AUC went up".</p>
+
+<h2 data-n="25.7">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain precision and recall, and when you would favour each.</summary>
+  <div class="a">
+    <div class="tldr">Precision is how often you are right when you raise the alarm. Recall is how
+    much of the real problem you found. You favour precision when false alarms are expensive, recall
+    when misses are.</div>
+    <p>The two examples that make it concrete and opposite:</p>
+    <ul>
+      <li><strong>Recall matters more:</strong> screening for an aggressive but treatable cancer. A
+          missed case may be fatal; a false alarm costs a follow-up test. Set the threshold low,
+          accept the false positives.</li>
+      <li><strong>Precision matters more:</strong> automatically blocking a customer's card without
+          review. Each false positive is a stranded customer and a support call, so you only act when
+          you are confident.</li>
+    </ul>
+    <p>They trade off through the threshold: lowering it always raises recall and lowers precision.
+    So "improve precision" without saying what happens to recall is not a well-formed request — the
+    only way to improve both at once is a better model, not a different threshold.</p>
+    <p>What I would add: in fraud we usually do not pick one. There are several thresholds — allow
+    below one, step up to a 3-D Secure challenge in the middle, block or queue for review at the top —
+    and each band has its own precision target because each has a different cost of being wrong.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Your fraud model has 0.94 ROC-AUC. Is that good?</summary>
+  <div class="a">
+    <div class="tldr">Unknowable from that number alone, and on a 0.1 % positive rate it is probably
+    less impressive than it sounds. I would ask for PR-AUC and precision at our actual review
+    capacity.</div>
+    <p>The reason: ROC's false-positive rate has all the true negatives in its denominator. At 0.1 %
+    fraud, a million legitimate transactions swamp it, so ten thousand false positives shift FPR by
+    1 % while making the flagged queue almost entirely junk. ROC-AUC of 0.94 is compatible with a
+    review queue that is 95 % noise.</p>
+    <p><strong>What I would ask for instead:</strong> PR-AUC, whose baseline is the 0.001 positive
+    rate rather than 0.5; precision at the top k where k is what analysts can actually review, since
+    that is the number the operation experiences; recall at our chosen operating point, because that
+    is the loss we avoid; and the calibration curve if any downstream decision uses the score as a
+    probability.</p>
+    <p>And the framing question underneath: good compared to what? Compared to the current rules
+    engine, compared to last quarter's model, compared to the theoretical ceiling given label noise.
+    A number with no baseline is not evidence.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>If someone reports an AUC above about 0.99 on a fraud problem, my first hypothesis is leakage,
+      not brilliance — module 20's checklist applies before any celebration.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do you choose the classification threshold?</summary>
+  <div class="a">
+    <div class="tldr">Derive it from the cost matrix — the optimal threshold is
+    C<sub>FP</sub>/(C<sub>FP</sub> + C<sub>FN</sub>) — then constrain it by review capacity, and
+    verify online.</div>
+    <p><strong>The derivation:</strong> flag when the expected cost of flagging beats the expected
+    cost of not flagging, i.e. when p·C<sub>FN</sub> &gt; (1−p)·C<sub>FP</sub>. Rearranged, the
+    threshold is C<sub>FP</sub>/(C<sub>FP</sub> + C<sub>FN</sub>). With a €200 miss and a €2 false
+    alarm that is about 0.01 — nowhere near 0.5, and the gap between those two numbers is worth a lot
+    of money.</p>
+    <p><strong>Two conditions on using it:</strong></p>
+    <ul>
+      <li><strong>The score must be calibrated,</strong> because the formula treats p as a real
+          probability. If I used class weighting or resampling, it is not one, and I would fit
+          isotonic regression or Platt scaling on a held-out set first.</li>
+      <li><strong>Capacity binds.</strong> The cost-optimal threshold may generate far more alerts
+          than the team can review. Then the effective operating point is set by capacity, and I would
+          report precision@k rather than pretending the theoretical threshold is in use.</li>
+    </ul>
+    <p><strong>How I would refine it in practice:</strong> costs are not constant per case — a missed
+    €5,000 transaction costs more than a missed €20 one — so the proper form is a per-transaction
+    expected-value rule using the amount, not a single global threshold. That is a strong thing to
+    raise unprompted. Then several bands rather than one cut: allow, challenge, review, block. And
+    finally I would validate the choice with an A/B test on net business value, because the offline
+    cost matrix is an estimate and the customer-friction cost in particular is usually a guess.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The threshold must be chosen on validation data and then held fixed for the test evaluation.
+      Choosing it on the test set and reporting the resulting metrics is the same overfitting as any
+      other hyperparameter tuned on test.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is calibration, how do you measure it, and how do you fix it?</summary>
+  <div class="a">
+    <div class="tldr">A model is calibrated when its predicted 0.7 events happen about 70 % of the
+    time. Measure it with a reliability diagram plus ECE or Brier; fix it with Platt scaling or
+    isotonic regression fitted on held-out data.</div>
+    <p><strong>Why it is separate from accuracy:</strong> calibration and discrimination are
+    independent. A model that outputs exactly half the true probability for every case has perfect
+    ranking and perfect AUC, and every probability it emits is wrong by a factor of two. If the score
+    only feeds a ranking, that is fine. If it feeds an expected-value calculation, a cost-matrix
+    threshold, or a reserve amount, it is a direct financial error.</p>
+    <p><strong>Measuring:</strong> a reliability diagram — bin by predicted probability, plot mean
+    prediction against observed frequency, compare to the diagonal. ECE summarises the gaps into one
+    number, and Brier score combines calibration and refinement. I would always show the diagram,
+    because ECE can hide errors that cancel between bins.</p>
+    <p><strong>What decalibrates a model:</strong> class weights and resampling, which change the
+    implied prior; SMOTE; boosted trees, which tend to be over-confident at the extremes; SVMs, whose
+    outputs are distances rather than probabilities; and modern deep networks, which are famously
+    over-confident.</p>
+    <p><strong>Fixing it:</strong> Platt scaling — fit a one-dimensional logistic regression on the
+    model's scores — when the distortion is roughly sigmoidal and data is limited. Isotonic regression
+    when there is plenty of held-out data and the distortion is an arbitrary monotone shape; more
+    flexible, more prone to overfitting on small sets. Either way, fit it on a
+    <strong>separate</strong> calibration split, never on the training data — a model's training
+    predictions are over-confident in exactly the way you are trying to correct.</p>
+    <p>And in production, calibration drifts even when ranking does not: the base rate moves and the
+    probabilities go stale. Monitoring predicted-versus-observed rates over time is a standard
+    monitoring signal — module 54.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you handle a 0.1 % positive rate?</summary>
+  <div class="a">
+    <div class="tldr">Fix the metric first, then the threshold, and only then consider touching the
+    data. Most of the value is in the first two, and resampling is the last resort rather than the
+    first move.</div>
+    <ol>
+      <li><strong>Stop using accuracy.</strong> Switch to PR-AUC for model selection and
+          precision@capacity plus recall for the operating point.</li>
+      <li><strong>Move the threshold, not the data.</strong> A model trained on the natural
+          distribution with a threshold at 0.01 is often as good as anything resampling produces, and
+          it keeps its probabilities meaningful.</li>
+      <li><strong>Stratify every split,</strong> so folds do not end up with a handful of positives
+          and metrics that are pure noise. With very few positives I would also prefer repeated CV,
+          since the variance across folds is what dominates the estimate.</li>
+      <li><strong>Then, if needed, class weights</strong> — and recalibrate afterwards, because they
+          break the probabilities.</li>
+      <li><strong>Undersample the majority</strong> if training cost is the binding constraint. It
+          works, it shifts the base rate, and it needs the same recalibration.</li>
+      <li><strong>Reconsider the framing at extremes.</strong> Below roughly 0.01 % there may not be
+          enough positives to learn a boundary at all, and anomaly detection plus a review queue is
+          the better structure — module 24.</li>
+      <li><strong>Get more positives.</strong> Longer history, better labelling, active learning on
+          the uncertain cases. Rarely mentioned and frequently the highest-return option.</li>
+    </ol>
+    <p>What I would avoid: SMOTE as a reflex. It breaks calibration, interpolates nonsensically across
+    categorical features, and invents points between unrelated attack patterns. I would only reach for
+    it after the threshold approach had been tried and measured.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your offline AUC improved by 3 points but the A/B test shows no lift. What happened?</summary>
+  <div class="a">
+    <div class="tldr">Most likely the gain is in a region of the score distribution that the operating
+    point never touches — or the offline evaluation and the online system are not measuring the same
+    thing.</div>
+    <p>Causes, roughly in order of how often they are the answer:</p>
+    <ul>
+      <li><strong>The gain is off the operating point.</strong> AUC integrates over every threshold.
+          If the improvement is concentrated in the middle of the ranking and you operate at the top
+          0.5 %, nothing changes where it counts. Check precision@k at the actual threshold — the
+          usual culprit.</li>
+      <li><strong>Threshold not re-tuned.</strong> A new model has a different score distribution. The
+          old threshold now corresponds to a different alert volume, and you may be operating
+          somewhere much worse. Thresholds must be re-derived per model.</li>
+      <li><strong>Train/serve skew.</strong> The features computed online differ from the offline
+          ones — a different window, a null handled differently, a stale feature. The deployed model
+          is not the model you evaluated. Log serving features and compare distributions against
+          training; this is why feature stores exist.</li>
+      <li><strong>Leakage offline.</strong> The offline gain was partly a feature that is not truly
+          available at serving time, so it vanished in production.</li>
+      <li><strong>The business metric is not the model metric.</strong> Catching more fraud while
+          declining more good customers can be net negative. Check false declines and net value, not
+          just fraud caught.</li>
+      <li><strong>Underpowered test.</strong> With a 0.1 % base rate, detecting a small relative
+          change needs a very large sample. Compute the power before concluding "no lift" — quite
+          often the honest answer is that the experiment could never have detected the effect.</li>
+      <li><strong>Feedback loop.</strong> Blocked transactions produce no label, so the online
+          evaluation sees a censored population. Module 54.</li>
+    </ul>
+    <p>The lesson I would state at the end: offline metrics are for iteration speed, online metrics
+    decide. And the fact that they disagreed is itself information worth chasing down, because
+    whatever caused the gap will cause it again on the next model.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Which regression metric do you use, and why?</summary>
+  <div class="a">
+    <div class="tldr">MAE when outliers should not dominate, RMSE when large errors are
+    disproportionately costly, MAPE only when the target is strictly positive and relative error is
+    what matters — and I would always compare against a naive baseline.</div>
+    <ul>
+      <li><strong>MAE</strong> — average absolute error, in the target's own units, so it is directly
+          explainable. Robust to outliers. Optimising it predicts the conditional <em>median</em>.</li>
+      <li><strong>RMSE</strong> — squares the errors, so one large miss dominates. Correct when the
+          cost of an error grows faster than linearly. Optimising it predicts the conditional
+          <em>mean</em>. That mean-versus-median distinction is the crisp way to answer "what is the
+          real difference".</li>
+      <li><strong>MAPE</strong> — percentage error. Intuitive for demand forecasting, and it explodes
+          near zero and asymmetrically punishes over-prediction. sMAPE and MASE exist to patch
+          that.</li>
+      <li><strong>R²</strong> — proportion of variance explained. Fine for communication, misleading
+          for comparison across datasets since it depends on the target's variance.</li>
+      <li><strong>Quantile / pinball loss</strong> — when you need an interval or a deliberately
+          asymmetric penalty, such as inventory where a stockout costs more than overstock.</li>
+    </ul>
+    <p>The habit that matters more than the choice: compare against a naive baseline — predict the
+    mean, or for a time series predict yesterday's value. A great many production forecasts fail to
+    beat "same as last week", and knowing that is what makes the metric meaningful.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Why accuracy fails on fraud, in one sentence with the arithmetic.</li>
+    <li>Precision vs recall, plus one problem where each dominates.</li>
+    <li>Why ROC-AUC flatters an imbalanced model — the TN denominator argument.</li>
+    <li>The cost-matrix threshold formula, and the fraud numbers giving ≈0.01.</li>
+    <li>Calibration vs discrimination, how to measure it, and the two fixes.</li>
+    <li>Three reasons SMOTE underperforms its reputation.</li>
+    <li>Six reasons an offline gain can fail to show up online.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#24" target="_top"><span class="k">Back</span>← 24 · Unsupervised learning</a>
+  <a href="../index.html#26" target="_top"><span class="k">Next</span>26 · Interpretability →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

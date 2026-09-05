@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM systems — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 46</p>
+<h1>LLM systems
+  <span class="lede">The model is one component. RAG, agents, evaluation and guardrails are the system
+  around it — and this is where an <em>applied</em> research engineer is judged, because almost every
+  real failure lives here rather than in the weights.</span>
+</h1>
+
+<h2 data-n="46.1">RAG</h2>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>A closed-book exam versus an open-book one. The base model sat the closed-book exam months ago and
+  answers from memory — confidently, including the bits it half-remembers. RAG hands it the textbook
+  open at the right page and says "answer from this".</p>
+  <p>Which reframes the whole problem: <strong>most RAG failures are retrieval failures, not generation
+  failures.</strong> If the right page was never handed over, no amount of prompt engineering rescues
+  the answer.</p>
+</div>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Chunking <span class="tag">mid</span></div>
+    <p>Splitting documents into retrievable units — typically a few hundred tokens with overlap, ideally
+       along semantic boundaries rather than a fixed character count.</p>
+    <p class="warn-inline">The most under-rated knob in the stack. Chunks too small lose the context
+       that makes them meaningful; too large and the embedding averages several topics into a vector
+       that matches nothing well.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Vector database <span class="tag">basic</span></div>
+    <p>Stores embeddings and answers approximate-nearest-neighbour queries — HNSW or IVF-PQ indexes
+       rather than an exact scan.</p>
+    <p class="wh">The "approximate" is the point: exact search over 100 M vectors is too slow, and
+       recall@10 of 0.98 at 100× the speed is the right trade. Below a few hundred thousand vectors,
+       a flat index in memory is often the correct engineering answer, not a dedicated database.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Hybrid retrieval <span class="tag">senior</span></div>
+    <p>Run BM25 (lexical) and dense (semantic) retrieval together and fuse the rankings, usually with
+       reciprocal rank fusion.</p>
+    <p class="wh">They fail in opposite directions: BM25 misses paraphrase, dense misses exact
+       identifiers — error codes, product SKUs, part numbers, surnames. Hybrid beats either alone on
+       essentially every real corpus, and it is the highest-value upgrade to a naive RAG system.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Reranking <span class="tag">mid</span></div>
+    <p>Retrieve ~100 candidates cheaply with a bi-encoder, then rescore the top of that list with a
+       cross-encoder that reads query and document together (module 42).</p>
+    <p class="wh">Big precision gains at the top of the list, which is all the generator ever sees.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Grounding / attribution <span class="tag">senior</span></div>
+    <p>Requiring the answer to cite the retrieved chunks it used, and checking that each claim is
+       actually supported by them.</p>
+    <p class="wh">Citations are simultaneously a UX feature, a hallucination reducer, and your
+       evaluation signal — an entailment check — asking a second model whether the cited passage actually implies the claim —
+       is a measurable,
+       automatable faithfulness metric.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Agent <span class="tag">mid</span></div>
+    <p>An LLM in a loop with tools: it decides an action, the action executes, the result comes back as
+       context, and it decides again until it stops.</p>
+    <p class="warn-inline">Error compounds multiplicatively. At 95 % per-step reliability, a 20-step
+       task succeeds 36 % of the time. This single arithmetic fact explains most agent
+       disappointment.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">LLM-as-judge <span class="tag">senior</span></div>
+    <p>Using a strong model to score outputs against a rubric, instead of exact-match metrics.</p>
+    <p class="warn-inline">Known biases: position (prefers the first option), verbosity (prefers longer
+       answers), and self-preference (prefers its own family's output). Mitigate by randomising order,
+       controlling for length, and calibrating against a few hundred human labels before trusting it.</p>
+  </div>
+
+</div>
+
+<h2 data-n="46.2">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Design a RAG system for a company's internal documentation.</summary>
+  <div class="a">
+    <div class="tldr">Ingestion with structure-aware chunking → hybrid retrieval → cross-encoder rerank
+    → generation with mandatory citations → an evaluation harness that measures retrieval and generation
+    separately. And permissions enforced at retrieval time, not in the prompt.</div>
+    <p><strong>Ingestion.</strong> Parse each source type properly — a PDF table flattened to prose is
+    unrecoverable downstream. Chunk on structure (headings, sections) rather than a fixed character
+    count, at roughly 300–600 tokens with ~15 % overlap, and prepend the document title and heading path
+    to each chunk so the embedding carries its context. Keep metadata: source, section, last-modified,
+    and the ACL.</p>
+    <p><strong>Retrieval.</strong> BM25 plus dense, fused with reciprocal rank fusion (RRF), which scores each
+       document by 1/(k + its rank) in each list and adds those up, so agreement between the two
+       rankers counts for more than either ranker's raw score; metadata filters for recency and
+    permissions; retrieve ~50 and rerank to the top 5–8 with a cross-encoder. I would start with an
+    off-the-shelf embedding model and only fine-tune it on in-domain pairs once the eval set shows
+    retrieval, not generation, is the bottleneck.</p>
+    <p><strong>Generation.</strong> Chunks in the prompt with explicit ids; instruct the model to answer
+    only from them and to say "not in the documentation" when the context does not support an answer —
+    that refusal path is a feature, and it needs to be tested. Require inline citations.</p>
+    <p><strong>Evaluation, which is the part that separates a demo from a system.</strong> Build a set
+    of a few hundred real questions with known answer locations, then measure the two halves separately:
+    <em>retrieval</em> by recall@k (did the right passage appear anywhere in the top k) and MRR — mean
+    reciprocal rank, the average of 1/(rank of the first correct passage), which rewards putting it
+    first rather than merely somewhere — <em>generation</em> by faithfulness (is each claim entailed
+    by a cited chunk) and answer correctness. Separating them is essential — a bad answer from a good
+    retrieval is a different bug from a bad answer from a bad retrieval, and the fix lives in a different
+    part of the stack.</p>
+    <p><strong>The two things I would flag early</strong> because they sink internal deployments:
+    <strong>permissions</strong> must be applied as a filter <em>inside</em> the retrieval query — never
+    retrieve then filter, and never rely on the prompt to keep a secret, because the chunk is already in
+    the context window. And <strong>freshness</strong>: stale documentation is answered confidently and
+    is worse than no answer, so re-index on change and surface last-modified in the citation so the user
+    can judge.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your RAG system gives wrong answers. How do you debug it?</summary>
+  <div class="a">
+    <div class="tldr">Split the pipeline and find the first stage that fails, in order: is the answer in
+    the corpus at all → was it retrieved → did it survive reranking into the prompt → did the model use
+    it correctly. Each stage has a different fix, and guessing wastes weeks.</div>
+    <p><strong>Stage 0 — is it even there?</strong> Grep the corpus. Surprisingly often the document was
+    never ingested, or a parser silently dropped it, or it is inside an image or a table that the
+    extractor mangled. No retrieval change fixes this.</p>
+    <p><strong>Stage 1 — retrieval.</strong> Run the query and inspect the top 50 by hand. If the right
+    chunk is not in there, the problem is retrieval: check chunking first (the answer split across a
+    boundary is the classic cause), then whether the query is lexical in nature — an error code or an
+    ID — which is the case dense-only retrieval loses and BM25 wins.</p>
+    <p><strong>Stage 2 — reranking.</strong> If the chunk was in the 50 but not the final 5, the
+    reranker is the bug. Sometimes it is a domain mismatch; sometimes the chunk is genuinely relevant
+    but phrased unlike the query.</p>
+    <p><strong>Stage 3 — generation.</strong> If the right chunk <em>was</em> in the prompt and the
+    answer is still wrong, look at position (the "lost in the middle" effect from module 45 — put the
+    highest-ranked chunk last, adjacent to the question), at conflicting chunks where two documents
+    disagree and the model silently picks one, and at the model overriding the context with its
+    parametric memory, which is what happens when the retrieved fact contradicts what pretraining
+    taught it.</p>
+    <p><strong>How I would actually run this:</strong> take fifty real failures and label each one by
+    the stage that failed. That histogram tells you where to spend, and it almost never matches the
+    team's intuition — in my experience the answer is usually chunking or the lexical-query gap, both of
+    which are cheap fixes, while the team is discussing fine-tuning the generator.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do you evaluate an LLM feature?</summary>
+  <div class="a">
+    <div class="tldr">Three layers: deterministic checks for anything checkable, a calibrated
+    LLM-as-judge for what is not, and human review on a sample — all against a fixed, versioned eval set
+    built from real failures, with the production metric as the final arbiter.</div>
+    <p><strong>Layer 1 — deterministic.</strong> Anything with a right answer: does the JSON parse,
+    does the SQL run and return the right rows, do the unit tests pass, is the cited document id real,
+    is the extracted date within range. Cheap, fast, no ambiguity — and it catches most regressions. Run
+    it in CI on every prompt or model change.</p>
+    <p><strong>Layer 2 — LLM-as-judge</strong> for quality dimensions with a written rubric and
+    few-shot examples of each score. Critically, <em>calibrate it</em>: have humans label 200 examples
+    and measure judge–human agreement. If Cohen's κ — an agreement score that subtracts out the agreement two
+    raters would reach by chance, so 0 is no better than guessing and 1 is perfect — is poor, the
+    judge is not measuring what you think
+    and its numbers should not be shipped. Randomise pairwise order, control for length, and prefer a
+    judge from a different model family than the one being judged.</p>
+    <p><strong>Layer 3 — human review</strong> on a stratified sample, especially the tails: the
+    disagreements between layers 1 and 2, and the highest-stakes categories.</p>
+    <p><strong>The eval set is the real asset.</strong> Build it from actual production failures, not
+    from imagination; version it; grow it every time something breaks — every incident should end with a
+    new test case. Keep a held-out slice you never iterate against, or you will overfit your prompts to
+    your own benchmark, which is the LLM-era version of test-set leakage from module 20.</p>
+    <p><strong>And what ultimately decides:</strong> offline metrics are a proxy. The arbiter is the
+    online metric — task completion, escalation rate, thumbs-down rate, human-handoff rate — measured in
+    an A/B test. I would ship behind a flag, compare on the product metric, and treat a divergence
+    between offline and online as information about my eval set rather than noise.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do models hallucinate, and what actually reduces it?</summary>
+  <div class="a">
+    <div class="tldr">Because the training objective rewards plausible continuations, not true ones —
+    there is no term anywhere in pretraining for "is this factual". Grounding in retrieved sources,
+    making abstention an acceptable output, and checking claims against sources are what measurably
+    help; scolding the model in the prompt does not.</div>
+    <p><strong>The mechanism.</strong> Next-token prediction optimises likelihood under the data
+    distribution. A fluent, well-formed, wrong answer has high likelihood; the model has no
+    representation of "I do not know this" unless something in post-training gave it one. Add that RLHF
+    annotators tend to prefer confident, complete answers over hedged ones, and you have actively trained
+    away the behaviour you want.</p>
+    <p><strong>What works, in rough order of effect:</strong></p>
+    <ul>
+      <li><strong>Retrieval.</strong> Put the fact in the context. Recall is easier than recall from
+          weights, and it makes the claim checkable.</li>
+      <li><strong>Attribution.</strong> Require citations and verify entailment between each claim and
+          its cited chunk — this converts hallucination from invisible into measurable, which is what
+          makes it fixable.</li>
+      <li><strong>Make abstention legitimate.</strong> Train and prompt for "the documents do not cover
+          this", and — the part teams skip — make sure your evaluation <em>rewards</em> it. If your
+          metric penalises "I don't know" the same as a wrong answer, you have told the model to
+          guess.</li>
+      <li><strong>Self-consistency.</strong> Sample several answers; disagreement across samples is a
+          usable uncertainty signal for routing to a human.</li>
+      <li><strong>Constrained decoding</strong> where the output space is closed — pick from a real
+          catalogue rather than generating a product name.</li>
+    </ul>
+    <p><strong>What does not work:</strong> "do not hallucinate" in the system prompt; raising
+    temperature to zero (it makes the same wrong answer deterministic); and asking the model how
+    confident it is, since verbalised confidence is poorly calibrated. Token log-probabilities are a
+    better-calibrated signal than the model's own stated confidence, and they are free.</p>
+    <p><strong>The honest framing:</strong> hallucination is not a bug to be eliminated but a rate to be
+    measured and managed, like a false-positive rate. The engineering question is what rate the product
+    tolerates and what happens on the failures — which is a design decision about the fallback path, not
+    a model decision.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>When should you build an agent, and what makes them fail?</summary>
+  <div class="a">
+    <div class="tldr">Build one when the task genuinely needs dynamic multi-step decisions with tools
+    and the steps cannot be known in advance. They fail because per-step errors compound, and because
+    the loop has no memory of why it already failed.</div>
+    <p><strong>The compounding arithmetic first,</strong> because it should govern the design: at 95 %
+    per-step reliability, 5 steps succeed 77 % of the time, 20 steps 36 %, 50 steps 8 %. Any agent
+    design that does not shorten the chain or add verification per step is fighting an exponential.</p>
+    <p><strong>The specific failure modes:</strong> loops, where the model repeats a failing action
+    because nothing in the context says "you already tried this"; context saturation, where tool outputs
+    fill the window and the original objective drops out; tool misuse from ambiguous schemas; no stopping
+    criterion, so it neither finishes nor gives up; and cost blow-up, since every step is a full
+    inference over a growing context.</p>
+    <p><strong>What I would do instead, by default:</strong> a fixed pipeline with LLM steps inside it.
+    If you know the sequence — retrieve, then extract, then validate, then write — encode it as code and
+    use the model for the parts that need judgement. It is cheaper, debuggable, testable, and it fails
+    predictably. Most "agents" in production are workflows with one or two model-driven branches, and
+    that is the right architecture, not a compromise.</p>
+    <p><strong>When an agent is genuinely right:</strong> the step sequence depends on intermediate
+    results (debugging, research, incident triage), the action space is large and open, and there is a
+    real verifier — tests, a compiler, a schema — so errors are caught rather than propagated. Coding
+    agents work precisely because the test suite is the verifier.</p>
+    <p><strong>And how I would build it:</strong> a small, well-documented set of tools with strict
+    schemas and idempotent operations; a hard step and cost budget; explicit failure memory in the
+    context; checkpointing so a failure resumes rather than restarts; and a human approval gate on
+    anything irreversible. That last one is not a safety nicety — it is what makes it deployable at all,
+    and saying so is what shows you have run one in production rather than in a notebook.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Why most RAG failures are retrieval failures, and the four-stage debug order.</li>
+    <li>Why hybrid beats dense-only, with the concrete case dense loses.</li>
+    <li>The three evaluation layers, and why the judge must be calibrated before it is trusted.</li>
+    <li>The real mechanism behind hallucination, and the three things that measurably reduce it.</li>
+    <li>0.95<sup>20</sup> ≈ 0.36, and what it implies for agent design.</li>
+    <li>Permissions belong in the retrieval filter, never in the prompt.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#45" target="_top"><span class="k">Back</span>← 45 · Inference &amp; efficiency</a>
+  <a href="../index.html#50" target="_top"><span class="k">Next</span>50 · Data &amp; the ML lifecycle →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

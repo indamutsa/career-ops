@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 5 · MLOps — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 64</p>
+<h1>Round 5 · MLOps &amp; production
+  <span class="lede">The round that separates people who have trained models from people who have kept
+  them alive. Almost every question here has the same shape: something worked offline and then did not
+  work in production — why, and how would you have caught it?</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>60 minutes.</strong> The rapid-fire section is vocabulary you must not fumble — a hesitation
+  on "what is backpressure" undoes a good architecture answer. The incident section is the heart of it:
+  answer each one as a diagnosis, out loud, in the order you would actually check things. Saying
+  <em>"first I would look at X, because it distinguishes A from B"</em> scores far better than naming the
+  right cause immediately by luck.</p>
+</div>
+
+<h2 data-n="64.1">Rapid fire — 20 seconds each</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is training/serving skew?</summary>
+  <div class="a"><div class="tldr">The features the model sees in production differ from the ones it was
+  trained on — different code path, different data freshness, or a different definition of the same
+  field. It is the single most common reason a good offline model underperforms live.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is point-in-time correctness?</summary>
+  <div class="a"><div class="tldr">Every feature value in a training row must be one that was actually
+  knowable at the moment of the event — an as-of join on the event timestamp, not the latest value. The
+  naive join leaks the future and produces a model that looks brilliant and fails on day one.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Kafka — queue or log?</summary>
+  <div class="a"><div class="tldr">A log. Messages are appended and retained for a configured window;
+  consumers track their own offset rather than removing messages. That is why you can replay history and
+  why several independent consumers can read the same stream.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What determines ordering in Kafka?</summary>
+  <div class="a"><div class="tldr">Ordering is guaranteed per partition only. The key determines the
+  partition, so keying by account id gives you per-account ordering — which is exactly what velocity
+  features need — while different accounts stay parallel.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is backpressure?</summary>
+  <div class="a"><div class="tldr">The signal that a downstream stage cannot keep up, propagated
+  upstream so producers slow down instead of the system falling over. Without it, an overloaded stage
+  fills memory and dies, which is worse than being slow.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Four ways to respond to backpressure?</summary>
+  <div class="a"><div class="tldr">Buffer with a bounded queue, block the producer, shed load (drop or
+  degrade), or scale out. The word "bounded" is the important one — an unbounded buffer is not a
+  strategy, it is a delayed crash.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>At-least-once, at-most-once, exactly-once?</summary>
+  <div class="a"><div class="tldr">At-least-once may duplicate, at-most-once may lose, exactly-once
+  needs coordination and is expensive. Standard practice is at-least-once delivery plus idempotent
+  consumers, which gives you exactly-once <em>effects</em> at a fraction of the cost.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Event time versus processing time?</summary>
+  <div class="a"><div class="tldr">Event time is when the thing happened, processing time when your code
+  saw it. They diverge under lag and retries. Windowing on processing time silently changes results when
+  you replay, which is why watermarks exist.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does a feature store actually give you?</summary>
+  <div class="a"><div class="tldr">One definition of a feature, computed once, served two ways — an
+  offline store for point-in-time training joins and a low-latency online store for serving. The value is
+  the shared definition; the two stores are just how it is delivered.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is materialisation lag?</summary>
+  <div class="a"><div class="tldr">The delay between an event landing and its aggregate appearing in the
+  online store. Train on values with zero lag and serve values that are ten minutes stale and you have
+  built skew into the design — so measure the lag and reproduce it in training.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>MLflow, DVC, Airflow, Kubeflow — who does what?</summary>
+  <div class="a"><div class="tldr">MLflow tracks experiments and registers models, DVC versions data and
+  pipelines, Airflow schedules general DAGs, Kubeflow runs ML pipelines on Kubernetes. They overlap at
+  the edges; the mistake is expecting one to cover all four jobs.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What makes a training run reproducible?</summary>
+  <div class="a"><div class="tldr">Four things pinned together: the code version, the data version, the
+  environment, and the seeds/config. Miss any one and "we cannot reproduce the model that is currently
+  making decisions" becomes a real sentence in a real incident.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Shadow, canary, blue-green, A/B — one line each.</summary>
+  <div class="a"><div class="tldr">Shadow: new model scores live traffic, its output is discarded.
+  Canary: a small real share, increased in stages. Blue-green: two full environments, flip and flip back.
+  A/B: a controlled experiment measuring a business metric.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Shadow or canary — which do you reach for first?</summary>
+  <div class="a"><div class="tldr">Shadow first, because it has zero blast radius and it validates the
+  <em>plumbing</em> — latency, feature availability, score distribution. Then canary, because it is the
+  only one that tests the real feedback loop of the decision being acted on.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Data drift versus concept drift?</summary>
+  <div class="a"><div class="tldr">Data drift: P(x) changed, the inputs look different. Concept drift:
+  P(y|x) changed, the same inputs now mean something different. Data drift you can see immediately;
+  concept drift you can only confirm once labels arrive.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>PSI thresholds?</summary>
+  <div class="a"><div class="tldr">Below 0.1 stable, 0.1–0.25 moderate shift worth investigating, above
+  0.25 significant. And PSI is the symmetric KL divergence between the two binned distributions — the
+  same quantity from the information-theory module wearing a credit-risk hat.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>If you could monitor exactly one thing, what?</summary>
+  <div class="a"><div class="tldr">The prediction distribution. It is available instantly with no labels,
+  and it moves for almost every failure that matters — broken features, drifted inputs, a bad deploy, an
+  upstream schema change. It does not tell you <em>why</em>, but it tells you to look.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the delayed-label problem?</summary>
+  <div class="a"><div class="tldr">Ground truth arrives weeks after the prediction — chargebacks are the
+  canonical case — so your recent performance metrics are computed on incomplete labels and look
+  artificially good. Recent windows are censored, not clean.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is the feedback loop problem?</summary>
+  <div class="a"><div class="tldr">You only observe outcomes for transactions you approved, so the model
+  never learns whether the ones it blocked were actually fraud. Training on that data reinforces its
+  existing boundary. The fix is a small randomised holdout that is approved regardless of score.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does an offline win often not land online?</summary>
+  <div class="a"><div class="tldr">Five usual suspects: point-in-time leakage, train/serve skew, a shifted
+  live distribution, the wrong metric (offline AUC versus a business outcome at a threshold), or the
+  decision changing behaviour. Name them as a checklist and work down it.</div></div>
+</details>
+
+<h2 data-n="64.2">The incidents — diagnose out loud</h2>
+
+<div class="box note">
+  <span class="lbl">Five minutes each. Say the order you would check things, and why.</span>
+</div>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Offline AUC 0.94, online precision collapses in week one. What happened?</summary>
+  <div class="a">
+    <div class="tldr">Almost certainly leakage or skew. I would compare the served feature vectors against
+    the training rows for the same entities first, because that one check separates the two causes
+    immediately.</div>
+    <p><strong>Step 1 — is the model even seeing the same numbers?</strong> Log the exact feature vector
+    used for each live decision, pull the same entities out of the training set, and diff them
+    feature by feature. If the values differ, it is skew and I am now looking for the cause: two
+    implementations of the same feature, a different default for nulls, a unit or timezone mismatch, or
+    the online store serving a staler aggregate than the offline pipeline used.</p>
+    <p><strong>Step 2 — if the values match, suspect leakage.</strong> Rank features by importance and
+    ask of each one: was this knowable at decision time? The classic offenders are counters that were
+    incremented <em>because</em> of this event — a chargeback count, an investigation flag, a merchant
+    risk score recomputed nightly after the fact. The tell is a single feature carrying implausible
+    importance and an offline number that felt too good.</p>
+    <p><strong>Step 3 — check the join, not just the features.</strong> Even correct features leak if the
+    training join took the latest value rather than the as-of value. I would re-run training with a strict
+    point-in-time join and see how much AUC falls. A large drop is the diagnosis.</p>
+    <p><strong>Step 4 — only then consider distribution.</strong> Compare the live input distribution to
+    the training reference with PSI per feature. Real shift is possible, but a drop this large in week one
+    is much more likely to be an engineering defect than the world changing.</p>
+    <p><strong>Step 5 — and check the metric itself.</strong> AUC is threshold-free; production precision
+    is measured at one threshold on a heavily imbalanced stream. A model can have excellent ranking and
+    poor precision at the operating point, especially if the live positive rate is lower than in the
+    training sample. If everything else is clean, this is where I would land.</p>
+    <p><strong>The prevention I would propose:</strong> serve and train from the same feature definitions,
+    log the served vector and train on <em>those</em> logs rather than recomputing history, and add a
+    pre-deploy check comparing offline and shadow score distributions. Shadow mode would have caught this
+    before a single customer was affected.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Consumer lag has been climbing for two hours. Walk me through it.</summary>
+  <div class="a">
+    <div class="tldr">Establish whether it is more input or slower processing, then whether the slowness is
+    the model, a dependency, or partition skew. Meanwhile decide what to degrade, because the lag is
+    already customer-visible.</div>
+    <p><strong>First, the mitigation, not the diagnosis.</strong> Lag means decisions are late. If the
+    decision path is synchronous, requests are timing out; if it is asynchronous, fraud is being scored
+    after the money moved. I would confirm what the fallback does right now — a conservative rule-based
+    decision is usually correct — and make sure it is active while I investigate.</p>
+    <p><strong>Is input up or throughput down?</strong> Compare produce rate to consume rate. A traffic
+    spike, a replay, or an upstream backfill dumping history all raise input; a deploy, a slow dependency,
+    or GC pressure lowers throughput. The two have completely different fixes and the graphs separate them
+    in seconds.</p>
+    <p><strong>If throughput is down, find the slow stage.</strong> Latency per stage: feature lookup,
+    model inference, downstream write. In my experience the online store or an enrichment call is the
+    culprit more often than the model. A dependency degrading turns into consumer lag because the consumer
+    blocks on it — which is backpressure arriving from a place people forget to instrument.</p>
+    <p><strong>Check partition skew.</strong> If lag is concentrated in a few partitions, it is a hot key —
+    one merchant or one account generating a disproportionate share. Adding consumers will not help,
+    because a partition is consumed by one consumer; the fix is a better key or a salt on the hot entity.
+    Uniform lag across partitions means genuine capacity shortfall, and there scaling out does work, up to
+    the partition count.</p>
+    <p><strong>Then apply the backpressure policy deliberately.</strong> Options in order of preference:
+    scale consumers, shed low-value work (drop enrichments, skip the expensive features and use a
+    reduced-feature model), degrade to the rule-based path, and only as a last resort drop events. The one
+    thing I would not do is raise the buffer size — that converts a visible problem into an invisible one
+    and then an out-of-memory crash.</p>
+    <p><strong>Afterwards.</strong> Consumer lag should have an SLO and an alert well before two hours.
+    And the incident should produce a load test that reproduces the spike, because "it was fine until it
+    was not" usually means nobody knew the ceiling.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>PSI on your top feature jumps to 0.4 overnight. Do you retrain?</summary>
+  <div class="a">
+    <div class="tldr">No — not yet. An overnight jump is far more likely to be a pipeline defect than the
+    world changing overnight, and retraining on broken data bakes the defect into the model.</div>
+    <p><strong>Look at the shape of the shift first.</strong> This is the single most useful diagnostic. If
+    one bin absorbed the mass — especially a zero or null bin — that is an upstream failure: a field
+    stopped populating, a join started missing, a schema changed, a unit changed. If the shift is spread
+    smoothly across bins, genuine population change is plausible.</p>
+    <p><strong>Then check the boring explanations.</strong> Was there a deploy? Did an upstream team ship
+    something? Is it a seasonal or calendar effect — a payday, a holiday, a promotion, a new market
+    launching? Did a large merchant onboard? Any of these produce a real, correct shift that needs no
+    model change at all.</p>
+    <p><strong>Check whether the model actually cares.</strong> Input drift on a feature the model barely
+    uses is noise. I would look at the prediction distribution: if scores are unchanged, the urgency drops
+    sharply. If scores moved too, it is affecting decisions now.</p>
+    <p><strong>Check performance where you can.</strong> Labels are delayed, so recent performance is
+    censored. But proxies exist — the manual-review queue's confirmation rate, the alert-to-fraud ratio,
+    complaint volume, the randomised holdout. These give a partial read days before the labels do.</p>
+    <p><strong>Then decide.</strong> Pipeline bug → fix the pipeline, no retrain. Real shift with
+    performance holding → watch, no retrain. Real shift with performance degrading → retrain on data that
+    includes the new regime, and validate on the most recent window rather than a random split. Real shift
+    that is adversarial → treat it as an attack, which may mean a rule now and a model next week.</p>
+    <p><strong>The framing:</strong> drift alerts are a prompt to investigate, not a trigger to retrain.
+    Auto-retraining on drift is how a bad day becomes a bad model.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>A canary at 5 % looks fine, you go to 100 %, and everything degrades. Why?</summary>
+  <div class="a">
+    <div class="tldr">Something about 5 % was not representative: the traffic was not randomly routed, the
+    load was not proportional, the sample was too small for a rare event, or the decision itself changes
+    the environment at scale.</div>
+    <p><strong>Routing.</strong> If the 5 % was selected by anything correlated with behaviour — a region,
+    a device type, a set of hosts, sticky sessions from a subset of users — it was never a random sample.
+    Hashing the entity id is the fix, and it also gives a consistent experience per user.</p>
+    <p><strong>Load.</strong> Some failures are strictly load-dependent: cache hit rates, connection pool
+    limits, a downstream service that copes at 5 % and throttles at 100 %, memory that fits one model
+    replica but not the fleet. The canary proved correctness, not capacity. A load test against the new
+    model is a separate exercise.</p>
+    <p><strong>Statistics.</strong> If fraud is 0.2 % of traffic, 5 % of traffic contains very few
+    positives. The canary may simply not have had the power to detect a regression in recall. I would ask,
+    before the rollout, how long each stage must run to detect the effect size I care about — and if the
+    answer is a week, either wait or accept that the canary is only checking for gross breakage.</p>
+    <p><strong>Feedback and interaction.</strong> At 5 % the model's decisions barely move the world. At
+    100 % they do: attackers notice, review queues saturate, approval rates shift, and downstream teams
+    that tuned to the old score distribution start behaving differently. This is a real class of failure
+    that no canary size can fully rule out.</p>
+    <p><strong>Alerting.</strong> A related trap — if the alert is on the blended metric rather than
+    per-variant, a bad model at 5 % is diluted twentyfold and invisible. Always alert per variant.</p>
+    <p><strong>What I would change.</strong> Stages with a hold long enough for the metric to be
+    detectable, per-variant alerting on both model and system metrics, a load test before the last stage,
+    and an automatic rollback wired to a guard metric rather than to a human noticing.</p>
+  </div>
+</details>
+
+<div class="box trap">
+  <span class="lbl">Whiteboard prompt — 20 minutes</span>
+  <p><strong>"Design the retraining system for a fraud model. Not the model — the system that decides when
+  to retrain, retrains it, and decides whether to ship."</strong></p>
+  <p>Cover, roughly in this order: the trigger (schedule versus drift versus performance, and why a pure
+  drift trigger is dangerous); how you build the training set given delayed labels, including how far back
+  the label horizon forces you to cut; point-in-time correctness in that join; how the randomised holdout
+  keeps the feedback loop honest; the validation gate — a recent-window evaluation, not a random split,
+  compared against the currently deployed model rather than against the old offline number; what is
+  registered and with what lineage; the promotion path through shadow and canary with guard metrics; and
+  what makes rollback a one-click operation.</p>
+  <p><strong>Where candidates lose marks:</strong> retraining on a fixed weekly schedule with no gate;
+  ignoring that the last N weeks of labels are censored; validating on a random split so recent data leaks
+  into training; comparing the challenger to the champion's <em>historical</em> offline metric instead of
+  running both on the same fresh window; and having no answer for "what if the new model is worse but only
+  on one segment".</p>
+</div>
+
+<h2 data-n="64.3">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th></tr>
+<tr><td>Not yet</td><td>Rapid-fire terms need thinking time; the incidents get one cause each rather
+    than an ordered diagnosis.</td></tr>
+<tr><td>Solid mid</td><td>All vocabulary fluent; you can name the likely cause of each incident and one
+    prevention, but the reasoning is a list rather than a sequence of discriminating checks.</td></tr>
+<tr><td>Senior</td><td>Each incident becomes a diagnosis with an order and a reason for the order; you
+    mitigate before you diagnose; you reach for the prediction distribution and the shape of the drift
+    unprompted; you can defend the retraining gate against "why not just retrain nightly".</td></tr>
+<tr><td>Strong senior</td><td>You bring up the feedback loop, censored labels and per-variant alerting
+    without being asked, and you name what your proposed design would <em>not</em> catch.</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The five reasons an offline win does not land online, in order of likelihood.</li>
+    <li>The four responses to backpressure, and why raising the buffer is not one of them.</li>
+    <li>What the shape of a PSI shift tells you that its magnitude does not.</li>
+    <li>Why a canary must alert per variant and not on the blended metric.</li>
+    <li>Why delayed labels make recent performance look better than it is.</li>
+    <li>The one metric you would keep if you could only keep one, and why.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#63" target="_top"><span class="k">Back</span>← 63 · Round 4 · Transformers</a>
+  <a href="../index.html#65" target="_top"><span class="k">Next</span>65 · Coding round (DSA) →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linear algebra — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part A · Maths · Module 10</p>
+<h1>Linear algebra
+  <span class="lede">Machine learning has exactly one data structure — a list of numbers — and
+  exactly one operation — reshaping that list. Linear algebra is the grammar of both. Everything
+  in Parts C and D is this module with more layers.</span>
+</h1>
+
+<h2 data-n="10.1">The problem this was invented to solve</h2>
+
+<p>Suppose you want to describe a house. You write down: 120 (square metres), 3 (bedrooms), 1985
+(year built), 4.2 (kilometres from the centre). You now have <code>[120, 3, 1985, 4.2]</code>.
+That list <em>is</em> the house, as far as any model is concerned.</p>
+
+<p>Now suppose you want to describe a word — “king”. There is no obvious list of measurements. But
+if you invent 300 made-up measurements and let a model choose their values so that similar words end
+up with similar lists, you get an embedding. Same structure: a list of numbers.</p>
+
+<p>So the two questions linear algebra answers are: <strong>how do I compare two lists?</strong> and
+<strong>how do I transform a list into a different list?</strong> That is the whole subject. Compare
+= dot product. Transform = matrix multiply.</p>
+
+<div class="box analogy">
+  <span class="lbl">The one analogy for this module</span>
+  <p>A <strong>vector</strong> is a recipe: 2 eggs, 300 g flour, 50 g sugar. A <strong>matrix</strong>
+  is a machine that converts recipes into other recipes — a machine that turns a cake recipe into a
+  shopping list, say. <strong>Matrix multiplication</strong> is running the recipe through the
+  machine. And the reason deep learning works at all is that stacking machines end to end, with a
+  small squashing step between them, can express almost any conversion you want.</p>
+</div>
+
+<h2 data-n="10.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Scalar <span class="tag">basic</span> <span class="sym">a</span></div>
+    <p>A single number. A temperature, a loss value, a learning rate.</p>
+    <p class="wh">Your loss at step 4,000 is a scalar. That is why you can plot it as a line.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Vector <span class="tag">basic</span> <span class="sym">v ∈ ℝⁿ</span></div>
+    <p>An ordered list of <em>n</em> numbers. Equivalently: a point in <em>n</em>-dimensional space,
+       or an arrow from the origin to that point.</p>
+    <p class="an">A recipe. Order matters — swapping the eggs and the flour gives a different dish.</p>
+    <p class="wh">One row of your dataset. One token embedding. One user's feature vector at
+       scoring time.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dimension <span class="tag">basic</span></div>
+    <p>How many numbers are in the list. Nothing more mysterious than that.</p>
+    <p class="wh">“<code>d_model = 4096</code>” means every token is described by 4,096 numbers.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Matrix <span class="tag">basic</span> <span class="sym">A ∈ ℝ<sup>m×n</sup></span></div>
+    <p>A rectangular grid of numbers. Two readings, both useful: a <em>stack of vectors</em>
+       (your whole dataset, one row per example), or a <em>machine</em> that eats an
+       <em>n</em>-vector and returns an <em>m</em>-vector.</p>
+    <p class="an">A conversion machine with <em>n</em> input dials and <em>m</em> output dials.</p>
+    <p class="wh">Every <code>nn.Linear</code> layer is one matrix plus one bias vector. That is
+       literally all it is.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Tensor <span class="tag">basic</span></div>
+    <p>The same idea with more axes. Scalar = 0 axes, vector = 1, matrix = 2, and a batch of token
+       embeddings is 3: <code>[batch, sequence, d_model]</code>.</p>
+    <p class="wh">Ninety per cent of the shape errors you will ever hit are a disagreement about
+       which axis is which.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dot product <span class="tag">basic</span> <span class="sym">a · b</span></div>
+    <p>Multiply the two lists element by element, then add it all up. Returns a single number
+       measuring <em>how much the two vectors agree</em>: large and positive if they point the same
+       way, zero if perpendicular, negative if opposed.</p>
+    <p class="an">Two people rating ten films out of five. Multiply their scores pairwise and sum:
+       a big number means the same taste.</p>
+    <p class="wh">Attention scores are dot products between queries and keys. Retrieval in a vector
+       database is a dot product against every stored document.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Norm <span class="tag">basic</span> <span class="sym">‖v‖</span></div>
+    <p>The length of a vector. <strong>L2</strong> is ordinary straight-line length (√ of the sum of
+       squares). <strong>L1</strong> is the sum of absolute values — how far a taxi drives on a grid.
+       <strong>L∞</strong> is just the largest single component.</p>
+    <p class="an">L2 is the crow's flight. L1 is the taxi. L∞ is “what is the worst street”.</p>
+    <p class="wh">Gradient clipping clips the L2 norm. Weight decay penalises squared L2. Lasso
+       penalises L1 and that is precisely why it produces exact zeros.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Cosine similarity <span class="tag">basic</span></div>
+    <p>The dot product after dividing out both lengths — so it measures <em>direction only</em>,
+       ignoring magnitude. Ranges from −1 to 1.</p>
+    <p class="an">Two arrows: cosine asks “what angle between them?”, not “which is longer?”.</p>
+    <p class="wh">The default similarity for embeddings, in every vector DB you will ever configure.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Matrix multiplication <span class="tag">basic</span> <span class="sym">C = AB</span></div>
+    <p>Every entry of the result is one dot product: row <em>i</em> of A with column <em>j</em> of B.
+       Shapes must chain: <span class="m">(m×n)(n×p) → (m×p)</span>. The inner numbers must match and
+       they vanish.</p>
+    <p class="an">Running every recipe through every machine and recording all the outcomes.</p>
+    <p class="wh">Over 95 % of the arithmetic in an LLM forward pass is matrix multiplication.
+       GPUs exist because of this one operation.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Transpose <span class="tag">basic</span> <span class="sym">Aᵀ</span></div>
+    <p>Flip the grid over its diagonal: rows become columns.</p>
+    <p class="wh">You will meet it as <code>Q Kᵀ</code> in attention — the transpose is what makes
+       the shapes line up so every query meets every key.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Identity &amp; inverse <span class="tag">basic</span> <span class="sym">I, A⁻¹</span></div>
+    <p>The identity is the do-nothing machine (1s on the diagonal). The inverse is the undo machine:
+       <span class="m">A⁻¹A = I</span>. Many matrices have no inverse — those are called
+       <em>singular</em>.</p>
+    <p class="wh">The closed-form solution to linear regression contains <span class="m">(XᵀX)⁻¹</span>.
+       When two of your features are duplicates, that matrix is singular and the fit blows up —
+       which is exactly what ridge regression fixes by adding λI.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Linear independence &amp; rank <span class="tag">mid</span></div>
+    <p>A set of vectors is independent if none of them can be built from the others.
+       <strong>Rank</strong> is how many genuinely independent directions a matrix actually contains
+       — its true information content, which can be far less than its shape suggests.</p>
+    <p class="an">Ten colleagues on a project, but six of them just repeat what the other four say.
+       The rank of that team is 4.</p>
+    <p class="wh">Rank deficiency is multicollinearity. And “low-rank” is the entire idea behind
+       <strong>LoRA</strong>: a fine-tuning update turns out to need only a handful of real
+       directions, so you store two skinny matrices instead of one fat one.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Eigenvector &amp; eigenvalue <span class="tag">mid</span>
+        <span class="sym">Av = λv</span></div>
+    <p>A direction that the machine does <em>not</em> rotate — it only stretches or shrinks it.
+       The stretch factor λ is the eigenvalue.</p>
+    <p class="an">Spin a globe. Almost every point moves. The two poles do not — they are the
+       eigenvectors of that rotation.</p>
+    <p class="wh">PCA is “find the eigenvectors of the covariance matrix, keep the ones with the
+       biggest λ”. Those directions are where your data actually varies.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Determinant <span class="tag">mid</span> <span class="sym">det(A)</span></div>
+    <p>How much the machine scales volume. Zero means it squashes space flat into a lower dimension —
+       information is destroyed and the machine cannot be undone.</p>
+    <p class="wh">det = 0 ⇔ singular ⇔ no inverse ⇔ your linear model has redundant features.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">SVD <span class="tag">senior</span> <span class="sym">A = UΣVᵀ</span></div>
+    <p>Every matrix, without exception, is exactly three steps: <strong>rotate</strong> (Vᵀ),
+       <strong>stretch each axis independently</strong> (Σ), <strong>rotate again</strong> (U). The
+       stretch factors are the singular values, sorted biggest first.</p>
+    <p class="an">Any distortion of an image is: turn it, stretch it along two axes, turn it again.</p>
+    <p class="wh">Keep the top <em>k</em> singular values and you get the best possible rank-<em>k</em>
+       approximation of anything — image compression, PCA, latent semantic analysis, and the
+       justification for LoRA all come out of this one fact.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Orthogonality <span class="tag">mid</span></div>
+    <p>Two vectors at 90°: their dot product is 0. They carry completely non-overlapping information.</p>
+    <p class="wh">PCA components are orthogonal by construction, which is why they are uncorrelated.
+       Attention heads are <em>not</em> forced to be orthogonal — and in practice many end up
+       redundant, which is what head-pruning research exploits.</p>
+  </div>
+
+</div>
+
+<h2 data-n="10.3">The dot product is the whole game</h2>
+
+<p>If you take one idea from this module, take this one: <strong>the dot product is a similarity
+score, and almost every important number in modern ML is a dot product.</strong></p>
+
+<p>The attention weight between token 7 and token 3 is a dot product. The logit for the word
+“Paris” is a dot product between the final hidden state and the “Paris” row of the output embedding.
+The relevance of a document to your RAG query is a dot product. When you hear “this model has
+7 billion parameters”, what you are being told is: there are 7 billion numbers participating in
+dot products.</p>
+
+<div class="viz" data-viz="cosine"></div>
+
+<div class="box trap">
+  <span class="lbl">Trap</span>
+  <p>“Cosine similarity and Euclidean distance rank things the same way.” Only if all your vectors
+  are already normalised to unit length — then they are monotonically related and the ranking is
+  identical. Unnormalised, they disagree, and they disagree in a way that matters: raw dot product
+  rewards <em>long</em> vectors, so a document that simply repeats a word many times can beat a
+  genuinely relevant short one. Most embedding models normalise their output for exactly this reason.</p>
+</div>
+
+<h2 data-n="10.4">A matrix is a machine, and eigenvectors are its grain</h2>
+
+<p>Feed every point of a square through a 2×2 matrix and the square becomes a parallelogram. The
+matrix has stretched, squashed, sheared and rotated space. The <strong>eigenvectors</strong> are the
+special directions that came out pointing the same way they went in — the grain of the wood. The
+<strong>eigenvalues</strong> say by how much each of those directions was stretched.</p>
+
+<div class="viz" data-viz="matrix2d"></div>
+
+<p>Why anyone cares: if you want to know what a transformation <em>does</em>, you do not read its
+sixteen numbers. You read its eigenvalues. An eigenvalue bigger than 1 means that direction is
+amplified; applied repeatedly, it explodes. Smaller than 1 means it decays to nothing. This is not
+an analogy for exploding and vanishing gradients — it <em>is</em> exploding and vanishing gradients.
+An RNN applies roughly the same matrix at every timestep, so after 100 steps the signal has been
+multiplied by λ¹⁰⁰, and unless λ sits very close to 1 the result is either astronomical or zero.</p>
+
+<h2 data-n="10.5">Why L1 makes zeros and L2 does not</h2>
+
+<p>This is the most-asked linear-algebra question in an ML interview that is not really about linear
+algebra, and the answer is entirely geometric.</p>
+
+<p>Penalising a norm means: find the lowest loss you can, while staying inside a ball of some fixed
+size. The L2 ball is a <em>circle</em>. The L1 ball is a <em>diamond</em>, with its corners sitting
+exactly on the axes.</p>
+
+<p>Your loss contours are ellipses sliding outward from the unconstrained optimum. The solution is
+where a contour first touches the ball. A circle has no corners, so the touch point can be anywhere
+— and “anywhere” almost never has a coordinate of exactly zero. A diamond has sharp corners pointing
+along the axes, and a smooth curve touching a sharp corner is overwhelmingly the likely outcome. At
+a corner, one coordinate <em>is</em> exactly zero.</p>
+
+<div class="box mem">
+  <span class="lbl">Say it in one line</span>
+  <p>“L1 gives sparsity because its constraint region has corners on the axes, and contours tend to
+  hit corners. L2's region is round, so nothing is ever driven exactly to zero — only shrunk.”</p>
+</div>
+
+<h2 data-n="10.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain the dot product to someone with no maths background.</summary>
+  <div class="a">
+    <div class="tldr">It is a single number that says how much two lists of numbers agree — big and
+    positive when they point the same way, zero when they are unrelated, negative when they oppose.</div>
+    <p>Mechanically: multiply the two lists entry by entry and add up the results. Geometrically it
+    equals ‖a‖‖b‖cos θ, so it factors into “how long are they” times “how aligned are they”.</p>
+    <p>The everyday version I use: two people each rate ten films out of five. Multiply their scores
+    pairwise and sum. Similar taste gives a big number. That number is the dot product.</p>
+    <p>Where it shows up: an attention score is a dot product between a query and a key; a vector
+    database retrieves by dot product; the logit for a token is a dot product with an output
+    embedding row.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“So a bigger dot product always means more similar?” No — it also grows with length. A
+      vector that is simply <em>large</em> scores highly against everything. That is why we normalise
+      and use cosine.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What do the shapes have to satisfy to multiply two matrices, and why?</summary>
+  <div class="a">
+    <div class="tldr">(m×n)(n×p) → (m×p): the inner dimensions must match, and they disappear.</div>
+    <p>Because every output entry is a dot product between a row of the first and a column of the
+    second, and a dot product needs both lists to be the same length. That shared length is the
+    inner dimension, and it is consumed by the summation.</p>
+    <p>In practice this is the mental check I run on every layer: a <code>Linear(768, 3072)</code>
+    holds a (3072×768) matrix, so <code>[batch, seq, 768] → [batch, seq, 3072]</code>. The last axis
+    is the only one the matrix touches.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Matrix multiplication is <strong>not</strong> commutative. AB ≠ BA — often the shapes do not
+      even permit BA. It <em>is</em> associative, which is why <code>(QKᵀ)V</code> and
+      <code>Q(KᵀV)</code> give the same answer but wildly different cost — the second is the trick
+      behind linear-attention variants.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do embedding systems use cosine similarity rather than Euclidean distance?</summary>
+  <div class="a">
+    <div class="tldr">Because in an embedding space direction carries the meaning and magnitude
+    mostly carries frequency artefacts, and cosine throws magnitude away.</div>
+    <p>Embedding vectors get their length from things you usually do not want to rank on — how
+    common a token is, how long the document was, how many times a word was repeated. Two texts about
+    the same topic at very different lengths land in the same <em>direction</em> but at different
+    distances from the origin. Euclidean distance would call them dissimilar; cosine calls them
+    identical, which is what you meant.</p>
+    <p>The practical note: once vectors are L2-normalised, cosine similarity and dot product are the
+    same operation, and Euclidean distance becomes a monotone function of it — so the ranking is
+    identical and you may as well use the dot product, because it is a single fused GPU kernel.
+    That is why FAISS indexes are usually built on inner product over normalised vectors.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Cosine is not always right. If magnitude genuinely means something — a count vector where
+      “bought 50 items” should differ from “bought 1 item” — throwing it away destroys the signal.
+      Ask what the magnitude encodes before you normalise it.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the rank of a matrix, and when has it ever mattered to you?</summary>
+  <div class="a">
+    <div class="tldr">Rank is the number of genuinely independent directions in a matrix — its real
+    information content, as opposed to its shape.</div>
+    <p>A 1000×1000 matrix whose every column is a multiple of the first has rank 1. Its shape claims a
+    million numbers; it contains about a thousand.</p>
+    <p>Three places it bites in practice:</p>
+    <ul>
+      <li><strong>Multicollinearity.</strong> Two features that are near-duplicates make XᵀX
+          near-singular, so <span class="m">(XᵀX)⁻¹</span> becomes enormous and unstable — coefficients
+          swing wildly and flip sign between refits. Ridge fixes it by adding λI, which lifts every
+          eigenvalue away from zero.</li>
+      <li><strong>Dimensionality reduction.</strong> PCA is the statement that your data's covariance
+          matrix is effectively low rank, so you can drop directions with tiny eigenvalues and lose
+          almost nothing.</li>
+      <li><strong>LoRA.</strong> The empirical claim is that the <em>update</em> a fine-tune needs is
+          intrinsically low rank. So instead of learning a full d×d matrix you learn B·A with inner
+          dimension r ≈ 8–64. You train under 1 % of the parameters and can hot-swap adapters at
+          serving time.</li>
+    </ul>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“Is LoRA lossless?” No. It constrains the update to a rank-r subspace. For instruction
+      tuning that is usually enough, because the update genuinely is low rank. For teaching the model
+      a new <em>domain</em> — new vocabulary, new language — it is often not, and full fine-tuning
+      wins.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain eigenvectors to a product manager.</summary>
+  <div class="a">
+    <div class="tldr">They are the directions a transformation leaves pointing the same way — it can
+    stretch them, but it cannot turn them.</div>
+    <p>Spin a globe: every city moves except the two poles. The poles are the eigenvectors of that
+    rotation, with eigenvalue 1 because they are not even stretched.</p>
+    <p>Why they earn their keep: if you want to know what a complicated transformation actually
+    <em>does</em>, you do not read its entries — you read its eigenvalues. Bigger than 1 means that
+    direction gets amplified every time you apply the matrix; less than 1 means it dies away. That
+    single fact explains exploding and vanishing gradients in an RNN, where roughly the same matrix
+    is applied at every one of a hundred timesteps.</p>
+    <p>And PCA is nothing but: take the covariance matrix of your data, find its eigenvectors, keep
+    the ones with the largest eigenvalues. Those are the directions along which your data actually
+    varies.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Not every matrix has a full set of real eigenvectors — a 2-D rotation has none, since every
+      direction turns. Symmetric matrices always do, with real eigenvalues and orthogonal
+      eigenvectors, which is precisely why PCA is well behaved: covariance matrices are symmetric.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How are PCA and SVD related?</summary>
+  <div class="a">
+    <div class="tldr">PCA is SVD applied to mean-centred data — the principal components are the
+    right singular vectors, and the variance explained is the squared singular values.</div>
+    <p>The textbook route to PCA is: build the covariance matrix
+    <span class="m">C = XᵀX/(n−1)</span> and eigendecompose it. The route everyone actually uses is:
+    take the SVD of the centred X directly, <span class="m">X = UΣVᵀ</span>. Then the columns of V
+    are the principal directions and <span class="m">σᵢ²/(n−1)</span> is the variance along
+    component i.</p>
+    <p>You prefer the SVD route for a numerical reason, and it is worth saying out loud: forming
+    XᵀX <em>squares the condition number</em>. Small singular values become vanishingly small
+    eigenvalues and get lost in floating-point noise. SVD works on X directly and never forms that
+    product, so it stays stable on ill-conditioned data.</p>
+    <p>The deeper statement is the Eckart–Young theorem: truncating the SVD to the top k singular
+    values gives the provably best rank-k approximation of the matrix in both Frobenius and spectral
+    norm. That single theorem underwrites PCA, image compression, latent semantic analysis, and the
+    intuition behind low-rank adapters.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>PCA requires centring, and it is scale-sensitive. Forget to standardise and a feature
+      measured in metres will dominate one measured in kilometres purely because of units. Also: PCA
+      finds directions of maximum <em>variance</em>, which is not the same as directions useful for
+      your <em>label</em>. It is unsupervised, and it will happily discard the low-variance direction
+      that was the only one carrying signal.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why does the L1 penalty produce exact zeros when L2 does not?</summary>
+  <div class="a">
+    <div class="tldr">Because the L1 constraint region is a diamond with corners on the axes, and
+    loss contours expanding outward overwhelmingly first touch a corner — where a coordinate is
+    exactly zero.</div>
+    <p>Set it up as constrained optimisation: minimise the loss subject to ‖w‖ ≤ t. The solution is
+    the point where an expanding loss contour first touches the feasible region. L2's region is a
+    ball — smooth everywhere, so the touch point is generically in the interior of a face and every
+    coordinate is nonzero but shrunk. L1's region is a cross-polytope whose vertices lie on the axes,
+    and a smooth convex contour meeting a polytope generically meets it at a vertex.</p>
+    <p>The calculus version, if they push: the L2 gradient is 2w, which goes to zero as w does — the
+    push toward zero fades exactly when you get there, so you approach but never arrive. The L1
+    subgradient is sign(w), constant magnitude 1 all the way in. There is a finite push right up to
+    the origin, so the coefficient is driven to exactly zero and pinned there.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“So always use lasso for feature selection?” Careful. With correlated predictors lasso picks
+      one of the group essentially arbitrarily and zeroes the rest — refit on a bootstrap sample and
+      you may get a different chosen feature. If you need stable selection use elastic net, which
+      adds an L2 term to keep correlated features in or out together.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why is matrix multiplication the thing GPUs are built for, and where does that bite in LLM serving?</summary>
+  <div class="a">
+    <div class="tldr">Because a matmul is O(n³) arithmetic over O(n²) data — a huge amount of compute
+    per byte loaded — so it is the rare operation that can actually saturate a modern accelerator.</div>
+    <p>Multiplying two n×n matrices is n³ multiply-adds while touching only 3n² numbers. That
+    arithmetic intensity of roughly O(n) is what lets a GPU stay busy instead of waiting on memory.
+    Nearly everything else in a network — activations, normalisation, elementwise adds — has
+    intensity around 1 and is purely memory-bandwidth-bound, which is why kernel fusion pays for
+    itself.</p>
+    <p>Where it bites in serving is the split between the two phases:</p>
+    <ul>
+      <li><strong>Prefill</strong> processes the whole prompt at once. Big matrix times big matrix,
+          compute-bound, near peak FLOPs.</li>
+      <li><strong>Decode</strong> generates one token at a time. Now it is a matrix times a
+          <em>vector</em>: n² arithmetic over n² data, intensity ≈ 1. You are reading the entire model
+          from HBM to produce a single token, so you are bandwidth-bound and the GPU is mostly idle.</li>
+    </ul>
+    <p>Everything in inference optimisation follows from that asymmetry. Continuous batching exists
+    to turn many decode vectors back into a matrix so the weight read is amortised. Quantisation
+    helps decode far more than prefill, because it shrinks the bytes you must move. Speculative
+    decoding works because verifying k drafted tokens costs one weight read instead of k.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“So just make the batch enormous.” The KV cache grows linearly with batch × sequence length,
+      and at long contexts it can exceed the size of the weights. You run out of memory before you
+      run out of compute — which is why paged attention and GQA exist.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The dot product in one sentence, plus two places it appears in a transformer.</li>
+    <li>Why (m×n)(n×p) works and (m×n)(p×n) does not.</li>
+    <li>What the rank of a matrix is, and the LoRA claim stated in terms of rank.</li>
+    <li>Eigenvectors via the globe, and how that explains vanishing gradients in an RNN.</li>
+    <li>The geometric reason L1 gives sparsity — the words “diamond” and “corner” must appear.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#00" target="_top"><span class="k">Back</span>← 00 · How to use this</a>
+  <a href="../index.html#11" target="_top"><span class="k">Next</span>11 · Calculus &amp; minima →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

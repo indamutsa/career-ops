@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tracking &amp; orchestration — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 52</p>
+<h1>Tracking &amp; orchestration
+  <span class="lede">MLflow, Kubeflow, Airflow, DVC. The unglamorous layer that answers one question:
+  <em>can you rebuild this exact model six months from now, and prove which data made it?</em> If you
+  cannot, you cannot debug it, audit it, or safely roll back to it.</span>
+</h1>
+
+<h2 data-n="52.1">Who does what</h2>
+
+<div class="tw">
+<table>
+<tr><th>Tool</th><th>Job</th><th>The thing it actually gives you</th></tr>
+<tr><td>MLflow Tracking</td><td>Log params, metrics, artifacts per run</td><td>A searchable record of
+    every experiment, so "which config gave 0.91?" has an answer</td></tr>
+<tr><td>MLflow Registry</td><td>Version models, stage them, record lineage</td><td>A named,
+    stage-gated artifact that serving pulls — not a file on someone's laptop</td></tr>
+<tr><td>DVC</td><td>Version data and pipelines alongside git</td><td>A commit hash that identifies the
+    data as well as the code</td></tr>
+<tr><td>Airflow</td><td>Schedule and orchestrate DAGs</td><td>Dependency-aware retries, backfills, and
+    an operational view of what ran</td></tr>
+<tr><td>Kubeflow Pipelines</td><td>Containerised ML DAGs on Kubernetes</td><td>Per-step isolation and
+    resources — a GPU for training, two CPUs for evaluation — plus step-level caching</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The distinction interviewers probe</span>
+  <p><strong>Airflow orchestrates tasks; Kubeflow orchestrates containers on Kubernetes.</strong> If
+  your steps are SQL and Python against existing infrastructure, Airflow is simpler and you should not
+  add Kubernetes to your problem list. If steps need different images, different hardware, and
+  reproducible isolation — the usual shape of training — Kubeflow earns its complexity. Many teams run
+  Airflow as the scheduler that <em>triggers</em> Kubeflow pipelines, and that is a perfectly good
+  answer.</p>
+</div>
+
+<h2 data-n="52.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Run vs experiment <span class="tag">basic</span></div>
+    <p>A <em>run</em> is one execution with its params, metrics and artifacts. An <em>experiment</em>
+       groups runs that answer the same question.</p>
+    <p class="wh">Log the git SHA, the data version and the environment on every run, or the record is
+       decoration rather than reproducibility.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Model registry <span class="tag">mid</span></div>
+    <p>A versioned store of model artifacts with stages (staging, production, archived), lineage back
+       to the producing run, and an approval trail.</p>
+    <p class="wh">It creates the deployment boundary: serving pulls "the production version of
+       fraud-scorer", so promoting a model is a registry transition, not a redeploy — and a rollback is
+       the same transition backwards.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Reproducibility <span class="tag">senior</span></div>
+    <p>Same code + same data + same environment + same seed → same model.</p>
+    <p class="warn-inline">All four are required and the middle two are usually missing. "Same data"
+       means a snapshot or a time-bounded query, not "select * from transactions", which returns
+       something different every day.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Lineage <span class="tag">mid</span></div>
+    <p>The traceable chain: raw source → transformation → feature → training run → model version →
+       prediction.</p>
+    <p class="wh">What lets you answer "which models used the field that was wrong?" during an incident,
+       and what regulated industries require you to produce on request.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Pipeline caching <span class="tag">mid</span></div>
+    <p>Skipping a step whose inputs are unchanged, keyed by a hash of code plus inputs.</p>
+    <p class="wh">Turns a six-hour retrain into a twenty-minute iteration when only the last step
+       changed — the difference between experimenting daily and experimenting weekly.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Idempotent, backfillable DAG <span class="tag">senior</span></div>
+    <p>Every task is parameterised by an execution date and writes to a partition determined by it, so
+       re-running any day produces the same result.</p>
+    <p class="warn-inline">The most common Airflow mistake is a task that reads "the last 7 days" from
+       <code>now()</code> instead of from the execution date. It works on schedule and produces silently
+       wrong results on every backfill — the same event-time-versus-processing-time confusion as module
+       50, in a different costume.</p>
+  </div>
+
+</div>
+
+<h2 data-n="52.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>A model in production is behaving oddly. Walk me through investigating it.</summary>
+  <div class="a">
+    <div class="tldr">Establish what is actually deployed, reproduce it, then bisect: is the input
+    different, is the model different, or is the world different? Reproducibility infrastructure is what
+    makes those three separable — without it you are guessing.</div>
+    <p><strong>1 — Identify the artifact.</strong> Which registry version is serving, which run produced
+    it, which commit and which data snapshot that run used. If this takes more than a minute, that is
+    the first finding of the investigation.</p>
+    <p><strong>2 — Reproduce the prediction.</strong> Take a specific bad prediction, pull its logged
+    feature vector, and re-run it locally against the same artifact. If you get a different score, the
+    problem is in serving — wrong version, different preprocessing, a runtime difference. If you get the
+    same score, the model is doing what it was trained to do and the problem is upstream.</p>
+    <p><strong>3 — Compare inputs.</strong> Diff the serving feature distribution against training
+    (module 54). A step change points at a deployment or an upstream schema change; a gradual drift
+    points at the world moving. The <em>shape</em> of the change tells you which, and that distinction
+    determines the fix.</p>
+    <p><strong>4 — Check what changed and when.</strong> Correlate the onset against the deploy log, the
+    upstream release calendar, and the pipeline run history. Most incidents have a cause with a
+    timestamp.</p>
+    <p><strong>5 — Mitigate, then fix.</strong> Roll back to the previous registry version first —
+    restore service, then diagnose at leisure. A rollback you can perform in one command is worth more
+    during an incident than any amount of dashboards.</p>
+    <p><strong>What makes all of this possible:</strong> logged feature vectors per prediction, model
+    version stamped on every response, immutable artifacts in a registry, and pipeline run history. Each
+    is cheap to add before an incident and impossible to add during one.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What does "reproducible" really require?</summary>
+  <div class="a">
+    <div class="tldr">Pinned code, pinned data, pinned environment, and controlled non-determinism — and
+    a bit-identical rebuild is often not achievable, so the honest target is a model that is
+    statistically equivalent and fully traceable.</div>
+    <p><strong>Code</strong> is the easy one: a git SHA, including the pipeline definition, and no
+    uncommitted changes at run time (fail the run if the tree is dirty).</p>
+    <p><strong>Data</strong> is where it usually fails. "The transactions table" is not a version. You
+    need an immutable snapshot, a time-bounded query with an as-of clause, or a content hash — DVC and
+    table formats like Delta or Iceberg exist to give you exactly this. Without it, re-running the same
+    code next month trains on a different dataset and you cannot tell whether a metric change came from
+    your change or from the data.</p>
+    <p><strong>Environment:</strong> a container image by digest, not by tag — <code>:latest</code> is
+    the enemy of reproducibility, and so is an unpinned transitive dependency. Also the hardware, since
+    GPU non-determinism and different reduction orders change results at the last digits.</p>
+    <p><strong>Non-determinism:</strong> seeds for every RNG (Python, NumPy, the framework), and
+    deterministic algorithm flags where the framework offers them. Note that determinism has a real
+    performance cost — cuDNN's deterministic kernels are slower — so it is a deliberate trade, not a
+    free setting.</p>
+    <p><strong>The honest position I would state:</strong> full bit-identity is expensive and often not
+    worth it. What you actually need is (a) the ability to rebuild a statistically equivalent model,
+    and (b) complete traceability from a prediction back to the exact inputs and artifacts that produced
+    it. The second is the auditable requirement and the one that saves you in an incident; the first is
+    what lets you continue the work. I would invest in traceability first and buy determinism only where
+    regulation or debugging demands it.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How would you structure a retraining pipeline?</summary>
+  <div class="a">
+    <div class="tldr">A DAG whose steps are validate data → build features point-in-time → train →
+    evaluate against the incumbent on a temporal holdout → gate → register → deploy behind a canary.
+    The gate is the important part: automation without an automatic <em>stop</em> is a liability.</div>
+    <p><strong>The steps, and what each is allowed to reject:</strong></p>
+    <ul>
+      <li><strong>Data validation.</strong> Row counts, null rates, schema, label distribution. Fails
+          the run before wasting the training compute — and stops garbage from silently becoming a
+          model.</li>
+      <li><strong>Feature build</strong> with a point-in-time join (module 51), from the same definitions
+          serving uses.</li>
+      <li><strong>Train</strong>, logging params, metrics, the data version and the environment to the
+          tracking server.</li>
+      <li><strong>Evaluate</strong> on a temporal holdout — the most recent period, never a random split
+          — <em>and</em> on slices that matter: by segment, by amount band, by channel. An aggregate
+          improvement that hides a regression on a key segment must fail the gate.</li>
+      <li><strong>Gate:</strong> new model must beat the incumbent on the primary metric by a
+          meaningful margin, regress on no critical slice, and pass latency and size checks. If any
+          fails, stop and alert. No auto-promotion on a marginal win.</li>
+      <li><strong>Register and deploy</strong> as a canary (module 53), with automatic rollback on the
+          guard metrics.</li>
+    </ul>
+    <p><strong>On the trigger:</strong> scheduled retraining is simple and predictable; drift- or
+    performance-triggered retraining is more responsive but risks retraining on a bad week. I would run
+    a schedule as the baseline with a drift trigger able to pull it forward, and I would require the
+    same gate either way.</p>
+    <p><strong>The failure mode to name:</strong> a feedback loop. If the model's own decisions filter
+    which labels you observe — you only learn the outcome of transactions you approved — then retraining
+    on that data narrows the model's world every cycle. The standard mitigation is a small randomised
+    holdout that bypasses the model, so you keep observing the counterfactual. It costs real money in
+    fraud losses and it is what stops the pipeline degrading in a way no metric can see.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Which of the five tools does which job, in one line each.</li>
+    <li>Airflow vs Kubeflow, and when the extra complexity is justified.</li>
+    <li>The four ingredients of reproducibility, and which two are usually missing.</li>
+    <li>The five-step production-incident investigation.</li>
+    <li>The retraining DAG, and the three conditions in the promotion gate.</li>
+    <li>The feedback-loop failure and the randomised-holdout fix.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#51" target="_top"><span class="k">Back</span>← 51 · Feature stores</a>
+  <a href="../index.html#53" target="_top"><span class="k">Next</span>53 · Deployment →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

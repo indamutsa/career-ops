@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domain post-training pipeline — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part G · Walkthrough · Module 74</p>
+<h1>Domain post-training pipeline
+  <span class="lede">Taking a general open-weights model and making it good at one organisation's work.
+  The interesting content is not the training algorithm — it is the data pipeline that feeds it and the
+  evaluation harness that decides whether the new model is allowed to replace the old one.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to use this module</span>
+  <p>This is where module 44 cashes out. Two things carry the answer: <strong>the honest case for not
+  training at all</strong>, and <strong>the evaluation harness</strong>. Candidates who open with
+  "I would fine-tune it" and never mention what would prove it worked are marked down every time.</p>
+</div>
+
+<h2 data-n="74.1">The prompt, and the first four minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">The prompt</span>
+  <p><em>"We want a model that is genuinely good at our domain. Design the post-training pipeline."</em></p>
+</div>
+
+<p><strong>Post-training</strong> is everything done to a model after the expensive general pre-training
+run — the stage that turns a model which merely continues text into one that follows instructions and
+behaves the way you want. You are almost never the one pre-training; you are almost always the one
+post-training.</p>
+
+<div class="tw">
+<table>
+<tr><th>What to ask</th><th>Why it changes the design</th></tr>
+<tr><td>What can the current model <em>not</em> do?</td><td>The whole design depends on whether the gap is
+    missing knowledge, wrong format, wrong tone, or wrong reasoning — and only some of those are fixed by
+    training.</td></tr>
+<tr><td>Is there an automatic way to check an answer is right?</td><td>If yes, reinforcement learning with
+    a verifier is on the table and is the strongest option available. If no, it is not.</td></tr>
+<tr><td>How much labelled data exists, and who can produce more?</td><td>Expert time is the real budget
+    line, not GPU hours.</td></tr>
+<tr><td>How often does the domain change?</td><td>Fast-changing facts belong in retrieval, not in
+    weights.</td></tr>
+<tr><td>What must never regress?</td><td>Defines the guard suite. Without it you will ship a model that is
+    better at the new task and worse at three old ones.</td></tr>
+<tr><td>Deployment constraints — size, latency, on-premise?</td><td>Decides base-model size and whether
+    adapters or a full fine-tune.</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">Say this before you design anything</span>
+  <p>Post-training is the <em>last</em> option, not the first. Prompting and few-shot examples cost hours;
+  retrieval (module 71) fixes missing or changing knowledge and can be updated the same afternoon;
+  fine-tuning costs weeks and produces an artefact you must then evaluate, version, serve and re-do
+  every time the base model improves. <strong>Fine-tuning teaches behaviour — format, tone, task
+  structure, domain reasoning. It is a poor and expensive way to teach facts.</strong> Establishing that
+  boundary first is the difference between a senior answer and an enthusiastic one.</p>
+</div>
+
+<h2 data-n="74.2">Architecture</h2>
+
+<pre><code>  DATA
+  ┌──────────────────────────────────────────────────────────────┐
+  │ existing logs ─┐                                             │
+  │ expert-written ├─► curate ─► deduplicate ─► decontaminate ──┐ │
+  │ synthetic gen ─┘   (filter,   (near-dup     (remove eval    │ │
+  │                     grade)     removal)      overlap)       │ │
+  └─────────────────────────────────────────────────────────────┼─┘
+                                                                ▼
+  TRAIN                        ┌──────────────────────────────────┐
+  base model ──► SFT ─────────►│ preference tuning ──► RL w/       │
+                 (imitate      │ (DPO: prefer A     │  verifier    │
+                  good answers)│  over B)           │ (only if     │
+                               │                    │  checkable)  │
+                               └──────────────────────────────────┘
+                                                                ▼
+  EVALUATE   ┌─────────────────────────────────────────────────────┐
+             │ task suite │ guard suite │ safety │ human review    │
+             │ (did it    │ (did it     │        │ (a sample, on   │
+             │  improve)  │  regress)   │        │  every release) │
+             └─────────────────────────────────────────────────────┘
+                                     │ gate: pass all four
+                                     ▼
+  RELEASE    registry ─► shadow ─► canary 5/25/100 % ─► default
+                                     │
+                                     └─► production traces ─► next round's data</code></pre>
+
+<p>The loop at the bottom is the point of the whole diagram: production traces become the next round's
+training data. A post-training pipeline is not a project with an end date, it is a flywheel — and saying
+so reframes the answer from "how do I fine-tune" to "how does this system improve every month".</p>
+
+<h2 data-n="74.3">Data — where the quality actually comes from</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Curation beats volume <span class="tag">the headline</span></div>
+    <p>A few thousand carefully written examples routinely beat hundreds of thousands of scraped ones.
+       Supervised fine-tuning teaches by imitation, so the model copies whatever is in the data —
+       including its sloppiness, its hedging and its formatting mistakes.</p>
+    <p class="an">It is apprenticeship, not reading. An apprentice who watches one excellent craftsman
+       for a month learns more than one who watches a thousand mediocre ones for a year, because they
+       cannot tell which habits to copy.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Synthetic data, with a grader <span class="tag">senior</span></div>
+    <p>A stronger model generates candidate answers, and a grader — a rubric-driven model check, a test
+       suite, or a human spot-check — keeps only the ones that pass. Generation is cheap; the grader is
+       what makes the data worth training on.</p>
+    <p class="warn-inline">Unfiltered self-generated data degrades the model over successive rounds: it
+       narrows onto its own habits and loses the variety that made it useful. The filter is not an
+       optimisation, it is the thing preventing collapse.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Decontamination <span class="tag">the one people forget</span></div>
+    <p>Removing anything from the training set that also appears in the evaluation set — including
+       near-duplicates, not just exact matches.</p>
+    <p class="wh">Skip it and your benchmark score rises while real performance does not, which is
+       precisely the failure that gets caught in the interview and then, later, in production. It is the
+       same disease as data leakage in classical ML (module 20), and worth naming as such.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Mixing in general data <span class="tag">senior</span></div>
+    <p>Training only on domain data causes <em>catastrophic forgetting</em>: the model gets better at your
+       task and measurably worse at everything else, including basic instruction-following.</p>
+    <p class="wh">The standard remedy is a replay mixture — keep a proportion of general instruction data
+       in every training run — plus a guard suite that would catch the regression if the mixture is wrong.</p>
+  </div>
+
+</div>
+
+<h2 data-n="74.4">The three training stages, and when each applies</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>What it does</th><th>Use it when</th><th>Cost</th></tr>
+<tr><td><strong>SFT</strong><br>supervised fine-tuning</td><td>Imitate written examples of good answers —
+    plain supervised learning on (prompt, ideal answer) pairs</td><td>Always first. It fixes format, tone
+    and task structure</td><td>Low — hours on a few GPUs with adapters</td></tr>
+<tr><td><strong>Preference tuning</strong><br>DPO and relatives</td><td>Learn from pairs where a human
+    said "this answer is better than that one", pushing probability toward the preferred answer and away
+    from the rejected one</td><td>When quality is a matter of judgment that is easier to compare than to
+    write out</td><td>Medium — the pairs are the expense</td></tr>
+<tr><td><strong>RL with a verifier</strong><br>RLVR, GRPO</td><td>Sample several answers, score each with
+    an automatic checker, reinforce what scored well</td><td>Only when correctness is machine-checkable:
+    code that must pass tests, maths with a known result, SQL that must return the right rows, output
+    that must match a schema</td><td>High — many samples per prompt</td></tr>
+</table>
+</div>
+
+<p><strong>Why the verifier changes everything.</strong> Preference tuning learns from a model of human
+opinion, and any such model can be gamed — the policy discovers answers that score well without being
+better, which is <em>reward hacking</em>. A verifier is not an opinion: the tests pass or they do not.
+That removes the gaming surface, which is why verifiable domains have progressed so much faster. The
+honest follow-up is that most business tasks are not verifiable, and pretending otherwise by writing a
+crude checker just moves the hacking target — the model learns to satisfy the checker.</p>
+
+<p><strong>Adapters versus full fine-tuning.</strong> LoRA trains a small number of extra parameters and
+leaves the base weights untouched. It is cheaper, it forgets less because the original model is still
+intact underneath, and — the operational argument that usually decides it — many adapters can be served
+from one base model on one fleet (module 73). Reach for a full fine-tune only when adapters have been
+tried and measurably fall short.</p>
+
+<div class="viz" data-viz="kl"></div>
+
+<h2 data-n="74.5">Evaluation — the part that is actually the deliverable</h2>
+
+<div class="tw">
+<table>
+<tr><th>Suite</th><th>What it answers</th><th>How it is built</th></tr>
+<tr><td><strong>Task</strong></td><td>Did it get better at the thing we trained it for?</td><td>A few
+    hundred held-out real examples with expert-approved answers; scored automatically where possible,
+    by a calibrated judge otherwise</td></tr>
+<tr><td><strong>Guard</strong></td><td>Did it get worse at anything else?</td><td>General
+    instruction-following, reasoning, refusals, format compliance — run unchanged on every candidate
+    model, with a pass threshold agreed in advance</td></tr>
+<tr><td><strong>Safety</strong></td><td>Did fine-tuning weaken the safety behaviour?</td><td>Adversarial
+    prompts and known jailbreak patterns; note that ordinary domain fine-tuning is known to erode safety
+    behaviour as a side effect, so this suite is not optional</td></tr>
+<tr><td><strong>Human</strong></td><td>Do the people who will use it prefer it?</td><td>A blind
+    side-by-side sample against the incumbent, on real prompts, every release</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The trap: the judge that moves with the model</span>
+  <p>If a model scores the outputs, that judge is part of your measuring instrument, and an instrument
+  that drifts measures nothing. Pin the judge model and its prompt by version, keep a fixed set of
+  human-labelled examples to re-check agreement whenever either changes, and never compare a score
+  produced under one judge version with a score produced under another. Judges also carry known biases —
+  toward longer answers, toward their own writing style, toward whichever answer came first — so control
+  for length and randomise the order.</p>
+  <p>State the reporting discipline too: report a <strong>confidence interval</strong>, not a single
+  number. On a 200-example suite a two-point difference is noise, and shipping on noise is how a pipeline
+  quietly drifts backwards over several releases while every individual release looked like a win.</p>
+</div>
+
+<h2 data-n="74.6">Operations</h2>
+
+<ul>
+  <li><strong>Everything versioned together.</strong> A model artefact is only reproducible if the data
+      snapshot, the mixture proportions, the base-model version, the hyperparameters, the evaluation
+      suite version and the judge version are all recorded with it. Experiment tracking exists for this
+      (module 52); "which data produced this checkpoint" must be answerable a year later.</li>
+  <li><strong>The registry is the gate.</strong> A candidate model enters the registry with its full
+      scorecard attached, and promotion to default is a deliberate, recorded decision — not whoever
+      copied a checkpoint to the serving bucket last.</li>
+  <li><strong>Rollout is the same as any model.</strong> Shadow for latency, canary for behaviour, keep
+      the previous version warm and make rollback a single action (module 53).</li>
+  <li><strong>Monitor the behaviour, not just the box.</strong> Output length distribution, refusal rate,
+      format-compliance rate, tool-call validity, user edit and retry rates. These move long before
+      anyone files a complaint.</li>
+  <li><strong>Close the loop with judgment.</strong> Production traces feed the next round — but only
+      after filtering, or you train on the model's own worst habits and amplify them.</li>
+</ul>
+
+<h2 data-n="74.7">Delivering this in 45 minutes</h2>
+
+<div class="tw">
+<table>
+<tr><th>Minutes</th><th>What you are doing</th></tr>
+<tr><td>0–5</td><td>Requirements, and the case for prompting or retrieval before training</td></tr>
+<tr><td>5–10</td><td>The pipeline diagram, ending on the traces-to-data loop</td></tr>
+<tr><td>10–20</td><td>Data: curation, synthetic with a grader, decontamination, replay mixture</td></tr>
+<tr><td>20–28</td><td>SFT → preference tuning → verifier RL, and the criterion for each</td></tr>
+<tr><td>28–38</td><td>The four evaluation suites, judge pinning, confidence intervals</td></tr>
+<tr><td>38–45</td><td>Versioning, registry gate, rollout, behavioural monitoring</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">If you only get five minutes</span>
+  <p>"First I would establish that training is warranted at all — prompting and retrieval are far cheaper,
+  and fine-tuning teaches behaviour rather than facts, so if the gap is missing or changing knowledge it
+  belongs in retrieval. Assuming it is a behaviour gap: the pipeline is a data stage, a training stage
+  and an evaluation gate. Data is where the quality comes from — a few thousand curated examples beat
+  hundreds of thousands of scraped ones, synthetic data is only useful behind a grader, I would
+  decontaminate against the eval set, and I would keep general data in the mixture so the model does not
+  forget everything else. Training is supervised fine-tuning first, preference tuning where quality is a
+  judgment call, and reinforcement learning with a verifier only where correctness is machine-checkable —
+  because a verifier cannot be gamed the way a learned reward model can. LoRA adapters unless proven
+  insufficient, so one base model can serve every tenant. Then the part that is really the deliverable:
+  four evaluation suites — task, regression guard, safety, and blind human comparison — with the judge
+  model pinned by version and results reported with confidence intervals, because a two-point difference
+  on 200 examples is noise. Everything versioned together in a registry, promoted by canary, and
+  production traces filtered back into the next round."</p>
+</div>
+
+<h2 data-n="74.8">Callbacks</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>Modules it draws on</th></tr>
+<tr><td>Cross-entropy, the next-token objective</td><td>13 information · 43 pretraining</td></tr>
+<tr><td>SFT, RLHF, DPO, RLVR, GRPO</td><td>44 post-training</td></tr>
+<tr><td>Policy, reward, exploration, reward hacking</td><td>34 reinforcement learning</td></tr>
+<tr><td>LoRA and adapter serving</td><td>45 inference · 73 LLM serving</td></tr>
+<tr><td>Leakage and decontamination</td><td>20 the learning problem</td></tr>
+<tr><td>Judge calibration, hallucination</td><td>46 LLM systems · 71 RAG</td></tr>
+<tr><td>Confidence intervals, evaluation noise</td><td>12 probability · 25 metrics</td></tr>
+<tr><td>Experiment tracking, registry, lineage</td><td>52 tracking &amp; orchestration</td></tr>
+<tr><td>Shadow, canary, rollback</td><td>53 deployment</td></tr>
+<tr><td>Behavioural monitoring</td><td>54 monitoring</td></tr>
+<tr><td>Safety erosion, model cards</td><td>55 governance</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint</h4>
+  <ul>
+    <li>Give the argument for <em>not</em> fine-tuning, in two sentences, without sounding evasive.</li>
+    <li>State what fine-tuning teaches well and what it teaches badly.</li>
+    <li>Name the three training stages and the single criterion that selects each.</li>
+    <li>Explain why a verifier is stronger than a learned reward model, and where that stops applying.</li>
+    <li>List the four evaluation suites and say what each one alone would miss.</li>
+    <li>Explain why the judge model must be pinned, and what a two-point score difference means.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#73" target="_top"><span class="k">Back</span>← 73 · LLM serving platform</a>
+  <a href="../index.html#75" target="_top"><span class="k">Next</span>75 · Production agent →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

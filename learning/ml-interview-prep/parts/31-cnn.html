@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convolutional networks — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part C · Deep learning · Module 31</p>
+<h1>Convolutional networks
+  <span class="lede">The architecture that started the deep-learning era. For an LLM-focused role this
+  is background rather than the main event — but the ideas in it (parameter sharing, inductive bias,
+  receptive fields, the 1×1 bottleneck) recur constantly, and "why did transformers beat CNNs" is a
+  question you should be able to answer properly.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to read this module</span>
+  <p>One of the two modules you may legitimately skim if time is short (the other is 33). Read
+  31.1–31.4 and the questions on equivariance and CNN-vs-ViT; the architecture timeline is
+  recognition-level knowledge.</p>
+</div>
+
+<h2 data-n="31.1">Why a dense layer is the wrong tool for an image</h2>
+
+<p>Take a modest 224×224 colour image. Flattened, that is 150,528 numbers. A single dense hidden
+layer of 1,000 units needs 150 million weights — for one layer — and it would treat the pixel at
+(0,0) and the pixel at (0,1) as entirely unrelated inputs, learning their relationship from scratch
+if at all.</p>
+
+<p>Convolution encodes two assumptions that fix both problems at once:</p>
+
+<ul>
+  <li><strong>Locality.</strong> A meaningful feature — an edge, a corner — is made of pixels that are
+      near each other. So a unit only needs to look at a small window.</li>
+  <li><strong>Translation equivariance via parameter sharing.</strong> An edge detector that works in
+      the top-left works in the bottom-right, so use the <em>same</em> weights everywhere. One 3×3
+      filter is 9 weights regardless of image size.</li>
+</ul>
+
+<p>That is the inductive bias from module 20, stated concretely: the architecture asserts something
+true about images before any data arrives, and gets enormous sample efficiency in return.</p>
+
+<h2 data-n="31.2">The convolution, seen</h2>
+
+<div class="viz" data-viz="conv"></div>
+
+<h2 data-n="31.3">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Kernel / filter <span class="tag">basic</span></div>
+    <p>The small grid of learned weights — usually 3×3 — that slides across the input.</p>
+    <p class="an">A rubber stamp you press at every position, recording how well the pattern under it
+       matches the pattern on the stamp.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Feature map <span class="tag">basic</span></div>
+    <p>The output of one filter across the whole input: a map of where that filter's pattern occurs.</p>
+    <p class="wh">A layer with 64 filters produces 64 feature maps — 64 channels for the next layer.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Channels <span class="tag">basic</span></div>
+    <p>The depth of a tensor. 3 at the input for RGB; hundreds in the middle of a network.</p>
+    <p class="warn-inline">A kernel spans <em>all</em> input channels. A "3×3" filter over 64 input
+       channels really has 3×3×64 = 576 weights.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Stride <span class="tag">basic</span></div>
+    <p>How far the window moves per step. Stride 2 halves the output's spatial size.</p>
+    <p class="wh">The modern alternative to pooling for downsampling — a strided convolution learns
+       how to reduce rather than applying a fixed rule.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Padding <span class="tag">basic</span></div>
+    <p><em>valid</em> = no padding, output shrinks. <em>same</em> = pad with zeros so the output keeps
+       the input's size.</p>
+    <p class="wh">Without padding, a 3×3 conv shrinks each side by 2 per layer, so a deep stack would
+       run out of image. It also under-uses the border pixels.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Pooling <span class="tag">basic</span></div>
+    <p>Downsample by taking the max (or mean) of each small region.</p>
+    <p class="an">Squinting. Detail disappears, the overall arrangement survives.</p>
+    <p class="wh">Max pooling adds a little translation <em>invariance</em>: shift the input by one
+       pixel and the max over a 2×2 window frequently does not change.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Receptive field <span class="tag">mid</span></div>
+    <p>The region of the original input that influences one particular unit deep in the network.</p>
+    <p class="wh">It grows with depth: two stacked 3×3 layers see 5×5, three see 7×7. A unit cannot
+       use information outside its receptive field, so a network that must reason about the whole
+       image needs enough depth (or dilation, or global pooling) to see it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Equivariance vs invariance <span class="tag">senior</span></div>
+    <p><strong>Equivariant:</strong> move the input, the output moves the same way. <strong>Invariant:
+       </strong> move the input, the output does not change.</p>
+    <p class="wh">Convolution is equivariant. Pooling and global average pooling convert that
+       gradually into invariance. Getting this distinction right is a common senior-level check.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">1×1 convolution <span class="tag">senior</span></div>
+    <p>A convolution with no spatial extent. It mixes <em>channels</em> at each position and nothing
+       else.</p>
+    <p class="wh">The cheap way to change channel count — the bottleneck in ResNet and Inception. It
+       is exactly a per-position dense layer, which is also what a transformer's FFN is.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Depthwise separable conv <span class="tag">senior</span></div>
+    <p>Split a convolution into a spatial pass per channel, then a 1×1 pass to mix channels.</p>
+    <p class="wh">Roughly 8–9× fewer operations than a full 3×3 conv for similar accuracy. The core of
+       MobileNet, and the reason on-device vision works at all.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dilated / atrous conv <span class="tag">mid</span></div>
+    <p>A kernel with gaps, so it covers a wider area with the same number of weights.</p>
+    <p class="wh">Grows the receptive field without losing resolution — used in segmentation and in
+       WaveNet-style audio models.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Global average pooling <span class="tag">mid</span></div>
+    <p>Average each feature map down to a single number, giving one vector per image.</p>
+    <p class="wh">Replaced the enormous dense layers at the end of AlexNet/VGG. Far fewer parameters,
+       and it makes the network accept any input size.</p>
+  </div>
+
+</div>
+
+<h2 data-n="31.4">The architecture timeline — what each one contributed</h2>
+
+<div class="tw">
+<table>
+<tr><th>Model</th><th>Year</th><th>The idea it added</th></tr>
+<tr><td>LeNet-5</td><td>1998</td><td>The template: conv, pool, conv, pool, dense. Read cheques for a
+    decade</td></tr>
+<tr><td><strong>AlexNet</strong></td><td>2012</td><td>The moment the field turned. ReLU instead of
+    tanh, dropout, aggressive augmentation, and two GPUs. Halved the ImageNet error rate</td></tr>
+<tr><td>VGG</td><td>2014</td><td>Depth via uniform 3×3 stacks — established that small kernels
+    stacked deep beat large kernels</td></tr>
+<tr><td>Inception / GoogLeNet</td><td>2014</td><td>Multiple kernel sizes in parallel, plus the 1×1
+    bottleneck to keep it affordable</td></tr>
+<tr><td><strong>ResNet</strong></td><td>2015</td><td>Residual connections. Made 150+ layers trainable
+    and became the default backbone for years — module 30.6</td></tr>
+<tr><td>DenseNet</td><td>2016</td><td>Every layer connected to every later layer; strong feature
+    reuse</td></tr>
+<tr><td>MobileNet</td><td>2017</td><td>Depthwise separable convolutions; CNNs on phones</td></tr>
+<tr><td>EfficientNet</td><td>2019</td><td>Compound scaling — depth, width and resolution scaled
+    together by a fixed rule rather than one at a time</td></tr>
+<tr><td>Vision Transformer</td><td>2020</td><td>Drop convolution entirely: cut the image into patches
+    and run a transformer. Beats CNNs given enough data</td></tr>
+<tr><td>ConvNeXt</td><td>2022</td><td>A CNN modernised with transformer-era training recipes,
+    matching ViT — evidence that much of the gap was the recipe, not the architecture</td></tr>
+</table>
+</div>
+
+<h2 data-n="31.5">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What does a convolutional layer do that a dense layer does not?</summary>
+  <div class="a">
+    <div class="tldr">It looks at small local windows and reuses the same weights at every position.
+    That gives it a fraction of the parameters and a built-in assumption that a pattern means the same
+    thing wherever it appears.</div>
+    <p>The arithmetic makes it vivid. A dense layer connecting a 224×224×3 image to 1,000 units needs
+    about 150 million weights. A 3×3 convolution with 64 filters over 3 input channels needs
+    3×3×3×64 = 1,728 — five orders of magnitude fewer, and it works on any input size.</p>
+    <p>The two assumptions that buy that: <strong>locality</strong>, since an edge is made of adjacent
+    pixels, so a unit does not need to see the whole image; and <strong>parameter sharing</strong>,
+    since a vertical-edge detector is useful everywhere, so the same nine weights apply at every
+    position.</p>
+    <p>And the consequence worth stating: with far fewer parameters and a correct prior, a CNN
+    generalises from far less data than a dense network could. That is the inductive-bias argument in
+    its most concrete form.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How many parameters are in a 3×3 conv layer with 64 input and 128 output channels?</summary>
+  <div class="a">
+    <div class="tldr">3 × 3 × 64 × 128 + 128 = 73,856 — kernel area times input channels times output
+    channels, plus one bias per output channel.</div>
+    <p>The step people miss is that each filter spans <em>all</em> input channels. A "3×3 filter" here
+    is really a 3×3×64 volume, so it has 576 weights; there are 128 such filters; plus 128 biases.</p>
+    <p>Two things worth adding, because they are what the question is really probing:</p>
+    <ul>
+      <li><strong>Parameter count is independent of input resolution.</strong> The same layer applies
+          to a 32×32 or a 512×512 image. What changes with resolution is the compute and the
+          activation memory, not the parameters — and activation memory is usually what actually
+          limits your batch size.</li>
+      <li><strong>FLOPs are a different question.</strong> Roughly output positions × 3 × 3 × 64 × 128
+          multiply-adds. At 56×56 output that is around 231 million MACs for this one layer. Parameters
+          and compute must be reasoned about separately, which is exactly the point behind depthwise
+          separable convolutions.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why stack two 3×3 convolutions instead of using one 5×5?</summary>
+  <div class="a">
+    <div class="tldr">Same receptive field, fewer parameters, and an extra non-linearity in between.</div>
+    <p>Two stacked 3×3 layers see a 5×5 region of the input, so their receptive field matches. But
+    per channel pair, two 3×3s cost 18 weights against a 5×5's 25 — about 28 % fewer — and the gap
+    widens for 7×7, where three stacked 3×3s cost 27 against 49.</p>
+    <p>The more interesting benefit is the <strong>non-linearity between them</strong>. A 5×5 layer is
+    one linear operation followed by one activation. Two 3×3 layers give two activations, so the
+    composite function is strictly more expressive over the same spatial extent. That was VGG's core
+    finding and it is why 3×3 became the universal default.</p>
+    <p>The boundary I would add: this is not unconditional. Very large kernels came back in ConvNeXt
+    and RepLKNet, where 7×7 depthwise convolutions work well — because a depthwise kernel's cost grows
+    much more slowly with area, so the parameter argument that killed large kernels no longer applies.
+    The rule was a consequence of the cost model, and the cost model changed.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Is a CNN translation invariant?</summary>
+  <div class="a">
+    <div class="tldr">No — convolution is <em>equivariant</em>, not invariant. Shift the input and the
+    feature map shifts identically. Invariance is approximated later, by pooling and by global
+    average pooling.</div>
+    <p>The distinction matters and it is a common trap: equivariant means f(shift(x)) = shift(f(x)) —
+    the information moves with the input. Invariant means f(shift(x)) = f(x) — the output does not care
+    where the thing is. A classifier wants invariance; a segmentation model wants equivariance, since
+    it must report <em>where</em>.</p>
+    <p>How invariance actually gets built: max pooling gives a little, since the max over a 2×2 window
+    often survives a one-pixel shift. Stacking many of those accumulates more. Global average pooling
+    at the head gives full invariance to translation by collapsing all spatial positions. So a
+    classification CNN is equivariant in its body and invariant at its head, by construction.</p>
+    <p><strong>The important caveat</strong>, from Azulay and Weiss and from Zhang's work on
+    anti-aliasing: modern CNNs are much <em>less</em> shift-invariant than people assume. Strided
+    convolutions and pooling violate the Nyquist criterion, so shifting an image by one pixel can
+    change the prediction substantially. Blurring before downsampling — anti-aliased pooling —
+    measurably improves it. That is a good detail to have: the textbook property is approximate, and
+    in a way that has been measured and partly fixed.</p>
+    <p>And the honest note about the rest: CNNs are not invariant to rotation or scale at all. Those
+    come from data augmentation, not architecture, which is why augmentation is doing more work than
+    it is usually credited with.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is a 1×1 convolution for?</summary>
+  <div class="a">
+    <div class="tldr">It mixes channels at each spatial position without touching the neighbourhood —
+    a cheap way to change channel count, and exactly a per-position dense layer.</div>
+    <p>Three jobs it does:</p>
+    <ul>
+      <li><strong>Dimensionality reduction.</strong> The bottleneck pattern in ResNet: 1×1 down to 64
+          channels, do the expensive 3×3 there, 1×1 back up to 256. The 3×3 then operates on a quarter
+          of the channels, which is where most of the saving comes from.</li>
+      <li><strong>Channel mixing.</strong> A depthwise convolution processes each channel separately
+          and never combines them; the 1×1 that follows is what does the combining. That two-step split
+          is the whole of depthwise separable convolution.</li>
+      <li><strong>Adding non-linearity cheaply.</strong> Each 1×1 comes with an activation, so it
+          increases depth and expressiveness for very little compute.</li>
+    </ul>
+    <p>The connection worth drawing: a 1×1 convolution over C channels <em>is</em> a dense layer applied
+    independently at every position with shared weights. Which means a transformer's position-wise FFN
+    is the same operation on a sequence instead of a grid. Noticing that unification is the kind of
+    thing that reads as real understanding rather than memorisation.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Vision transformers beat CNNs. Does that mean convolution was a mistake?</summary>
+  <div class="a">
+    <div class="tldr">No — it means a strong inductive bias is worth a lot when data is scarce and
+    becomes a constraint when data is abundant. ViTs beat CNNs above a data threshold and lose below
+    it, which is exactly what that trade predicts.</div>
+    <p><strong>The empirical shape,</strong> from the original ViT paper: trained on ImageNet-1k alone,
+    ViT <em>underperforms</em> a comparable ResNet. Pretrained on ImageNet-21k it draws level. On
+    JFT-300M it wins clearly. The architecture did not change; the data did.</p>
+    <p><strong>Why:</strong> a CNN has locality and translation equivariance hard-coded. Those are true
+    facts about images, given for free, and they save an enormous amount of data. A ViT assumes almost
+    nothing — self-attention lets any patch attend to any other from layer 1 — so it must learn that
+    locality matters. With enough data it learns something better than the hand-coded prior, including
+    long-range relationships a CNN can only reach after many layers of receptive-field growth. With too
+    little data it never gets there.</p>
+    <p><strong>The complication that makes this a good answer rather than a neat one:</strong>
+    ConvNeXt took a plain ResNet and applied the training recipe that came with transformers — AdamW,
+    heavy augmentation, long schedules, LayerNorm, larger depthwise kernels — and matched ViT
+    performance. So a substantial part of the apparent architectural gap was actually a training-recipe
+    gap. The honest summary is that at scale, architecture matters less than data, compute and recipe —
+    and that hybrid designs like Swin, which reintroduce locality into attention, are what most
+    production vision systems actually use.</p>
+    <p><strong>What I would take from it for an LLM role:</strong> the same argument runs in reverse
+    for language. Transformers won there earlier and more decisively because text data was already
+    abundant and because the useful dependencies genuinely are long-range, so a locality prior would
+    have been a false assumption rather than a helpful one.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Locality and parameter sharing, and the parameter-count comparison against a dense layer.</li>
+    <li>Compute a conv layer's parameter count including the channel dimension.</li>
+    <li>Why two 3×3s beat one 5×5 — and why that stopped being unconditional.</li>
+    <li>Equivariance vs invariance, and where each one comes from in a CNN.</li>
+    <li>The three jobs of a 1×1 convolution, and its equivalence to a transformer FFN.</li>
+    <li>The ViT data-threshold argument, plus the ConvNeXt caveat.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#30" target="_top"><span class="k">Back</span>← 30 · Neural networks</a>
+  <a href="../index.html#32" target="_top"><span class="k">Next</span>32 · RNN, LSTM, attention →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

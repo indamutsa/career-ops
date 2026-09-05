@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neural networks — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part C · Deep learning · Module 30</p>
+<h1>Neural networks
+  <span class="lede">A neuron is a logistic regression. A network is many of them stacked so that
+  later ones can use what earlier ones found. Everything else in deep learning — activations,
+  initialisation, normalisation, residuals — exists to make that stack trainable, and each one fixes
+  a specific failure you should be able to name.</span>
+</h1>
+
+<h2 data-n="30.1">From module 21 to here, in one step</h2>
+
+<p>Logistic regression computes σ(w·x + b). A neuron computes f(w·x + b) for some non-linear f. That
+is the entire difference at the level of a single unit.</p>
+
+<p>The idea that makes it powerful is stacking. Layer 1 learns simple combinations of the raw inputs.
+Layer 2 learns combinations <em>of those</em>. By layer 5 the features being combined are abstract
+enough that the final classifier's job is easy.</p>
+
+<div class="box analogy">
+  <span class="lbl">The founding idea</span>
+  <p>Recognising a face. The first layer notices edges. The second combines edges into corners and
+  curves. The third combines those into eyes and noses. The fourth combines those into faces.</p>
+  <p>Nobody programmed "an eye is two curves and a dark circle" — the hierarchy is what the network
+  discovers because the architecture makes hierarchy the cheapest way to reduce the loss. That
+  <strong>learned feature hierarchy</strong> is the single thing deep learning brought that classical
+  ML did not have, and it is why the field stopped hand-engineering features.</p>
+</div>
+
+<h2 data-n="30.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Neuron / unit <span class="tag">basic</span>
+        <span class="sym">f(w·x + b)</span></div>
+    <p>Weighted sum of the inputs, plus a bias, through a non-linear function.</p>
+    <p class="wh">The bias shifts the threshold. Without it every neuron is forced through the origin,
+       which costs real capacity.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Layer / hidden layer <span class="tag">basic</span></div>
+    <p>A set of neurons computed in parallel from the same input. "Hidden" only means it is not the
+       input or the output.</p>
+    <p class="wh">One layer is a matrix multiply plus a bias plus an elementwise function — which is
+       why GPUs matter, and why module 10's arithmetic intensity argument applies.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">MLP / feedforward network <span class="tag">basic</span></div>
+    <p>Fully connected layers in sequence. The default architecture when the input has no special
+       structure.</p>
+    <p class="wh">Two-thirds of a transformer's parameters are MLPs. It never went away.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Activation function <span class="tag">basic</span></div>
+    <p>The non-linearity. Without one, a stack of linear layers collapses into a single linear layer —
+       see 30.3.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Logits <span class="tag">basic</span></div>
+    <p>The network's raw output scores, before they are turned into probabilities. Any real number,
+       positive or negative — a logit of 4.2 means "strongly this class", −1.3 means "probably not".</p>
+    <p class="wh">Losses take logits, not probabilities, because the fused softmax + cross-entropy is
+       numerically stable and the separated version is not.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Softmax <span class="tag">basic</span></div>
+    <p>The function that converts a row of logits into probabilities: exponentiate each score, then
+       divide by the total, so the results are all positive and sum to exactly 1.</p>
+    <p class="an">It is a voting rule that rewards confidence. Raising scores to the power of
+       <em>e</em> before sharing out the vote means a score two points above its rivals does not get
+       slightly more weight — it gets about seven times more. Hence "soft max": it mostly picks the
+       winner, but leaves the runners-up a share rather than zeroing them.</p>
+    <p class="wh">Every classifier head, every attention row, every next-token distribution. When the
+       gaps between logits grow large the softmax <em>saturates</em> — one probability approaches 1 and
+       the rest approach 0 — and a saturated softmax passes almost no gradient back, which is the
+       reason attention divides by √d (module 40).</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Forward pass / backward pass <span class="tag">basic</span></div>
+    <p>Forward: inputs to prediction to loss. Backward: the chain rule applied in reverse to get every
+       parameter's gradient.</p>
+    <p class="wh">Backward costs roughly twice the forward pass, which is why the standard estimate
+       for training compute is ≈3× a forward pass per token.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Universal approximation <span class="tag">mid</span></div>
+    <p>A single hidden layer, made wide enough, can approximate any continuous function on a bounded
+       region to any accuracy.</p>
+    <p class="warn-inline">An existence theorem only. It says nothing about how wide, whether
+       gradient descent will find it, or how much data it needs.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Initialisation <span class="tag">mid</span></div>
+    <p>The random starting values of the weights. Xavier/Glorot for symmetric activations, He/Kaiming
+       for ReLU.</p>
+    <p class="an">Setting the volume before playing a track through twenty amplifiers in series. A
+       little too loud each time compounds into distortion; a little too quiet and nothing comes out
+       the far end.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Vanishing / exploding gradients <span class="tag">mid</span></div>
+    <p>Gradients shrink or grow multiplicatively as they pass back through layers, so early layers
+       either stop learning or blow up.</p>
+    <p class="wh">Module 11's chain-rule product argument, arriving in practice. The fixes are
+       ReLU, careful initialisation, normalisation, residuals and gradient clipping.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Batch normalisation <span class="tag">mid</span></div>
+    <p>Normalise each feature across the <em>batch</em> to zero mean and unit variance, then rescale
+       with two learned parameters.</p>
+    <p class="wh">Transformative for CNNs. Awkward for sequences and for small batches, and it behaves
+       differently at training and inference time — which is a real source of bugs.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Layer normalisation <span class="tag">mid</span></div>
+    <p>Normalise across the <em>features</em> of each individual example instead.</p>
+    <p class="wh">Independent of batch size and identical at train and inference. This is why every
+       transformer uses it — see the question.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dropout <span class="tag">mid</span></div>
+    <p>Randomly zero a fraction of activations during training; do nothing at inference.</p>
+    <p class="an">Training a football team with random players sitting out each session, so no one
+       becomes indispensable.</p>
+    <p class="wh">Largely displaced in large transformers by sheer data volume, but still standard in
+       fine-tuning and in smaller models.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Residual / skip connection <span class="tag">mid</span>
+        <span class="sym">y = x + f(x)</span></div>
+    <p>Add the input back to the output of a block.</p>
+    <p class="wh">The single change that made networks beyond ~20 layers trainable, and the reason
+       transformers can be 100 layers deep. The derivative argument is in 30.6.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dead ReLU <span class="tag">mid</span></div>
+    <p>A unit whose input is negative for every example. ReLU outputs zero, its gradient is zero, and
+       the unit never updates again.</p>
+    <p class="wh">Usually caused by too high a learning rate or bad initialisation. Leaky ReLU, GELU
+       and a lower learning rate all address it.</p>
+  </div>
+
+</div>
+
+<h2 data-n="30.3">Activations — and the one-line argument for why you need one</h2>
+
+<div class="viz" data-viz="activations"></div>
+
+<p>Compose two linear layers: W₂(W₁x + b₁) + b₂ = (W₂W₁)x + (W₂b₁ + b₂). That is a single linear
+layer with different weights. <strong>Without a non-linearity, a thousand-layer network is exactly as
+expressive as one layer.</strong> That sentence is the complete answer to the most common basic
+question in this module.</p>
+
+<div class="tw">
+<table>
+<tr><th>Activation</th><th>Shape</th><th>Why it exists / why it fell out of use</th></tr>
+<tr><td><strong>Sigmoid</strong></td><td>S-curve into (0,1)</td><td>Historically first. Saturates at
+    both ends where the gradient →0, and its output is not zero-centred. Now only used for gates and
+    binary outputs</td></tr>
+<tr><td><strong>Tanh</strong></td><td>S-curve into (−1,1)</td><td>Zero-centred, so better than
+    sigmoid, but still saturates. Survives inside LSTM cells</td></tr>
+<tr><td><strong>ReLU</strong></td><td>max(0, x)</td><td>The breakthrough: gradient is exactly 1 for
+    positive inputs, so nothing vanishes on that side, and it is trivially cheap. Costs you dead
+    units</td></tr>
+<tr><td><strong>Leaky ReLU</strong></td><td>max(0.01x, x)</td><td>Small negative slope so dead units
+    can recover. Marginal gains in practice</td></tr>
+<tr><td><strong>GELU</strong></td><td>x·Φ(x) — a smooth ReLU</td><td>Smooth everywhere and slightly
+    negative just below zero. The default in BERT and GPT</td></tr>
+<tr><td><strong>SiLU / Swish</strong></td><td>x·σ(x)</td><td>Very close to GELU. Used in Llama-family
+    models, usually inside SwiGLU — module 41</td></tr>
+<tr><td><strong>Softmax</strong></td><td>Vector → probabilities</td><td>Output layer for
+    multi-class, and the core of attention. Not an activation in the hidden-layer sense</td></tr>
+</table>
+</div>
+
+<h2 data-n="30.4">Initialisation — why random small numbers is not enough</h2>
+
+<p>Two failure modes bracket the problem. Initialise everything to <strong>zero</strong> and every
+neuron in a layer computes the same thing, receives the same gradient, and stays identical forever —
+the network has one effective unit per layer. That is the symmetry-breaking argument. Initialise
+<strong>too large or too small</strong> and the activation variance multiplies layer over layer, so
+by layer 20 it has either exploded or collapsed to nothing.</p>
+
+<p>The fix is to choose the variance so that the signal's scale is preserved through the layer. If a
+neuron sums n inputs, and you want the output variance to match the input variance, the weight
+variance must go like 1/n:</p>
+
+<ul>
+  <li><strong>Xavier/Glorot</strong>, variance 1/n (or 2/(n<sub>in</sub>+n<sub>out</sub>)) — derived
+      for symmetric activations like tanh.</li>
+  <li><strong>He/Kaiming</strong>, variance 2/n — the factor of 2 compensates for ReLU zeroing half
+      the inputs and therefore halving the variance. Use it whenever the activation is ReLU-like,
+      which today is nearly always.</li>
+</ul>
+
+<p>Modern architectures lean on this less because normalisation layers and residuals absorb scale
+problems. But it still bites in practice: large transformers scale the initialisation of the residual
+projections by 1/√(2·n_layers) so that the residual stream's variance does not grow with depth, and
+getting that wrong produces exactly the early loss spike from module 14.</p>
+
+<h2 data-n="30.5">Batch norm vs layer norm</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>BatchNorm</th><th>LayerNorm</th></tr>
+<tr><td>Normalises across</td><td>The batch, per feature</td><td>The features, per example</td></tr>
+<tr><td>Depends on batch size</td><td>Yes — unstable below ~16, broken at 1</td><td>No</td></tr>
+<tr><td>Train vs inference</td><td><strong>Different</strong> — inference uses running statistics
+    accumulated during training</td><td>Identical</td></tr>
+<tr><td>Variable-length sequences</td><td>Awkward — padding contaminates the batch statistics</td>
+    <td>Fine</td></tr>
+<tr><td>Distributed training</td><td>Needs cross-device syncing to be correct</td><td>Purely
+    local</td></tr>
+<tr><td>Home turf</td><td>CNNs, vision</td><td>Transformers, RNNs, anything sequential</td></tr>
+</table>
+</div>
+
+<p>The interview answer for "why do transformers use LayerNorm" is the middle three rows: sequences
+have variable length so batch statistics are contaminated by padding; batch sizes per device are
+often small; and the train/inference discrepancy is a bug factory. LayerNorm has none of those
+problems. <strong>RMSNorm</strong>, used in Llama-family models, goes further by dropping the mean
+subtraction entirely — it turns out the re-centring contributes little and removing it is cheaper.</p>
+
+<p>One correction worth having ready: the original BatchNorm paper attributed its success to reducing
+"internal covariate shift". Later work showed that story is mostly wrong — the real mechanism is that
+it smooths the loss landscape, allowing higher learning rates. Knowing the paper's own explanation did
+not survive scrutiny is a good signal.</p>
+
+<h2 data-n="30.6">Residual connections — the one-line reason they work</h2>
+
+<p>A plain deep network's gradient is a long product of layer Jacobians. Products of numbers below 1
+vanish; above 1 they explode. That is module 11's argument, and it is why depth was hard.</p>
+
+<p>A residual block computes y = x + f(x). Differentiate:</p>
+
+<div class="eq">
+  ∂y/∂x = 1 + f′(x)
+  <span class="note">the gradient has a path that is multiplied by exactly 1, all the way down</span>
+</div>
+
+<p>The identity term guarantees an unimpeded route for the gradient from the loss back to any layer,
+regardless of what the blocks in between do to it. That is the whole mechanism, and it is worth
+being able to write down rather than describe.</p>
+
+<p>The second framing, from the ResNet paper: it is easier to learn a small correction to the
+identity than to learn the identity itself from scratch. A block that has nothing useful to add can
+simply output ≈0 and be harmless, so adding depth cannot make the model worse — which is precisely
+the pathology observed before residuals, where 56-layer plain networks did worse than 20-layer
+ones on <em>training</em> error, ruling out overfitting as the explanation.</p>
+
+<h2 data-n="30.7">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Why do neural networks need non-linear activation functions?</summary>
+  <div class="a">
+    <div class="tldr">Because a composition of linear functions is itself linear. Without a
+    non-linearity, a hundred-layer network has exactly the expressive power of a single linear layer.</div>
+    <p>The algebra takes one line: W₂(W₁x + b₁) + b₂ = (W₂W₁)x + (W₂b₁ + b₂). The product W₂W₁ is just
+    another matrix. Depth buys nothing.</p>
+    <p>The non-linearity is what lets each layer carve the space in a way the next layer can build on,
+    which is where the hierarchy of features comes from — edges to shapes to objects.</p>
+    <p>A worthwhile addition: the non-linearity does not have to be complicated. ReLU is a hinge, the
+    simplest non-linear function you could write down, and it is enough. What matters is not the
+    sophistication of the function but that it breaks linearity while keeping a usable gradient.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why did ReLU replace sigmoid, and what did it cost?</summary>
+  <div class="a">
+    <div class="tldr">ReLU has gradient exactly 1 on the positive side, so gradients do not vanish
+    through depth, and it is far cheaper to compute. The cost is dead units and a non-zero-centred
+    output.</div>
+    <p><strong>The problem with sigmoid:</strong> its derivative is σ(1−σ), which maxes out at 0.25 and
+    approaches zero at both ends. Stack ten layers and even in the best case the gradient is
+    multiplied by 0.25 ten times — about 10⁻⁶. Early layers receive essentially nothing and never
+    learn. Saturated units make it far worse.</p>
+    <p><strong>What ReLU fixes:</strong> gradient is 1 for x &gt; 0, so the product of Jacobians does
+    not shrink through the positive path. It is also a comparison and a select rather than an
+    exponential, which matters at scale. And it produces genuinely sparse activations, since roughly
+    half the units output zero.</p>
+    <p><strong>What it costs:</strong> the dead ReLU problem — a unit whose pre-activation is negative
+    for every input has zero gradient forever and is permanently removed from the model. Usually
+    caused by too high a learning rate driving a large negative bias. Mitigations are Leaky ReLU, a
+    lower learning rate, better initialisation, or a smooth variant. Its outputs are also not
+    zero-centred, which biases the gradients of the following layer — one of the reasons normalisation
+    layers help.</p>
+    <p><strong>Where things landed:</strong> GELU and SiLU are the modern defaults for transformers.
+    They are smooth, allow small negative values, and give a consistent small improvement. The gain is
+    real but modest — ReLU versus sigmoid was a step change, GELU versus ReLU is a refinement.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>ReLU is not differentiable at exactly 0. In practice frameworks define the subgradient there
+      as 0 and it never matters, since hitting exactly 0.0 in floating point is vanishingly
+      unlikely.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>If one hidden layer can approximate any function, why go deep?</summary>
+  <div class="a">
+    <div class="tldr">Because the theorem says a wide-enough single layer <em>exists</em>, not that it
+    is findable, affordable, or data-efficient. Depth achieves the same functions exponentially more
+    cheaply.</div>
+    <p>Three separate gaps between the theorem and practice:</p>
+    <ul>
+      <li><strong>Width.</strong> "Wide enough" can mean exponentially many units in the input
+          dimension. There are functions a deep network represents with a polynomial number of units
+          that a shallow one needs exponentially many for — this is proved for several function
+          classes, not just conjectured.</li>
+      <li><strong>Optimisation.</strong> The theorem is about existence, not about whether SGD finds
+          it. A function that exists somewhere in a shallow network's parameter space is of no use if
+          gradient descent cannot reach it.</li>
+      <li><strong>Data.</strong> A very wide shallow network has enormous capacity and no useful
+          structural prior, so it needs far more data to generalise.</li>
+    </ul>
+    <p>The deeper point is about <strong>compositional structure</strong>: real problems are
+    hierarchical. Pixels compose into edges compose into parts compose into objects; characters into
+    words into phrases into meaning. A deep network's architecture matches that structure, so each
+    layer reuses the previous layer's work. A shallow network has to represent every combination
+    directly, without reuse — which is exactly where the exponential blow-up comes from.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do transformers use LayerNorm instead of BatchNorm?</summary>
+  <div class="a">
+    <div class="tldr">Because batch statistics are the wrong thing to normalise over for
+    variable-length sequences, and because BatchNorm behaves differently at training and inference
+    time. LayerNorm has neither problem.</div>
+    <ul>
+      <li><strong>Variable length.</strong> Sequences are padded to a common length. BatchNorm's
+          per-feature statistics are then computed over real tokens and padding together, so the
+          normalisation depends on how much padding happened to be in the batch. That is noise
+          injected by the batching strategy.</li>
+      <li><strong>Batch-size dependence.</strong> Per-device batch sizes in large-model training are
+          small. BatchNorm's estimates get noisy below roughly 16 and are meaningless at 1, which
+          rules it out for inference on a single sequence.</li>
+      <li><strong>Train/inference mismatch.</strong> BatchNorm uses batch statistics while training and
+          stored running averages at inference. Two different functions, and a well-known source of
+          bugs when the running statistics are stale or the model is switched into the wrong mode.
+          LayerNorm computes the same thing in both.</li>
+      <li><strong>Distribution.</strong> BatchNorm needs cross-device synchronisation to be correct
+          under data parallelism. LayerNorm is purely per-example and per-device.</li>
+    </ul>
+    <p><strong>Where it went next,</strong> worth adding: modern models mostly use
+    <strong>RMSNorm</strong>, which drops the mean subtraction and normalises only by the root mean
+    square. Slightly cheaper, and empirically just as good — the re-centring was carrying little of
+    the benefit. And placement matters as much as the choice: <strong>pre-norm</strong>, with the
+    normalisation inside the residual branch, is standard now because post-norm requires careful
+    warmup and is much harder to train at depth.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does dropout do, and what happens at inference?</summary>
+  <div class="a">
+    <div class="tldr">During training it randomly zeroes a fraction of activations, preventing any
+    unit from becoming indispensable. At inference it is turned off entirely, and the activations are
+    rescaled so the expected value matches.</div>
+    <p><strong>Why it regularises:</strong> if any given unit may vanish on any given step, the network
+    cannot build a fragile chain that depends on one specific unit being present. It is forced into
+    redundant, distributed representations. The other standard framing is that it approximates
+    training an exponentially large ensemble of subnetworks that share weights, and averaging them at
+    test time.</p>
+    <p><strong>The scaling detail,</strong> which is what the question is usually probing: if you drop
+    50 % of units during training, the expected sum reaching the next layer is halved. At inference
+    nothing is dropped, so the sum would be twice what the network was trained on. Frameworks solve
+    this with <em>inverted dropout</em> — divide the surviving activations by the keep probability
+    during training, so inference needs no adjustment at all and is simply the identity.</p>
+    <p><strong>The practical bug this creates:</strong> forgetting <code>model.eval()</code> means
+    dropout stays active at inference, so predictions become non-deterministic and worse. It is one of
+    the most common deployment mistakes, and it is also why validation loss can look strangely noisy
+    when the mode is set wrongly.</p>
+    <p><strong>Where it stands now:</strong> less central than it was. Large transformers trained on
+    huge corpora often use little or no dropout, because with enough data overfitting is not the
+    binding constraint. It remains standard for fine-tuning and smaller models. And the same mechanism
+    run deliberately at inference is <strong>MC dropout</strong>, a cheap uncertainty estimate — the
+    same trick, repurposed.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain backpropagation to someone who knows calculus but not ML.</summary>
+  <div class="a">
+    <div class="tldr">It is the chain rule applied in reverse through the network, with intermediate
+    results cached so that every parameter's gradient is obtained in one backward sweep rather than
+    one sweep per parameter.</div>
+    <p><strong>Setup.</strong> The network is a composition: loss = L(f₃(f₂(f₁(x)))). You want
+    ∂L/∂w for every weight in every layer. The chain rule gives each one as a product of local
+    derivatives along the path from that weight to the loss.</p>
+    <p><strong>The insight is the ordering.</strong> Those products share almost all their factors. If
+    you compute right-to-left — starting at the loss and moving back — you compute each shared factor
+    once and reuse it for everything below. That is reverse-mode automatic differentiation, and its
+    cost is roughly one forward pass regardless of how many parameters there are.</p>
+    <p><strong>Why reverse and not forward:</strong> forward-mode costs one pass per <em>input</em>
+    variable; reverse-mode costs one pass per <em>output</em>. A network has millions of parameters and
+    one scalar loss, so reverse-mode wins by a factor of millions. This asymmetry is the entire reason
+    training deep networks is computationally feasible.</p>
+    <p><strong>What it costs:</strong> memory. Every intermediate activation from the forward pass must
+    be kept until the backward pass consumes it, which is why activation memory, not parameter memory,
+    dominates training footprint — and why gradient checkpointing exists, trading recomputation for
+    memory.</p>
+    <p>What I would add at the end: backprop is not a learning algorithm. It computes gradients. The
+    learning is gradient descent, and the two get conflated constantly.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Is backprop biologically plausible?" No, and it is a fair thing to say — it needs symmetric
+      weights for the backward pass and a global error signal, neither of which the brain appears to
+      have. It is an engineering method, not a model of neuroscience.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why do residual connections make deep networks trainable?</summary>
+  <div class="a">
+    <div class="tldr">Because the derivative of x + f(x) is 1 + f′(x). The identity term gives the
+    gradient an unimpeded path back to every layer, so the long product of Jacobians can no longer
+    collapse to zero.</div>
+    <p>Without residuals, the gradient at layer 1 of an L-layer network is a product of L Jacobians.
+    If their typical magnitude is even slightly below 1, the product decays exponentially in depth and
+    early layers stop learning. Slightly above 1 and it explodes. There is no stable regime as depth
+    grows.</p>
+    <p>With residuals, each block contributes (1 + f′) instead of f′. Expanding the product gives a sum
+    over all paths through the network, including the path that skips every block and is multiplied by
+    exactly 1. That path cannot vanish, so gradient always reaches the bottom.</p>
+    <p><strong>The second, complementary reason</strong> from the original paper: the empirical problem
+    was that a 56-layer plain network had higher <em>training</em> error than a 20-layer one. That
+    rules out overfitting — deeper networks were failing to optimise at all. A residual block only has
+    to learn a correction to the identity, so a useless block can output ≈0 and cost nothing, which
+    means adding depth can no longer hurt.</p>
+    <p><strong>The framing worth adding:</strong> a residual network behaves somewhat like an ensemble
+    of many shallower paths of varying length rather than one very deep chain, which explains why
+    ResNets are robust to deleting individual layers at test time — something a plain deep network
+    absolutely is not.</p>
+    <p>In transformers this shows up as the <em>residual stream</em>: every attention and MLP block
+    reads from it and writes an increment back, and it runs unbroken from the embedding to the output.
+    That is why interpretability work can talk about blocks "writing into" the stream, and why the
+    initialisation of the residual projections is scaled down by depth to stop the stream's variance
+    growing.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Why a stack of linear layers is one linear layer.</li>
+    <li>Sigmoid's 0.25 derivative ceiling, and what ReLU fixed and cost.</li>
+    <li>Universal approximation, plus the three reasons it does not make depth pointless.</li>
+    <li>Xavier vs He, and why He has the factor of 2.</li>
+    <li>Three reasons transformers use LayerNorm, and what RMSNorm drops.</li>
+    <li>Inverted dropout and what <code>model.eval()</code> is for.</li>
+    <li>∂(x + f(x))/∂x = 1 + f′(x), and the ensemble-of-paths reading.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#26" target="_top"><span class="k">Back</span>← 26 · Interpretability</a>
+  <a href="../index.html#31" target="_top"><span class="k">Next</span>31 · Convolutional nets →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

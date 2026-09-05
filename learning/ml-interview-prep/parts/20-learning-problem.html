@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The learning problem — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 20</p>
+<h1>The learning problem
+  <span class="lede">Before any algorithm: what does it actually mean for a machine to learn, why
+  does a model that scores 99 % in your notebook fail in production, and what is the discipline that
+  prevents it. This module is the one that separates people who can train a model from people who
+  can be trusted to ship one.</span>
+</h1>
+
+<h2 data-n="20.1">What learning is — and the one thing it is not</h2>
+
+<div class="box analogy">
+  <span class="lbl">The founding idea</span>
+  <p>A child learns "dog" from maybe thirty dogs, then correctly calls a breed they have never seen
+  a dog. They did not memorise thirty dogs. They extracted <em>what makes a dog a dog</em>.</p>
+  <p>Machine learning is that, and its central failure mode is that too: a system that memorised the
+  thirty and calls the thirty-first a cat. We have a name for the difference —
+  <strong>generalisation</strong> — and essentially every technique in this part exists to buy more
+  of it.</p>
+</div>
+
+<p>Formally: you assume there is some unknown true function f mapping inputs to outputs. You get a
+finite, noisy sample of its behaviour. You search a space of candidate functions for one that agrees
+with your sample, and then you <em>hope</em> it agrees with f everywhere else. That hope has a name
+too — the <strong>inductive bias</strong> — and it is an assumption you make, not something the data
+gives you.</p>
+
+<div class="box note">
+  <span class="lbl">Why this framing pays off in interviews</span>
+  <p>Almost every "why did this fail in production" question reduces to one of three things: the
+  sample was not representative of what you deployed on, the hypothesis space was too big or too
+  small for the amount of data, or something told you the answer during training that will not be
+  there at serving time. Learn to sort symptoms into those three buckets and you will diagnose
+  faster than people who know more algorithms than you.</p>
+</div>
+
+<h2 data-n="20.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Supervised learning <span class="tag">basic</span></div>
+    <p>Learning from labelled examples — inputs with the right answer attached.</p>
+    <p class="an">Flashcards with the answer on the back.</p>
+    <p class="wh">Fraud detection, credit scoring, click prediction. Almost everything with business
+       value, because the label <em>is</em> the business outcome.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Unsupervised learning <span class="tag">basic</span></div>
+    <p>Finding structure with no labels at all — clusters, low-dimensional structure, outliers.</p>
+    <p class="an">Sorting a drawer of unlabelled screws into piles by how they look.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Self-supervised learning <span class="tag">mid</span></div>
+    <p>Manufacture labels from the data's own structure: hide part of the input, predict it from the
+       rest. Unsupervised in the sense that nobody labelled anything; supervised in its mechanics.</p>
+    <p class="wh"><strong>This is how every LLM is trained.</strong> "Predict the next token" is a
+       supervised problem whose labels the corpus supplies for free — which is precisely why it
+       scales to trillions of tokens when human labelling does not.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Reinforcement learning <span class="tag">mid</span></div>
+    <p>Learning from consequences rather than answers. No one tells you the right move; you find out
+       later whether things went well.</p>
+    <p class="an">Learning to cook without a recipe, judging only by whether people ate it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Training / validation / test <span class="tag">basic</span></div>
+    <p>Fit on train. Make decisions with validation. Touch test exactly once, at the end, to
+       estimate what you will see in production.</p>
+    <p class="an">Homework, mock exam, real exam. Sitting the real exam twenty times and reporting
+       your best score is not an estimate of anything.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Generalisation gap <span class="tag">basic</span></div>
+    <p>Training performance minus held-out performance. A big gap means memorisation.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Capacity / hypothesis space <span class="tag">mid</span></div>
+    <p>How many different functions your model <em>could</em> represent. A straight line: tiny. A
+       depth-20 tree: enormous.</p>
+    <p class="an">A vocabulary. Too few words and you cannot express the idea; too many and you can
+       describe noise as fluently as signal.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Inductive bias <span class="tag">mid</span></div>
+    <p>The assumptions baked into the model that let it prefer one fitting function over another.</p>
+    <p class="wh">CNNs assume nearby pixels relate and that a cat is a cat anywhere in the frame.
+       Transformers assume much less, which is exactly why they need much more data — and why they
+       overtake CNNs only past a certain scale.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Underfitting / overfitting <span class="tag">basic</span></div>
+    <p>Too simple to capture the pattern / complex enough to have captured the noise as well.</p>
+    <p class="an">Underfit: "everything is a dog." Overfit: "a dog is an animal with exactly these
+       1,247 pixels."</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bias &amp; variance <span class="tag">mid</span></div>
+    <p><strong>Bias</strong> is being consistently wrong in the same way. <strong>Variance</strong> is
+       giving wildly different answers depending on which data you happened to train on.</p>
+    <p class="an">A rifle sighted 10 cm left shoots a tight group in the wrong place — bias. A shaky
+       shooter with correct sights scatters around the target — variance.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Regularisation <span class="tag">mid</span></div>
+    <p>Anything that deliberately makes fitting the training data harder, in exchange for better
+       held-out performance. L1/L2, dropout, early stopping, data augmentation, smaller models.</p>
+    <p class="wh">Module 14 showed what it really is: a Lagrange multiplier on a complexity budget.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Cross-validation <span class="tag">basic</span></div>
+    <p>Split k ways, train on k−1 and validate on the held-out fold, rotate, average. Uses all your
+       data for both jobs.</p>
+    <p class="wh">Essential under ~50k rows. Usually too expensive, and unnecessary, above that.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Data leakage <span class="tag">senior</span></div>
+    <p>Information reaching the model during training that will not be available — or would not
+       legitimately be known — at prediction time.</p>
+    <p class="an">Studying with an answer key accidentally photocopied onto the back of the exam
+       paper. You look brilliant right up until the real exam.</p>
+    <p class="wh"><strong>The single most common reason an excellent offline model is worthless in
+       production.</strong> Section 20.6 is entirely about it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Curse of dimensionality <span class="tag">mid</span></div>
+    <p>As you add features, the space grows exponentially, your data becomes desperately sparse
+       within it, and distances between points converge until "nearest" stops meaning anything.</p>
+    <p class="wh">Why kNN degrades in high dimensions and why embeddings and PCA exist.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">No free lunch <span class="tag">mid</span></div>
+    <p>Averaged over <em>all</em> possible problems, every algorithm performs identically. There is
+       no universally best model.</p>
+    <p class="wh">The practical reading: an algorithm wins on your problem because its assumptions
+       happen to match your data. That is why GBDT dominates tabular data and transformers dominate
+       sequences — and why "which model is best?" is not a well-formed question until you say what
+       the data looks like.</p>
+  </div>
+
+</div>
+
+<h2 data-n="20.3">Splits — the discipline, not the syntax</h2>
+
+<p>Everyone can call <code>train_test_split</code>. The interview is about the judgment around it.</p>
+
+<div class="tw">
+<table>
+<tr><th>Set</th><th>What it is for</th><th>How often you may look</th></tr>
+<tr><td>Train</td><td>Fitting parameters</td><td>Constantly</td></tr>
+<tr><td>Validation</td><td>Every <em>decision</em>: hyperparameters, architecture, features,
+    threshold, early stopping</td><td>Often — but each look spends a little of its
+    trustworthiness</td></tr>
+<tr><td>Test</td><td>One unbiased estimate of production performance</td><td><strong>Once.</strong>
+    Ideally at the very end, ideally by someone else</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">The test set is a consumable</span>
+  <p>Each time you look at the test set and change something because of what you saw, you have
+  turned it into a validation set and you no longer have an unbiased estimate. Try fifty
+  configurations against it and the best of the fifty is optimistically biased by roughly the spread
+  of the noise — you have simply run a search for the configuration that best fits your test set's
+  particular quirks. This is the mechanism behind an entire literature of benchmark overfitting,
+  and it is why serious teams hold out a final set that is not touched until sign-off.</p>
+</div>
+
+<p>Then the part that trips people: <strong>a random split is only valid if your data really is
+i.i.d.</strong> Three situations where it is not, and each has a specific fix:</p>
+
+<div class="tw">
+<table>
+<tr><th>Structure in the data</th><th>What a random split does wrong</th><th>Correct split</th></tr>
+<tr><td>Time (fraud, demand, anything with a trend)</td><td>Trains on the future, tests on the past.
+    Reports an accuracy you can never achieve live</td><td>Temporal / walk-forward: train on
+    everything before date D, test after</td></tr>
+<tr><td>Groups (multiple rows per user, per patient, per merchant)</td><td>The same user appears in
+    both sets, so the model recognises the user rather than the pattern</td>
+    <td>Grouped split: every row for a given user goes entirely to one side</td></tr>
+<tr><td>Severe imbalance (0.1 % fraud)</td><td>A fold may contain almost no positives, making the
+    metric pure noise</td><td>Stratified: preserve the class ratio in every fold</td></tr>
+</table>
+</div>
+
+<h2 data-n="20.4">Bias, variance, and the trade-off that is not always a trade-off</h2>
+
+<div class="viz" data-viz="biasvar"></div>
+
+<p>Expected error decomposes into three pieces, and only two are yours:</p>
+
+<div class="eq">
+  error = bias² + variance + irreducible noise
+  <span class="note">the third term is a property of the world; no model reduces it</span>
+</div>
+
+<p>The classical picture: as capacity grows, bias falls and variance rises, so total error is a
+U-curve with a sweet spot in the middle. Everything from k in kNN to tree depth to regularisation
+strength is a knob that moves you along that curve.</p>
+
+<p>The diagnosis is mechanical and worth memorising as a rule:</p>
+
+<div class="tw">
+<table>
+<tr><th>Train error</th><th>Validation error</th><th>Diagnosis</th><th>Do this</th></tr>
+<tr><td>High</td><td>High, close to train</td><td>Underfitting — high bias</td><td>Bigger model, more
+    features, less regularisation, train longer</td></tr>
+<tr><td>Low</td><td>Much higher</td><td>Overfitting — high variance</td><td>More data, more
+    regularisation, simpler model, augmentation, early stopping</td></tr>
+<tr><td>Low</td><td>Low</td><td>Working</td><td>Check for leakage before celebrating</td></tr>
+<tr><td>High</td><td>Lower than train</td><td>Something is off</td><td>Usually dropout/augmentation
+    active in training but not in eval — see the questions</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">The modern caveat you must know</span>
+  <p>The U-curve is not the whole story any more. Push capacity <em>far</em> past the interpolation
+  point — where the model can fit the training data exactly — and test error frequently falls again.
+  This is <strong>double descent</strong>, and it is why a model with more parameters than training
+  examples can generalise well, which the classical picture says is impossible. It is the single
+  biggest reason bias–variance is now taught as a useful mental model rather than a law. If you
+  recite the U-curve without mentioning this, a senior interviewer will notice.</p>
+</div>
+
+<h2 data-n="20.5">Choosing a validation scheme</h2>
+
+<ol>
+  <li><strong>Ask what the model will be doing at prediction time.</strong> Predicting the future from
+      the past? Then validation must do the same. Scoring users it has never seen? Then no user may
+      appear in both sets.</li>
+  <li><strong>Make the validation split imitate that exactly.</strong> This one principle generates
+      every rule in the table above; you never need to memorise the rules themselves.</li>
+  <li><strong>Then pick the mechanics.</strong> Under ~50k rows, k-fold (5 or 10) for a stable
+      estimate. Above that, a single large held-out split is fine and far cheaper. Time series:
+      walk-forward with an expanding or rolling window, never shuffled k-fold.</li>
+  <li><strong>Add a gap if labels arrive late.</strong> If a fraud chargeback takes 60 days to
+      materialise, then at serving time your most recent 60 days are unlabelled — so leave a 60-day
+      gap between the end of training and the start of validation. Otherwise you are validating a
+      model that has fresher information than the deployed one ever will.</li>
+</ol>
+
+<h2 data-n="20.6">Leakage — the taxonomy</h2>
+
+<p>If you take one thing from this module, take this section. Leakage is what makes a 0.99 AUC
+turn into a 0.62 in production, and the interview question is almost always "give me an example and
+tell me how you caught it".</p>
+
+<div class="tw">
+<table>
+<tr><th>Kind</th><th>What it looks like</th><th>Concrete example</th></tr>
+<tr><td><strong>Target leakage</strong></td><td>A feature that is a consequence of the label, not a
+    cause</td><td><code>account_frozen</code> in a fraud model. It is set <em>because</em> fraud was
+    detected. AUC 0.99 offline, useless live — at scoring time it is always false</td></tr>
+<tr><td><strong>Train–test contamination</strong></td><td>The same information in both splits</td>
+    <td>Deduplication run after splitting; a user with 40 transactions spread across both sides</td></tr>
+<tr><td><strong>Temporal leakage</strong></td><td>Future information in a past row</td>
+    <td>A "customer lifetime value" feature computed over the whole dataset, including after the
+    transaction being scored</td></tr>
+<tr><td><strong>Preprocessing leakage</strong></td><td>Fitting a transform on all the data before
+    splitting</td><td>A scaler, imputer, target encoder or feature selector fitted on train+test.
+    The test mean has quietly entered the model</td></tr>
+<tr><td><strong>Feature-store leakage</strong></td><td>Serving the <em>current</em> value of a
+    feature rather than its value as of the event</td><td>The classic point-in-time-correctness
+    failure — module 51 is entirely about preventing this</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">The one test that catches most of it</span>
+  <p>For every feature ask: <em>"at the exact moment of prediction, in production, would this value
+  be knowable — and would it hold this value?"</em> If it needs a database write that happens after
+  the event, it leaks. If it needs an aggregate over rows that do not exist yet, it leaks. That
+  question catches target, temporal and feature-store leakage in one pass.</p>
+</div>
+
+<h2 data-n="20.7">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain overfitting to a non-technical stakeholder.</summary>
+  <div class="a">
+    <div class="tldr">The model memorised the practice questions instead of learning the subject, so
+    it aces the practice test and fails the real one.</div>
+    <p>Concretely: it has enough flexibility to fit not just the real pattern in your historical data
+    but also the accidents in it — the coincidences that will not repeat. Those coincidences are
+    noise, and fitting them actively hurts on anything new.</p>
+    <p>How I detect it: a large gap between training and held-out performance. How I fix it, roughly
+    in order of what I would try: more data if it is available, since it is the only fix with no
+    downside; then regularisation, a simpler model, early stopping, or augmentation.</p>
+    <p>And I would add the business version, because it is what the stakeholder actually needs to
+    hear: this is why I will not quote you the training accuracy. The only number that means anything
+    is performance on data the model has never seen.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain the bias–variance trade-off, and is it still true?</summary>
+  <div class="a">
+    <div class="tldr">Expected error is bias² + variance + irreducible noise. Bias is being
+    consistently wrong; variance is being unstable across datasets. Classically, capacity trades one
+    for the other — but double descent shows that picture breaks down in the heavily
+    over-parameterised regime.</div>
+    <p>The classical story: a too-simple model cannot represent the truth, so it is wrong in the same
+    way everywhere — high bias. A too-flexible model chases the noise, so a different sample would
+    have given a very different model — high variance. Total error is U-shaped in capacity.</p>
+    <p>How I use it day to day is as a diagnostic, not a theory: train error high and validation
+    error close to it means bias, so I add capacity; a large gap means variance, so I add data or
+    regularisation. That single fork determines what I try next, which is the whole practical value
+    of the decomposition.</p>
+    <p><strong>Where it stops being true:</strong> past the interpolation threshold — where the model
+    can fit the training set exactly — test error often <em>decreases</em> again as you keep growing
+    the model. Modern deep networks live entirely in that regime. So I treat bias–variance as a very
+    good mental model for classical models and small data, and as a rough guide rather than a law for
+    large networks.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"So more parameters is always better?" No — double descent needs the interpolation regime
+      plus implicit regularisation from the optimiser and the architecture. A 10-million-parameter
+      model on 500 rows of tabular data will still overfit spectacularly.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Give me a real example of data leakage and how you caught it.</summary>
+  <div class="a">
+    <div class="tldr">The tell is a metric that is too good. My rule is that an unexpectedly
+    excellent result is a bug report until proven otherwise, and the first thing I check is feature
+    importance for something that could only be known after the fact.</div>
+    <p><strong>The canonical shape,</strong> using fraud since it is what this course builds toward:
+    a model reaches 0.99 AUC. Top feature by a mile is something like
+    <code>account_status</code>. But accounts get frozen <em>because</em> fraud was confirmed — that
+    field is downstream of the label. At scoring time, milliseconds after the transaction arrives, it
+    is always the default value. The offline model was reading the answer.</p>
+    <p><strong>How I catch it, as a routine rather than as luck:</strong></p>
+    <ul>
+      <li>Suspicion threshold on the metric. If AUC jumps above what the problem plausibly supports,
+          I investigate before I celebrate.</li>
+      <li>Look at feature importance first, not last. One feature carrying most of the signal is the
+          classic signature.</li>
+      <li>For every top feature, ask the timing question: would this value exist, and hold this
+          value, at the instant of prediction?</li>
+      <li>Ablate it. If removing one feature collapses performance to something ordinary, that
+          feature was doing something suspicious.</li>
+      <li>Validate temporally, not randomly. Temporal leakage frequently survives a random split and
+          dies immediately under a walk-forward one.</li>
+      <li>Fit every transform inside the pipeline, so it can only ever see the training fold. This
+          eliminates the whole preprocessing category structurally rather than by vigilance.</li>
+    </ul>
+    <p>The structural fix that matters most in a real system is a feature store with point-in-time
+    joins, so training features are reconstructed as of the event timestamp rather than as of today.
+    That is the difference between preventing leakage and repeatedly noticing it.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The follow-up is usually "how would you prevent it rather than detect it?" The answer is
+      process, not cleverness: transforms inside the pipeline, point-in-time feature retrieval, a
+      temporal holdout as the default, and an offline-vs-online metric comparison after launch, since
+      a large discrepancy is leakage announcing itself.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Your validation accuracy is higher than your training accuracy. What is going on?</summary>
+  <div class="a">
+    <div class="tldr">Almost always an artefact of how the two numbers were measured, not a real
+    phenomenon — regularisation is active during training and off during evaluation.</div>
+    <p>Causes in the order I would check them:</p>
+    <ul>
+      <li><strong>Dropout and augmentation.</strong> Training runs with dropout on and augmented
+          inputs; evaluation runs clean. The model is genuinely solving a harder problem during
+          training. This explains most cases and is not a bug.</li>
+      <li><strong>When the metric is computed.</strong> Training loss is often averaged
+          <em>across</em> the epoch while the model is still improving; validation is computed at the
+          end. The training number is an average over a worse model.</li>
+      <li><strong>An easier validation set.</strong> With a small or unlucky split, the validation
+          fold can simply be less difficult. Check by rotating folds — if it moves around a lot, it
+          is noise.</li>
+      <li><strong>Leakage into validation.</strong> Rarer, but this is the direction where a
+          duplicated or contaminated validation set shows up.</li>
+    </ul>
+    <p>So: mildly higher and stable is expected and I would move on. Dramatically higher, or the gap
+    growing over training, and I would look at the split itself.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you choose a cross-validation scheme?</summary>
+  <div class="a">
+    <div class="tldr">Make the split imitate the prediction task. Whatever the model will not know at
+    serving time, validation must not know either.</div>
+    <ul>
+      <li><strong>Independent rows, plenty of data</strong> → a single stratified held-out split.
+          Cheap and sufficient.</li>
+      <li><strong>Small data</strong> → 5- or 10-fold, stratified if classes are imbalanced. Repeated
+          CV if the variance across folds is large.</li>
+      <li><strong>Time matters</strong> → walk-forward with expanding or rolling windows, plus a gap
+          equal to the label delay. Never shuffle.</li>
+      <li><strong>Repeated entities</strong> → group k-fold on the entity id, so no user or merchant
+          appears on both sides.</li>
+      <li><strong>Both time and groups</strong> → combine: group by entity, split by time, gap for
+          the label delay. This is the fraud case, and it is the one worth describing in detail
+          because it is where people simplify and get it wrong.</li>
+      <li><strong>Nested CV</strong> when you are both tuning hyperparameters and reporting a
+          performance estimate — otherwise the reported number is contaminated by the tuning.</li>
+    </ul>
+    <p>The sanity check I apply at the end: if my validation setup would have been impossible to run
+    in real time on the day of prediction, it is wrong regardless of what number it produces.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Leave-one-out CV sounds maximally rigorous. It is nearly unbiased but has high variance and
+      costs n fits, and for many models it is dominated by 10-fold. Do not reach for it reflexively.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is the curse of dimensionality, and why do embeddings not suffer from it?</summary>
+  <div class="a">
+    <div class="tldr">In high dimensions, volume grows exponentially, data becomes sparse, and all
+    pairwise distances converge — so "nearest neighbour" stops carrying information. Embeddings
+    escape it because their dimensions are <em>learned and dense</em>, so the data occupies a
+    low-dimensional manifold inside the space rather than being scattered through all of it.</div>
+    <p>The arithmetic that makes it vivid: to cover a unit interval at 0.1 resolution you need 10
+    points. In 10 dimensions, 10¹⁰. In 100, more points than there are atoms available. Any real
+    dataset in a high-dimensional space is overwhelmingly empty space.</p>
+    <p>The consequence that breaks algorithms: the ratio of the nearest to the farthest distance
+    tends to 1 as dimension grows. So kNN, k-means, and anything else built on a distance are
+    measuring something that no longer discriminates.</p>
+    <p><strong>Why embeddings are different:</strong> a 768-dimensional embedding is not 768
+    independent coordinates that data was sprinkled across. It was trained so that semantically
+    related things sit near each other, and real data concentrates on a much lower-dimensional
+    manifold within that space — the <em>manifold hypothesis</em>. The effective dimension is far
+    below the nominal one, which is exactly why cosine similarity in 768 dimensions works while
+    Euclidean distance over 768 raw hand-built features does not.</p>
+    <p>Practical implications I would mention: prefer learned dense representations over wide sparse
+    ones; use dimensionality reduction before distance-based methods; and note that this is also why
+    approximate nearest-neighbour indexes exist — exact search in high dimensions degenerates toward
+    a linear scan.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How much data do you need?</summary>
+  <div class="a">
+    <div class="tldr">There is no universal number — it depends on the signal-to-noise ratio, the
+    number of features, the model's capacity, and how much error you can tolerate. What I do instead
+    of guessing is plot a learning curve.</div>
+    <p><strong>The learning curve settles the question empirically:</strong> train on 10 %, 25 %,
+    50 %, 100 % of what you have and plot held-out performance against training-set size. If it is
+    still climbing steeply at 100 %, more data is your highest-return investment. If it has
+    flattened, more data of the same kind will not help and you need better features, a different
+    model, or a better-posed problem. That single plot redirects a lot of wasted effort, and saying
+    it is usually a better answer than any rule of thumb.</p>
+    <p>Rough starting anchors, offered as anchors and not as rules: tabular problems with tens of
+    features often work from a few thousand rows; classical text classification wants thousands per
+    class; training a vision model from scratch wants tens of thousands per class, and fine-tuning a
+    pretrained one wants hundreds; fine-tuning an LLM for style or format can work with a few hundred
+    well-chosen examples, because you are steering an existing capability rather than creating one.</p>
+    <p>The point underneath all of them: what varies is how much of the work is already done. Every
+    "we need less data now" story of the last decade is a transfer-learning story.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Supervised / unsupervised / self-supervised / RL, with one example each, and why
+        self-supervision is what makes LLMs possible.</li>
+    <li>The train/val/test discipline and why the test set is a consumable.</li>
+    <li>The bias–variance diagnostic table — from two error numbers to what you do next.</li>
+    <li>Double descent, in one sentence, and why it complicates the U-curve.</li>
+    <li>Three kinds of leakage and the timing question that catches them.</li>
+    <li>Why a random split is wrong for time series and for repeated entities.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#14" target="_top"><span class="k">Back</span>← 14 · Optimisation</a>
+  <a href="../index.html#21" target="_top"><span class="k">Next</span>21 · Linear models →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

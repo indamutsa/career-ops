@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Governance &amp; risk — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 55</p>
+<h1>Governance &amp; risk
+  <span class="lede">Fairness, privacy, robustness and cost. In a regulated domain — and fraud is one —
+  these are not a slide at the end of the deck; they are constraints that change the model you are
+  allowed to build. Bringing them up unprompted is a senior signal.</span>
+</h1>
+
+<h2 data-n="55.1">Fairness — and why you must pick a definition</h2>
+
+<div class="tw">
+<table>
+<tr><th>Definition</th><th>Requires</th><th>Reasonable when</th></tr>
+<tr><td>Demographic parity</td><td>Equal positive rate across groups</td><td>The base rates
+    <em>should</em> be equal, and a difference reflects historical injustice</td></tr>
+<tr><td>Equal opportunity</td><td>Equal true-positive rate</td><td>Missing a positive is the harm you
+    care about</td></tr>
+<tr><td>Equalised odds</td><td>Equal TPR <em>and</em> FPR</td><td>Both error types carry real
+    cost</td></tr>
+<tr><td>Calibration within groups</td><td>A predicted 5 % means 5 % in every group</td><td>The score is
+    handed to a human who will act on its face value</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The impossibility result — know this one</span>
+  <p>Chouldechova and Kleinberg et al. proved that when base rates genuinely differ between groups, you
+  <strong>cannot</strong> satisfy calibration and equalised odds simultaneously (except in degenerate
+  cases). This is mathematics, not a tooling gap.</p>
+  <p>So "make the model fair" is not a well-formed request. The real task is to choose which fairness
+  criterion matches the harm you are trying to prevent, state the choice explicitly, and document what
+  you gave up. A candidate who says that has understood the problem; a candidate who promises all of
+  them has not.</p>
+</div>
+
+<h2 data-n="55.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Proxy variable <span class="tag">senior</span></div>
+    <p>A feature that encodes a protected attribute without naming it — postcode for ethnicity, device
+       type or first name for income and gender.</p>
+    <p class="warn-inline">Removing the protected attribute does not remove the bias; it only removes
+       your ability to measure it. "Fairness through unawareness" is the standard mistake, and in a rich
+       feature set it is close to useless.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Model card <span class="tag">mid</span></div>
+    <p>A short document per model version: intended use, out-of-scope use, training data, evaluation
+       including per-group breakdowns, limitations, and ethical considerations.</p>
+    <p class="wh">Cheap to write, and it is the artifact that makes a handover or an audit survivable.
+       Generate it from the tracking run so it cannot drift from the model it describes.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Right to explanation <span class="tag">senior</span></div>
+    <p>Under GDPR Article 22, a person subject to a significant automated decision can demand meaningful
+       information about the logic and contest the outcome.</p>
+    <p class="wh">Drives real architecture: a per-decision explanation (module 26), a stored record of
+       the inputs used, and a human review path. Note the legal debate about how far Article 22 reaches
+       — the defensible engineering answer is to build the capability rather than argue the scope.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Differential privacy <span class="tag">senior</span></div>
+    <p>A formal guarantee: adding or removing one person's data changes the output distribution by at
+       most e<sup>ε</sup>.</p>
+    <p class="wh">The only privacy notion with a real proof attached, and it costs accuracy — the
+       privacy budget ε is a dial between utility and protection, not a checkbox.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Membership inference <span class="tag">senior</span></div>
+    <p>An attack that determines whether a specific record was in the training set, usually by
+       exploiting the model's higher confidence on data it memorised.</p>
+    <p class="wh">Why "the model is anonymous because it only stores weights" is false. Overfitted
+       models leak most, which makes regularisation a privacy control as well as a generalisation
+       one.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Adversarial robustness <span class="tag">senior</span></div>
+    <p>Fraud is the adversarial case by definition: the data distribution contains an opponent who is
+       actively probing your decision boundary.</p>
+    <p class="wh">Consequences: prefer features that are costly for the attacker to change (account age,
+       device history) over cheap ones (a self-reported field); expect probing behaviour — many small
+       test transactions — and detect it as a pattern; and retrain frequently, because your decision
+       boundary is being mapped.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Total cost of ownership <span class="tag">mid</span></div>
+    <p>Training compute, serving compute, storage, the data pipeline, and the engineer-hours to keep it
+       all alive.</p>
+    <p class="wh">Serving usually dominates over a model's life, which is why the inference-optimal
+       argument from module 43 is a business decision. A 2-point AUC gain that triples serving cost is a
+       trade to be justified, not an automatic win.</p>
+  </div>
+
+</div>
+
+<h2 data-n="55.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How would you check whether your fraud model is fair?</summary>
+  <div class="a">
+    <div class="tldr">Choose the definition that matches the harm, measure per group at the operating
+    threshold, look for proxies, and document the trade-off you accepted. The measurement is
+    straightforward; the definition choice is the actual work.</div>
+    <p><strong>1 — Name the harm.</strong> For fraud, the harm to a customer is being wrongly declined:
+    a legitimate person cannot pay. That is a false positive, so the relevant criterion is the false
+    positive rate across groups — equalised odds territory — rather than demographic parity, which would
+    demand equal decline rates even where genuine fraud rates differ.</p>
+    <p><strong>2 — Measure at the threshold you actually use.</strong> Per group: FPR, TPR, and
+    calibration. Aggregate AUC hides everything; the decision is made at a threshold, so that is where
+    fairness lives.</p>
+    <p><strong>3 — Handle the attribute problem.</strong> You often may not collect ethnicity, and
+    inferring it to audit is itself fraught. Practical routes: aggregate proxies at area level, a
+    consented sample used only for auditing, or bias-audit techniques that work without individual
+    labels. Whichever you pick, be explicit about its limitations — this is a place where overclaiming
+    is worse than a caveat.</p>
+    <p><strong>4 — Hunt proxies.</strong> Check the correlation of top features with the protected
+    attribute where you can measure it. Postcode is the classic; device and channel are close
+    behind.</p>
+    <p><strong>5 — Decide and write it down.</strong> If FPR differs materially, the options are
+    per-group thresholds (legally fraught in some jurisdictions, and a decision for legal not for me),
+    reweighting or constrained training, or accepting the gap with a documented justification. All three
+    are defensible; doing it silently is not.</p>
+    <p><strong>The framing I would close on:</strong> fairness is a product and legal decision informed
+    by measurement, not a metric an engineer optimises alone. My job is to surface the trade-off
+    honestly, quantify each option, and make sure the decision is recorded with the model — which is
+    exactly what the model card is for.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does GDPR actually require of an ML system?</summary>
+  <div class="a">
+    <div class="tldr">A lawful basis for the processing, data minimisation, purpose limitation, the
+    subject's rights (access, erasure, explanation, contest), and — for significant automated decisions
+    — a human review path. In practice it is mostly about lineage and deletion, both of which are
+    architecture, not policy.</div>
+    <p><strong>The parts that change engineering:</strong></p>
+    <ul>
+      <li><strong>Purpose limitation.</strong> Data collected to process payments cannot be silently
+          repurposed for marketing models. This is a real constraint on which tables a training job may
+          read, and it should be enforced by access control, not by convention.</li>
+      <li><strong>Erasure.</strong> You must be able to delete a person's data — which raises the
+          uncomfortable question of the model trained on it. The pragmatic industry position is that
+          deleting from the training store and removing them at the next retrain is proportionate;
+          machine unlearning exists but is not mature. What matters is having a defensible, documented
+          position rather than a vague one.</li>
+      <li><strong>Automated decisions (Art. 22).</strong> A fraud decline is significant, so you need a
+          human review route, an explanation of the logic, and a way to contest. That means per-decision
+          explanations and stored feature vectors — the same logging that makes debugging possible.</li>
+      <li><strong>Data minimisation.</strong> Collect what you need. "More features might help" is not
+          a lawful basis, and this genuinely does constrain feature engineering.</li>
+      <li><strong>Records of processing and DPIAs</strong> for high-risk processing — a document, but a
+          document that requires you to know your lineage.</li>
+    </ul>
+    <p><strong>The observation worth making:</strong> almost every GDPR requirement above is satisfied
+    by infrastructure you want anyway — lineage, per-prediction logging, explanations, access control,
+    documented models. Teams that treat compliance as a bolt-on suffer; teams that build traceability
+    for engineering reasons find compliance mostly falls out of it. And fraud prevention is generally a
+    legitimate-interest basis, which is why it is permitted at all — but that basis is not unlimited,
+    and it does not extend to reusing the data elsewhere.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How does an adversary change how you build the model?</summary>
+  <div class="a">
+    <div class="tldr">It changes feature selection, the retraining cadence, what you reveal, and what
+    you monitor. In an adversarial domain the data distribution is not drifting by accident — it is
+    being moved by someone with an incentive.</div>
+    <p><strong>Feature economics.</strong> Prefer features that are expensive for the attacker to
+    change. Account age, device reputation and behavioural history are costly to fake; email domain,
+    a self-declared field or a user agent string are nearly free. A model leaning on cheap features has
+    a boundary that can be walked around in an afternoon.</p>
+    <p><strong>Do not leak the boundary.</strong> Precise decline reasons, consistent thresholds, and
+    fast deterministic feedback all let an attacker binary-search your model. Vague messages, some
+    randomisation near the threshold, and rate limiting on retries are cheap defences. This trades
+    against explainability, and that tension is exactly the kind of thing to name rather than
+    resolve glibly.</p>
+    <p><strong>Expect probing.</strong> The signature is a burst of small transactions testing what gets
+    through. That pattern is detectable in itself, at the entity and network level rather than the
+    transaction level — which argues for velocity and graph features, and for an asynchronous path that
+    can afford to compute them.</p>
+    <p><strong>Retrain faster, and monitor differently.</strong> Concept drift here is adversarial and
+    can be abrupt: a new technique appears and works until you notice. Sudden shifts in the score
+    distribution or in the mix of declined patterns deserve investigation as attacks, not just as
+    drift.</p>
+    <p><strong>And assume the labels are contested.</strong> Unreported fraud is labelled legitimate, so
+    your negatives are polluted in a direction the adversary controls — which biases training toward
+    whatever currently evades detection. This is the strongest argument for the randomised holdout and
+    for treating unlabelled anomalies (module 24) as a complement to the supervised model rather than as
+    a curiosity.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Four fairness definitions, and the impossibility result linking calibration to equalised odds.</li>
+    <li>Why removing the protected attribute makes things worse, not better.</li>
+    <li>Which fairness criterion fits fraud, and why.</li>
+    <li>The four GDPR requirements that change architecture.</li>
+    <li>Cheap vs expensive features, from the attacker's point of view.</li>
+    <li>Why unreported fraud makes your negative labels adversarially biased.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#54" target="_top"><span class="k">Back</span>← 54 · Monitoring &amp; drift</a>
+  <a href="../index.html#60" target="_top"><span class="k">Next</span>60 · Round 1 · Maths →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

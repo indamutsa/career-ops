@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to use this — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Start · Module 00</p>
+<h1>Read this first
+  <span class="lede">Forty-four modules that take you from “what is a slope” to defending a
+  real-time fraud-detection architecture in front of a hiring panel. No code to write here —
+  this is the <em>recall</em> track. You already have a build track next door.</span>
+</h1>
+
+<h2 data-n="00.1">What this is, and what it is not</h2>
+
+<p>There are two ways to learn machine learning, and a strong interview needs both. You can
+<strong>build it</strong> — which is what <code>learning/llm-from-scratch/</code> is for, where you
+write a transformer from an empty file and train it on your own machine. And you can
+<strong>articulate it</strong> — out loud, in forty seconds, to a stranger who is deciding whether
+to hire you.</p>
+
+<p>Those are different skills, and the second one is not a by-product of the first. Building gives you
+understanding; it does not, on its own, give you the compressed sentence that lands in an interview
+— “KL divergence measures how much accuracy you lose by predicting with the wrong distribution, and
+it is asymmetric, so which of the two distributions you put first changes the answer.” That sentence
+is a <em>performance</em>. Performances are rehearsed. This is where you rehearse them.</p>
+
+<div class="box note">
+  <span class="lbl">The division of labour</span>
+  <p><strong>Build track</strong> (<code>learning/llm-from-scratch/</code>) — hands on keyboard,
+  labs, checkpoints, a model that writes English by 20 September. Ninety minutes a day.</p>
+  <p><strong>This track</strong> — reading and reciting. Thirty to forty minutes a day, plus one
+  longer session per weekend for the mock rounds. Do it when you are too tired to code.</p>
+</div>
+
+<h2 data-n="00.2">The four-sentence answer</h2>
+
+<p>Almost every technical interview answer that lands has the same four-part shape. Every accordion
+in this course is written in that shape, so that after a hundred of them the shape becomes automatic
+and you stop having to think about structure while also thinking about content.</p>
+
+<div class="tw">
+<table>
+<tr><th>Beat</th><th>What it does</th><th>Length</th></tr>
+<tr><td><strong>1. The one-liner</strong></td>
+    <td>Answers the literal question immediately. The interviewer can stop you here and still have
+        got what they asked for. Every accordion shows this in a blue box.</td>
+    <td>1 sentence</td></tr>
+<tr><td><strong>2. The mechanism</strong></td>
+    <td><em>Why</em> it is true — the maths or the causal chain. This is where you prove you did not
+        memorise a flashcard.</td>
+    <td>2–4 sentences</td></tr>
+<tr><td><strong>3. Where you have met it</strong></td>
+    <td>A concrete system, dataset, failure, or number. This is the beat that separates a candidate
+        from a textbook.</td>
+    <td>1–2 sentences</td></tr>
+<tr><td><strong>4. The boundary</strong></td>
+    <td>When it stops working, or what you would use instead. Volunteering the limitation is the
+        single strongest seniority signal available to you.</td>
+    <td>1 sentence</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">Say it out loud</span>
+  <p>Reading an answer and being able to produce it are separated by a gap that only speech closes.
+  Turn on <strong>drill mode</strong> (the <code>drill</code> button, or press <span class="kbd">d</span>),
+  which hides every answer. Read the question, <em>say the four beats aloud</em>, then open the
+  accordion and compare. If you only ever read, you will discover on 30 September that you cannot
+  actually say any of it.</p>
+</div>
+
+<h2 data-n="00.3">How the course is laid out</h2>
+
+<div class="tw">
+<table>
+<tr><th>Part</th><th>Modules</th><th>What it buys you</th></tr>
+<tr><td><strong>A · Maths</strong></td><td>10–14</td>
+    <td>The five things every later module leans on: vectors, slopes, uncertainty, surprise, and
+        how to search a landscape. Taught in plain language, always with the question “what problem
+        made someone invent this?” answered first.</td></tr>
+<tr><td><strong>B · Classical ML</strong></td><td>20–26</td>
+    <td>Everything before deep learning — and the part most candidates are weakest on, because they
+        skipped straight to transformers. Metrics and interpretability live here, and they come up
+        in <em>every</em> round.</td></tr>
+<tr><td><strong>C · Deep learning</strong></td><td>30–34</td>
+    <td>Neural networks, CNNs, RNNs, classic NLP and reinforcement learning. RL is not optional
+        garnish — it is the direct ancestor of RLHF and GRPO in Part D.</td></tr>
+<tr><td><strong>D · Transformers</strong></td><td>40–46</td>
+    <td>The focus. Attention, the block, BERT/GPT/T5, scaling laws, post-training, inference
+        efficiency, RAG and agents.</td></tr>
+<tr><td><strong>E · MLOps</strong></td><td>50–55</td>
+    <td>Past the model: Kafka and backpressure, feature stores, MLflow and Kubeflow, canary and
+        blue-green, drift and PSI, governance.</td></tr>
+<tr><td><strong>F · Rounds</strong></td><td>60–66</td>
+    <td>Five mock interview rounds, a coding round, and a behavioural round. Use these as tests,
+        not as reading.</td></tr>
+<tr><td><strong>G · Walkthrough</strong></td><td>70</td>
+    <td>One end-to-end system design — real-time fraud detection — that calls back to every earlier
+        module by name. If you can narrate this one document, you can handle a design round.</td></tr>
+</table>
+</div>
+
+<h2 data-n="00.4">The reading order (and the one shortcut)</h2>
+
+<p>Go in order. Part A is genuinely load-bearing: eigenvectors reappear in PCA, KL divergence
+reappears in three separate places (training loss, RLHF, drift detection), and Lagrange multipliers
+reappear as ridge regression, as the SVM dual, and as the KL penalty in PPO. Skipping Part A means
+meeting the same idea four times as four unrelated facts instead of once as one idea.</p>
+
+<p>If you are short on time, the <strong>only</strong> defensible shortcut is to skim modules 31
+(CNNs) and 33 (classic NLP) — they are the least likely to be probed for this role. Never skip 25
+(metrics), 44 (post-training), 54 (monitoring) or 70 (the walkthrough).</p>
+
+<h2 data-n="00.5">Every module has the same shape</h2>
+
+<div class="tw">
+<table>
+<tr><th>Element</th><th>What it is</th></tr>
+<tr><td><strong>Term cards</strong></td>
+    <td>Name, one plain sentence, the analogy, and <em>where you actually meet it</em>. If you can
+        only do one thing with a module, read its term cards aloud.</td></tr>
+<tr><td><strong>Concept sections</strong></td>
+    <td>Intuition first, algorithm second, formula last. Never the other way round.</td></tr>
+<tr><td><strong>Visualisations</strong></td>
+    <td>Drag the sliders. They are not decoration — several of them are the fastest way to see a
+        thing that takes three paragraphs to describe (KL asymmetry, the learning-rate cliff,
+        why a constraint makes gradients parallel).</td></tr>
+<tr><td><strong>Question accordions</strong></td>
+    <td>Real interview questions. <span class="pip b">BASIC</span>
+        <span class="pip i">MID</span> <span class="pip a">SENIOR</span> marks how deep it goes.
+        Each opens to a blue “say this first” line, the full answer, and an amber
+        <strong>trap</strong> — the follow-up that catches people who memorised.</td></tr>
+<tr><td><strong>Checkpoint</strong></td>
+    <td>The out-loud test at the end. If you cannot pass it, do not move on — the next module
+        assumes you did.</td></tr>
+</table>
+</div>
+
+<h2 data-n="00.6">Controls</h2>
+
+<div class="tw">
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td><span class="kbd">/</span></td><td>jump to search</td></tr>
+<tr><td><span class="kbd">j</span> / <span class="kbd">k</span></td><td>next / previous module</td></tr>
+<tr><td><span class="kbd">d</span></td><td>drill mode — hide every answer</td></tr>
+<tr><td><span class="kbd">t</span></td><td>light / dark</td></tr>
+<tr><td><em>mark done</em></td><td>ticks the module in the sidebar; stored in your browser</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">Full-text search</span>
+  <p>Search matches module titles and keywords always. To search the <em>body text</em> of all
+  thirty-one modules at once, serve the folder instead of double-clicking the file:</p>
+  <pre><code>cd learning/ml-interview-prep
+python3 -m http.server 8000
+# open http://localhost:8000</code></pre>
+  <p class="small">Browsers block one local file from reading another, which is why the served
+  version can do more. Everything else works identically either way.</p>
+</div>
+
+<h2 data-n="00.7">A schedule that fits alongside the build track</h2>
+
+<p>The interview is <strong>Wednesday 30 September</strong>. The build track owns your mornings and
+weekends. This track is the evening slot.</p>
+
+<div class="tw">
+<table>
+<tr><th>When</th><th>This track</th><th>Test</th></tr>
+<tr><td>Sat 5 – Fri 11 Sep</td><td>Part A (10–14), then 20 and 25</td>
+    <td>Round 1 (module 60)</td></tr>
+<tr><td>Sat 12 – Fri 18 Sep</td><td>Rest of Part B (21–24, 26), Part C (30–34)</td>
+    <td>Rounds 2 and 3 (61, 62)</td></tr>
+<tr><td>Sat 19 – Fri 25 Sep</td><td>Part D (40–46) — the focus, slow down here</td>
+    <td>Round 4 (63)</td></tr>
+<tr><td>Sat 26 – Mon 28 Sep</td><td>Part E (50–55), then the walkthrough (70)</td>
+    <td>Round 5 (64) and the walkthrough narrated aloud</td></tr>
+<tr><td>Tue 29 Sep</td><td>Drill mode over the modules you marked weakest. Module 66. Nothing new.</td>
+    <td>—</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The one failure mode of a course like this</span>
+  <p>Reading feels like progress and costs nothing. On 29 September you will have read everything
+  and be unable to say any of it, because recognition and recall are different memories. The fix is
+  cheap and unpleasant: <strong>drill mode from day one</strong>. Answer out loud before you open
+  the accordion, every single time, including the ones you are sure you know. Especially those.</p>
+</div>
+
+<div class="checkpoint">
+  <h4>Before you go to module 10</h4>
+  <ul>
+    <li>You can recite the four beats of an answer without looking: one-liner, mechanism, where you
+        met it, boundary.</li>
+    <li>You have pressed <span class="kbd">d</span> once and seen the answers disappear.</li>
+    <li>You know which two modules are the only skippable ones, and which four are never skippable.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <span></span>
+  <a href="../index.html#10" target="_top"><span class="k">Next</span>10 · Linear algebra →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

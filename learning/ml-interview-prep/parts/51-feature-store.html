@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature stores — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 51</p>
+<h1>Feature stores
+  <span class="lede">One idea, one problem, one animation. The idea is "compute a feature once, serve it
+  to both training and inference". The problem is <strong>point-in-time correctness</strong> — the most
+  expensive and least visible bug in applied ML, and the reason this component exists at all.</span>
+</h1>
+
+<h2 data-n="51.1">The problem a feature store solves</h2>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>You are marking an exam taken last March, and you want to know how well each student was doing
+  <em>at the time</em>. You open the school system, and it shows you their grades <strong>today</strong>
+  — including the results of the exam you are marking.</p>
+  <p>Every model built that way looks brilliant offline and collapses in production. The exam it aced
+  in testing contained the answers.</p>
+</div>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Offline store <span class="tag">basic</span></div>
+    <p>The full history of every feature value with the timestamp at which it became known. A warehouse
+       or lakehouse table — big, slow, complete.</p>
+    <p class="wh">Used to build training sets. The <em>timestamp column is the whole point</em>; without
+       it the history is unusable for correct joins.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Online store <span class="tag">basic</span></div>
+    <p>The latest value of each feature per entity, in a low-latency key-value store — Redis, DynamoDB,
+       Cassandra.</p>
+    <p class="wh">Used at inference: one lookup by <code>card_id</code>, single-digit milliseconds, no
+       computation on the request path.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Point-in-time correctness <span class="tag">senior</span></div>
+    <p>Joining each training label to the feature values <em>as they were known at that label's
+       timestamp</em> — never the latest value.</p>
+    <p class="warn-inline">Also called an as-of join. Getting it wrong is silent: the model trains on
+       information from the future, offline metrics look excellent, and production performance is far
+       worse with no error anywhere in the pipeline.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Train/serve skew <span class="tag">mid</span></div>
+    <p>The training feature and the serving feature are computed by different code, and disagree.</p>
+    <p class="an">Two chefs working from the same recipe written in two languages. The dish is subtly
+       different every time, and nobody can say which one is wrong.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Feature view / entity <span class="tag">mid</span></div>
+    <p>Feast's vocabulary: an <em>entity</em> is the key you look features up by (card, user, merchant);
+       a <em>feature view</em> is a group of features sharing a source and a freshness policy.</p>
+    <p class="wh">Registering them centrally is what makes features discoverable and reusable across
+       teams, which is the second-order benefit people forget to mention.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Materialisation <span class="tag">mid</span></div>
+    <p>Pushing computed values from the offline store into the online store on a schedule, or streaming
+       them in continuously.</p>
+    <p class="warn-inline">Introduces a freshness lag. A feature materialised hourly is up to an hour
+       stale at inference — and "transactions in the last hour" computed on hour-old data is a fraud
+       feature that has stopped working. Freshness requirements belong in the design, not in the
+       incident review.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">On-demand feature <span class="tag">senior</span></div>
+    <p>Computed at request time from the request payload plus looked-up values — the ratio of this
+       transaction's amount to the card's 30-day average, say.</p>
+    <p class="wh">Necessary because some features depend on the request itself and cannot be
+       precomputed. Feast expresses them as transformations registered once and executed identically in
+       both paths — which is exactly the skew fix.</p>
+  </div>
+
+</div>
+
+<h2 data-n="51.2">See the leak</h2>
+
+<div class="viz" data-viz="pit"></div>
+
+<h2 data-n="51.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain point-in-time correctness. Why is it so easy to get wrong?</summary>
+  <div class="a">
+    <div class="tldr">Every training row must see only the feature values that existed at that row's
+    event time. It is easy to get wrong because the natural SQL join — join the label table to the
+    feature table on the entity key — silently gives you the <em>current</em> value, and nothing about
+    the result looks broken.</div>
+    <p><strong>The concrete failure.</strong> Label: transaction on 3 March, flagged fraudulent.
+    Feature: <code>card_chargeback_count</code>. The naive join returns today's value, which includes the
+    chargeback raised <em>because of that very transaction</em>. The model learns "cards with
+    chargebacks are fraudulent", which is true, useless, and unavailable at decision time. Offline AUC
+    0.99; production AUC 0.71.</p>
+    <p><strong>Why it hides so well:</strong> there is no error, no null, no type mismatch. The only
+    symptom is that the model is <em>too good</em> — and "too good" is celebrated rather than
+    investigated. A random train/test split does not catch it, because the leak is present on both
+    sides.</p>
+    <p><strong>What the correct join actually is:</strong> for each (entity, event_timestamp) in the
+    label set, take the most recent feature row where <code>feature_timestamp ≤ event_timestamp</code> —
+    and additionally where that value was <em>available</em> by then, which is a second, stricter
+    condition. A feature computed by a nightly batch at 02:00 is not available to a 23:00 transaction
+    even though its timestamp precedes it. Feast models this as an event timestamp plus a created
+    timestamp, and mature pipelines subtract an explicit availability delay.</p>
+    <p><strong>How I would detect an existing leak:</strong> split by time, not at random, and compare —
+    a large gap between a random split and a temporal split is the signature. Then rank feature
+    importances and interrogate the top ones one at a time with the question "could this value have been
+    known before the event?". Anything derived from an outcome, an investigation, or a downstream
+    process is guilty until proven otherwise, and this is the same taxonomy as module 20's leakage
+    section, just with timestamps attached.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Do you actually need a feature store?</summary>
+  <div class="a">
+    <div class="tldr">You need the <em>properties</em> — point-in-time correct training sets, a
+    low-latency online lookup, and one definition shared by both paths. Whether you need Feast or a
+    hundred lines of your own depends on how many models and teams share features.</div>
+    <p><strong>When it is overkill:</strong> one model, one team, batch scoring. A versioned SQL query
+    plus a well-written as-of join is simpler, and simpler is better. Adopting a feature store to solve
+    a problem you do not have is a genuine cost — a new service, a new failure mode, a new deployment.</p>
+    <p><strong>When it starts paying:</strong></p>
+    <ul>
+      <li><strong>Several models sharing features.</strong> Without a registry, four teams write four
+          slightly different versions of "card transaction count, 7 days", and they disagree.</li>
+      <li><strong>Real-time serving.</strong> Now you genuinely need an online store and a
+          materialisation path, and you have to keep them consistent.</li>
+      <li><strong>Skew has already bitten you.</strong> The store's real product is a single definition
+          executed in both paths.</li>
+      <li><strong>Compliance.</strong> Feature lineage — this prediction used these values as of this
+          time — is an auditable artifact you would otherwise have to build.</li>
+    </ul>
+    <p><strong>My default answer</strong> is to build the properties first with plain tooling and adopt
+    a store when the second or third model arrives. What I would <em>not</em> do is skip point-in-time
+    correctness on the grounds that there is no feature store — that is the property that matters, and
+    it is available to anyone willing to write the as-of join carefully.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do you eliminate train/serve skew?</summary>
+  <div class="a">
+    <div class="tldr">One definition, executed by one implementation, in both paths — and then verify it
+    empirically by logging what was actually served and comparing it to what training computed.</div>
+    <p><strong>Where skew comes from,</strong> and each has a different fix: two implementations
+    (pandas for training, Java for serving) that drift apart; different data sources (warehouse vs
+    online store) with different freshness or completeness; different handling of missing values, where
+    training drops nulls and serving imputes; and time-window definitions that differ by a boundary
+    condition — inclusive versus exclusive, or event time versus arrival time.</p>
+    <p><strong>The structural fixes, in order of strength:</strong></p>
+    <ul>
+      <li><strong>Log the served features.</strong> The strongest fix, and the one I would do first:
+          write the exact feature vector used for each prediction, and train on <em>those logs</em>.
+          Then skew is impossible by construction, because training data is production data.</li>
+      <li><strong>One implementation.</strong> A single transformation, registered once, invoked by both
+          paths — Feast's on-demand transformations, or your own shared library.</li>
+      <li><strong>Bundle preprocessing into the model artifact,</strong> so scaling and encoding travel
+          with the weights and cannot be reimplemented differently at serving time.</li>
+      <li><strong>Shadow comparison.</strong> Recompute the training-path features for live traffic and
+          assert they match the served ones, within tolerance. This is the test that catches drift
+          between the two before it reaches a model.</li>
+    </ul>
+    <p><strong>And a monitoring backstop:</strong> compare the distribution of features at serving time
+    against the training distribution (module 54). Skew shows up as a distribution difference that
+    appeared at a deployment boundary rather than gradually — the shape of the change tells you whether
+    you are looking at skew or at genuine drift.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Offline vs online store, and what each is for.</li>
+    <li>The as-of join condition — including the availability condition most people omit.</li>
+    <li>The chargeback example, and why offline AUC went up while production went down.</li>
+    <li>Temporal split vs random split as a leak detector.</li>
+    <li>Four sources of train/serve skew, and why logging served features beats all of them.</li>
+    <li>When a feature store is overkill, and the two signals that it has started paying.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#50" target="_top"><span class="k">Back</span>← 50 · Data &amp; the ML lifecycle</a>
+  <a href="../index.html#52" target="_top"><span class="k">Next</span>52 · Tracking &amp; orchestration →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

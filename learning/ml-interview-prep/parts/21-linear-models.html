@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linear models — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 21</p>
+<h1>Linear models
+  <span class="lede">The oldest tools in the box, and still the ones a fraud or credit team ships when
+  a regulator has to be able to read the model. Linear and logistic regression, generalised linear
+  models, and the regularisation that turns out to be the Lagrange multiplier from module 14.</span>
+</h1>
+
+<h2 data-n="21.1">Why these are not a historical curiosity</h2>
+
+<p>An interviewer asking about logistic regression in 2026 is not testing whether you know it. They
+are testing whether you understand <em>why anyone would still choose it</em>, because the answer
+reveals how you think about production systems.</p>
+
+<ul>
+  <li><strong>It is auditable.</strong> Every coefficient has a meaning you can defend in a sentence.
+      In credit and insurance this is not a nice-to-have — under regimes like ECOA/Reg B in the US
+      you must be able to state the specific reasons for an adverse decision, and "the gradient
+      boosting said so" is not one.</li>
+  <li><strong>It is naturally calibrated.</strong> Fit by maximum likelihood on the log-loss, and its
+      outputs behave like probabilities out of the box. Most boosted-tree scores do not, and when
+      your threshold comes from a cost matrix, calibration is the property that matters — see
+      module 25.</li>
+  <li><strong>It is fast and tiny.</strong> A dot product. Microseconds, no accelerator, trivial to
+      deploy at the edge of a payment path.</li>
+  <li><strong>It is the baseline that keeps you honest.</strong> If your deep model beats regularised
+      logistic regression by two points of AUC, you have learned something important about whether
+      the complexity is worth its operational cost.</li>
+  <li><strong>It degrades gracefully.</strong> Extrapolation is a straight line rather than whatever
+      a tree does off the edge of its training range, which is a real advantage under drift.</li>
+</ul>
+
+<h2 data-n="21.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Linear regression <span class="tag">basic</span>
+        <span class="sym">ŷ = w·x + b</span></div>
+    <p>Predict a number as a weighted sum of the features.</p>
+    <p class="an">Pricing a flat: start at a base price, add so much per square metre, add so much
+       for a balcony, subtract so much per kilometre from the centre.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">OLS / normal equation <span class="tag">mid</span>
+        <span class="sym">w = (XᵀX)⁻¹Xᵀy</span></div>
+    <p>Least squares has a closed-form solution — no iteration required.</p>
+    <p class="wh">Fine up to a few thousand features. Beyond that, or when XᵀX is near-singular, you
+       solve it by QR or SVD rather than inverting anything.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Residual <span class="tag">basic</span></div>
+    <p>Actual minus predicted, for one row. The bit the model got wrong.</p>
+    <p class="wh">Plotting residuals against predictions is the fastest diagnostic in classical
+       modelling: any visible pattern means structure you failed to capture.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">R² <span class="tag">basic</span></div>
+    <p>The fraction of the target's variance the model explains. 1 is perfect, 0 is no better than
+       predicting the mean, and negative is possible on held-out data.</p>
+    <p class="wh">Never quote plain R² for model selection — it can only rise as you add features.
+       Adjusted R² penalises the count; held-out error settles it properly.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Logistic regression <span class="tag">basic</span>
+        <span class="sym">p = σ(w·x + b)</span></div>
+    <p>Linear regression squashed through a sigmoid so the output is a probability between 0 and 1.</p>
+    <p class="an">A dimmer switch, not a light switch: the score slides smoothly from "almost
+       certainly not" to "almost certainly yes".</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Sigmoid <span class="tag">basic</span>
+        <span class="sym">1/(1+e⁻ᶻ)</span></div>
+    <p>Maps any real number into (0,1). Symmetric around z = 0, where it equals 0.5.</p>
+    <p class="wh">The binary special case of softmax. Its derivative σ(1−σ) peaks at 0.25 and vanishes
+       at both ends — the saturation that causes vanishing gradients in module 30.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Log-odds / logit <span class="tag">mid</span>
+        <span class="sym">log(p/(1−p))</span></div>
+    <p>The quantity logistic regression is actually linear in. The inverse of the sigmoid.</p>
+    <p class="an">Odds are the gambler's version of probability: 3-to-1 rather than 75 %. Taking the
+       log makes the scale symmetric — twice as likely and half as likely become +log2 and −log2.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Odds ratio <span class="tag">mid</span>
+        <span class="sym">e^wⱼ</span></div>
+    <p>Exponentiate a coefficient and you get the multiplicative effect on the odds of a one-unit
+       increase in that feature.</p>
+    <p class="wh">This is how a coefficient gets explained to a risk committee: "each additional
+       failed login multiplies the odds of fraud by 1.8."</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GLM &amp; link function <span class="tag">mid</span></div>
+    <p>The general recipe: a linear predictor, plus a <em>link</em> function connecting it to the
+       mean of whatever distribution suits your target.</p>
+    <p class="wh">Identity link + Gaussian = linear regression. Logit + Bernoulli = logistic. Log +
+       Poisson = count regression. One framework, three familiar models.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Ridge (L2) <span class="tag">mid</span>
+        <span class="sym">+ λ‖w‖²</span></div>
+    <p>Penalise the sum of squared weights. Shrinks everything toward zero, in proportion, without
+       reaching it.</p>
+    <p class="an">A progressive tax on weight size — the biggest weights feel it most.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Lasso (L1) <span class="tag">mid</span>
+        <span class="sym">+ λ‖w‖₁</span></div>
+    <p>Penalise the sum of absolute weights. Drives some coefficients to <em>exactly</em> zero, so it
+       selects features as a side effect of fitting.</p>
+    <p class="wh">The diamond-shaped constraint region from module 10 — corners on the axes are why
+       the solution lands on a zero.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Elastic net <span class="tag">mid</span></div>
+    <p>Both penalties at once. Gets lasso's sparsity while handling correlated feature groups the
+       way ridge does.</p>
+    <p class="wh">The default when features come in correlated clusters — lasso alone picks one
+       member of each cluster arbitrarily, which makes the selection unstable across refits.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Multicollinearity <span class="tag">mid</span></div>
+    <p>Two or more features carrying nearly the same information, so the model cannot tell which
+       deserves the credit.</p>
+    <p class="an">Two people pushing a car. It moves. You cannot tell from the motion who pushed
+       harder — and tomorrow you might attribute it the other way round.</p>
+    <p class="wh">Coefficients become huge, unstable, and sometimes sign-flipped between refits.
+       Predictions stay fine; <em>interpretation</em> is what breaks.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">WOE &amp; Information Value <span class="tag">senior</span></div>
+    <p>Weight of Evidence: bin a feature, then replace each bin with the log-odds of the target
+       inside it. Information Value sums their contribution to rank features.</p>
+    <p class="wh">Standard practice in credit scorecards, and worth knowing by name for any fraud or
+       risk interview — it makes a non-linear feature usable by a linear model while keeping the whole
+       thing explainable. It is also a leakage magnet: the bins must be fitted inside the
+       cross-validation fold.</p>
+  </div>
+
+</div>
+
+<h2 data-n="21.3">Logistic regression: the three things people get wrong</h2>
+
+<p><strong>One — it is a classifier that is really a probability model.</strong> It does not output a
+class; it outputs P(y = 1 | x). The class comes from a threshold <em>you</em> choose, and 0.5 is a
+default, not a law. In fraud, where a false negative costs €200 and a false positive costs a
+customer thirty seconds of annoyance, the correct threshold is nowhere near 0.5. Module 25 derives
+it from the cost matrix.</p>
+
+<p><strong>Two — "linear" refers to the log-odds, not the probability.</strong> The relationship
+between a feature and the probability is an S-curve. What is linear is the log-odds:</p>
+
+<div class="eq">
+  log( p / (1 − p) ) = w·x + b
+  <span class="note">this is the model; the sigmoid is just this equation rearranged for p</span>
+</div>
+
+<p>That single line answers a whole family of interview questions. Why is the decision boundary a
+straight line? Because the boundary is where p = 0.5, which is where the log-odds is 0, which is
+where w·x + b = 0 — a hyperplane. Why can it not solve XOR? Same reason.</p>
+
+<p><strong>Three — it is trained with log loss, and not by accident.</strong> Squared error on a
+sigmoid output gives a non-convex objective with a nasty additional problem: the gradient contains a
+σ′ factor that vanishes exactly when the model is confidently wrong. The worse the mistake, the
+slower the correction. Log loss cancels that factor — the gradient reduces to the beautifully simple
+(p − y)·x, so a confident mistake produces a large gradient. That cancellation is why cross-entropy
+is the loss for every classifier, not just this one.</p>
+
+<h2 data-n="21.4">The GLM table</h2>
+
+<div class="tw">
+<table>
+<tr><th>Target looks like</th><th>Distribution</th><th>Link</th><th>Model name</th></tr>
+<tr><td>A real number, symmetric errors</td><td>Gaussian</td><td>identity</td><td>Linear regression</td></tr>
+<tr><td>Yes/no</td><td>Bernoulli</td><td>logit</td><td>Logistic regression</td></tr>
+<tr><td>One of k classes</td><td>Categorical</td><td>softmax</td><td>Multinomial / softmax regression</td></tr>
+<tr><td>A count (claims, clicks, arrivals)</td><td>Poisson</td><td>log</td><td>Poisson regression</td></tr>
+<tr><td>A count with variance &gt; mean</td><td>Negative binomial</td><td>log</td><td>NB regression</td></tr>
+<tr><td>A positive amount (claim size, spend)</td><td>Gamma</td><td>log</td><td>Gamma GLM</td></tr>
+</table>
+</div>
+
+<p>The pattern worth internalising: <strong>pick the distribution that matches your target's shape,
+and the link follows.</strong> Fitting a linear regression to a count is a common mistake — it will
+happily predict −3 claims, and it assumes constant variance when count data has variance that grows
+with the mean. Insurance pricing is essentially a Gamma GLM for severity times a Poisson GLM for
+frequency, which is a genuinely useful thing to know if the company is in that space.</p>
+
+<h2 data-n="21.5">Regularisation — and the callback</h2>
+
+<p>Module 14 set this up; here is the payoff. "Minimise squared error subject to ‖w‖² ≤ t" has the
+Lagrangian MSE + λ‖w‖². <strong>Your regularisation strength is a Lagrange multiplier on a budget
+for how large the weights are allowed to get.</strong> Every value of the budget t corresponds to
+exactly one λ, so tuning either one is the same search.</p>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Ridge (L2)</th><th>Lasso (L1)</th></tr>
+<tr><td>Constraint shape</td><td>Circle / sphere</td><td>Diamond — corners sit on the axes</td></tr>
+<tr><td>Effect on weights</td><td>Shrinks all, proportionally, never to zero</td><td>Drives some to
+    exactly zero</td></tr>
+<tr><td>Correlated features</td><td>Splits the credit between them — stable</td><td>Picks one
+    arbitrarily, drops the rest — unstable across refits</td></tr>
+<tr><td>Solution</td><td>Closed form: (XᵀX + λI)⁻¹Xᵀy</td><td>No closed form; coordinate descent or
+    LARS</td></tr>
+<tr><td>Bayesian reading</td><td>Gaussian prior on the weights</td><td>Laplace prior</td></tr>
+<tr><td>Reach for it when</td><td>Many features all plausibly matter; multicollinearity</td>
+    <td>You want a short, defensible feature list</td></tr>
+</table>
+</div>
+
+<div class="box warn">
+  <span class="lbl">Always scale first</span>
+  <p>Both penalties act on the raw magnitude of the coefficients, and a coefficient's magnitude
+  depends on its feature's units. A feature in euros and the same feature in cents get penalised a
+  hundred times differently. Standardise before regularising, every time — and do the scaling inside
+  the pipeline so it is fitted on the training fold only. Ridge's closed form also shows exactly why
+  it helps numerically: adding λI to XᵀX makes a near-singular matrix invertible again, which is the
+  same fix as the condition-number argument in module 10.</p>
+</div>
+
+<h2 data-n="21.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain logistic regression to a product manager.</summary>
+  <div class="a">
+    <div class="tldr">It scores each case by adding up weighted evidence, then squashes that total
+    into a probability between 0 and 100 %.</div>
+    <p>Each feature gets a weight learned from history — a failed login pushes the score up, an
+    account that is five years old pushes it down. Add them up, run the total through an S-shaped
+    curve, and you get a probability. Then you pick a cut-off for action, and that cut-off is a
+    business decision about the relative cost of missing fraud versus annoying a good customer, not
+    a modelling one.</p>
+    <p>The thing I would emphasise to a PM is why we might choose it over something fancier: you can
+    read it. Every score decomposes into "these three features drove it", which is what you need for
+    a customer explanation, for a regulator, and for debugging when it misbehaves.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Why is it called regression if it classifies?" Because it regresses on the log-odds — it
+      predicts a continuous quantity, and the classification is a threshold applied afterwards.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do we use log loss instead of MSE for logistic regression?</summary>
+  <div class="a">
+    <div class="tldr">Two reasons: MSE on a sigmoid is non-convex, and its gradient vanishes exactly
+    when the model is most confidently wrong. Log loss is convex and its gradient is proportional to
+    the error itself.</div>
+    <p><strong>Convexity.</strong> Squared error composed with a sigmoid gives a surface with local
+    minima. Log loss with a sigmoid is convex in the parameters, so there is one global optimum and
+    any reasonable optimiser reaches it.</p>
+    <p><strong>The gradient, which is the more interesting reason.</strong> Under MSE, the gradient
+    carries a factor of σ′(z) = σ(1−σ). When the model predicts 0.001 and the truth is 1 — as wrong
+    as it is possible to be — that factor is about 0.001, so the update is almost zero. The model is
+    maximally wrong and learns most slowly. Under log loss the σ′ cancels against the derivative of
+    the log, and the gradient becomes (p − y)·x: the update is proportional to how wrong you were,
+    which is what you wanted all along.</p>
+    <p><strong>And the principled reason:</strong> log loss <em>is</em> the negative log-likelihood
+    of a Bernoulli. So fitting with it is maximum likelihood, which is why the resulting
+    probabilities are calibrated. MSE assumes Gaussian noise, which is simply the wrong model for a
+    binary outcome.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The same σ′ cancellation is why the softmax + cross-entropy pair is implemented as one fused
+      operation in every framework. Doing them separately reintroduces the numerical problem the
+      cancellation was avoiding.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>A coefficient in your fraud model is 0.7. What does that mean?</summary>
+  <div class="a">
+    <div class="tldr">Exponentiate it: e⁰·⁷ ≈ 2.0. A one-unit increase in that feature roughly
+    doubles the <em>odds</em> of fraud, holding everything else constant.</div>
+    <p>Three qualifications I would state without being asked, because each one is a follow-up
+    waiting to happen:</p>
+    <ul>
+      <li><strong>Odds, not probability.</strong> Doubling the odds moves a 1 % probability to about
+          2 %, but a 50 % probability to 67 %. The multiplicative effect is constant on odds and very
+          much not constant on probability.</li>
+      <li><strong>"One unit" depends on scaling.</strong> If I standardised the features, one unit is
+          one standard deviation, and that is what I should say out loud. Quoting an odds ratio
+          without saying what a unit is means nothing.</li>
+      <li><strong>"Holding everything else constant" is doing a lot of work.</strong> With correlated
+          features that condition is not physically achievable, and the individual coefficients get
+          unstable. This is where I would check the correlation structure before quoting any single
+          number to a stakeholder.</li>
+    </ul>
+    <p>And the boundary: this is an association in the training data, not a causal effect. If asked
+    "so if we reduce that feature, will fraud drop?", the honest answer is that nothing in the fit
+    supports that claim.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Ridge or lasso — how do you choose?</summary>
+  <div class="a">
+    <div class="tldr">Lasso when I want a short feature list and believe most features are irrelevant;
+    ridge when I think many features contribute a little, or when they are correlated; elastic net
+    when both are true, which in practice is often.</div>
+    <p>The geometric reason for the difference is worth stating because it shows you understand it
+    rather than remember it: the L1 constraint region is a diamond with corners on the axes, and a
+    loss contour expanding outward hits a corner first — and a corner is a point where one coordinate
+    is exactly zero. The L2 region is a sphere with no corners, so the contact point almost never has
+    a zero coordinate.</p>
+    <p>What decides it for me in practice:</p>
+    <ul>
+      <li>Correlated feature groups → ridge or elastic net. Lasso picks one member of the group
+          essentially at random, and the choice flips between refits, which makes for an
+          embarrassing conversation when the feature list changes every month.</li>
+      <li>Feature list has to be defensible and short → lasso, then refit an unregularised model on
+          the survivors to get honest coefficients, since lasso shrinks the ones it keeps.</li>
+      <li>p ≫ n → lasso caps out at n selected features; elastic net does not, which is one of the
+          two reasons the elastic net paper exists.</li>
+      <li>No strong prior → elastic net and cross-validate both λ and the mix.</li>
+    </ul>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Lasso does feature selection, so it is the more principled choice." It selects, but the
+      selection is not stable and is not a causal statement. If stability matters, bootstrap the fit
+      and look at how often each feature survives.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>You find high multicollinearity. Does it matter?</summary>
+  <div class="a">
+    <div class="tldr">It depends entirely on what the model is for. For prediction, usually not. For
+    interpretation, it is fatal.</div>
+    <p>Mechanically: near-duplicate features make XᵀX ill-conditioned, so the coefficient estimates
+    have enormous variance. You can get a large positive weight on one feature and a large negative
+    one on its near-twin, cancelling out, and a slightly different sample flips the pair. The fitted
+    <em>predictions</em> stay stable — the pair still sums to the same thing — but no individual
+    coefficient means anything.</p>
+    <p><strong>So when do I care?</strong></p>
+    <ul>
+      <li>Pure prediction, model held fixed → largely ignore it. It costs some efficiency, not
+          accuracy.</li>
+      <li>Anyone will read the coefficients — regulatory reasons codes, a risk committee, a feature
+          post-mortem → I must fix it, because the numbers I would be quoting are arbitrary.</li>
+      <li>Features drift apart over time → now it matters for prediction too. Two features that were
+          collinear at training time and diverge in production feed the model a combination it has
+          never seen, and the enormous cancelling weights amplify the difference.</li>
+    </ul>
+    <p><strong>What I would do:</strong> compute VIF and look at anything above ~10; drop or merge the
+    redundant feature; apply ridge, which is the cleanest fix precisely because adding λI restores
+    the conditioning; or use PCA if interpretability is already lost. In a credit setting the
+    conventional answer is to keep one representative feature per correlated block and document the
+    choice, because a stable, explainable scorecard beats a marginally better one.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Multicollinearity is a property of the feature matrix, not of the model. It affects linear
+      models' coefficients; trees are unaffected in prediction but split the importance arbitrarily
+      between correlated features — which is the same interpretation problem wearing a different
+      hat.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>When would you ship logistic regression over gradient boosting?</summary>
+  <div class="a">
+    <div class="tldr">When explainability is a hard requirement, when latency or footprint is
+    extreme, when the data is small or badly non-stationary, or when the honest measured gap between
+    them does not justify the operational cost.</div>
+    <ul>
+      <li><strong>Regulated decisions.</strong> Credit, insurance, hiring. If I must produce specific
+          adverse-action reasons, a scorecard where each contribution is a coefficient times a binned
+          value gives them exactly, and it survives a model-risk review that a boosted ensemble will
+          not pass without substantial extra work.</li>
+      <li><strong>Calibration matters more than ranking.</strong> When the threshold comes from a cost
+          matrix, or the score feeds an expected-value calculation downstream, I need a probability
+          rather than a ranking. LR gives that natively; GBDT needs a calibration layer, which is one
+          more thing to maintain and to re-fit when it drifts.</li>
+      <li><strong>Latency and footprint.</strong> A dot product in a synchronous payment path costs
+          microseconds. Several hundred trees do not, and the tail latency is what breaks an SLO.</li>
+      <li><strong>Small or drifting data.</strong> With a few thousand rows, or a target whose
+          relationship shifts, the simpler model's higher bias is protective. Its extrapolation
+          behaviour off the edge of the training distribution is also far more predictable than a
+          tree's, which just returns the nearest leaf forever.</li>
+      <li><strong>The gap is small.</strong> I would actually measure it. Two AUC points may not be
+          worth a model that nobody can explain when it declines a customer.</li>
+    </ul>
+    <p>The realistic answer for fraud specifically is that plenty of production systems run both: a
+    boosted model for ranking and a transparent scorecard for the decisions that must be justified,
+    or a linear model whose features were engineered with the help of a tree model's findings.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you feed a high-cardinality categorical — like merchant ID with 200,000 values — to a linear model?</summary>
+  <div class="a">
+    <div class="tldr">Not one-hot. Options are target/WOE encoding fitted inside the fold, hashing,
+    frequency encoding, grouping the long tail, or a learned embedding — and the choice is mostly
+    about leakage and stability, not accuracy.</div>
+    <ul>
+      <li><strong>Target or WOE encoding.</strong> Replace each merchant with the log-odds of fraud
+          for that merchant. Powerful and standard in credit scoring. <strong>It leaks aggressively
+          if done wrong</strong> — the encoding must be fitted inside each CV fold, with smoothing
+          toward the global rate for rare merchants, and ideally out-of-fold within the training set
+          too. This is the answer they are usually fishing for.</li>
+      <li><strong>Frequency / count encoding.</strong> Replace with how often the value appears.
+          Crude, leak-free, and surprisingly useful for fraud, where "merchant we have barely seen"
+          is itself the signal.</li>
+      <li><strong>Hashing trick.</strong> Hash into a fixed number of buckets. Constant memory,
+          handles unseen values at serving time for free, at the cost of collisions and lost
+          interpretability. Good for extremely high cardinality in a streaming setting.</li>
+      <li><strong>Group the tail.</strong> Keep the top few hundred merchants explicitly, bucket the
+          rest as "other". Simple, stable, and often enough.</li>
+      <li><strong>Embeddings.</strong> A learned dense vector per merchant, if there is a neural model
+          in the stack. Best quality when there is enough data per category, but it changes the
+          deployment story.</li>
+    </ul>
+    <p>The operational point I would raise unprompted: whatever encoding I pick has to be reproducible
+    at serving time from the feature store, and it has to have a defined behaviour for a merchant ID
+    the model has never seen — which happens on day one in production. An encoding without a
+    documented unseen-value policy is a production incident waiting for its date.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>One-hot on 200k values gives a 200k-wide sparse matrix. It is not catastrophic for a linear
+      model with L2 and sparse storage — but almost every level has a handful of rows, so the
+      coefficients are noise, and it will not fit in a tree-based model at all.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Logistic regression is linear in the log-odds — and the two consequences of that sentence.</li>
+    <li>The two reasons log loss beats MSE, including the vanishing-gradient one.</li>
+    <li>Read a coefficient as an odds ratio, with the three caveats.</li>
+    <li>Ridge vs lasso: geometry, correlated features, and the Bayesian priors.</li>
+    <li>Why regularisation strength is a Lagrange multiplier.</li>
+    <li>Four reasons to ship a linear model over gradient boosting.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#20" target="_top"><span class="k">Back</span>← 20 · The learning problem</a>
+  <a href="../index.html#22" target="_top"><span class="k">Next</span>22 · Trees &amp; ensembles →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attention — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 40</p>
+<h1>Attention
+  <span class="lede">The centre of the whole interview. If you can derive the √d, explain what a head
+  is actually for, and state the complexity with its consequences, you are already ahead of most
+  candidates. Everything in Part D builds on this module.</span>
+</h1>
+
+<h2 data-n="40.1">What attention is doing</h2>
+
+<p>Module 33 ended on the jump from static to contextual embeddings. Attention <em>is</em> that jump,
+made mechanical. Each token starts as a context-free vector and, layer by layer, pulls in information
+from the tokens that give it meaning.</p>
+
+<div class="box analogy">
+  <span class="lbl">The analogy — a library lookup that returns a blend</span>
+  <p>You walk into a library with a <strong>question</strong> — that is the <strong>query</strong>.
+  Every book has a <strong>spine label</strong> saying what it is about — that is the
+  <strong>key</strong>. Every book also has <strong>contents</strong> — that is the
+  <strong>value</strong>.</p>
+  <p>You compare your question to every spine and get a relevance score. But instead of picking the
+  single best book, you take a <em>weighted blend</em> of all their contents, in proportion to
+  relevance. A book scoring 0.7 contributes 70 % of what you walk out with.</p>
+  <p>The blend is the point. It is differentiable, so the model can learn <em>what to ask</em> and
+  <em>how to label</em>, which a hard pick could not.</p>
+</div>
+
+<div class="eq">Attention(Q, K, V) = softmax( Q K<sup>⊤</sup> / √d<sub>k</sub> ) V<span class="note">score every query against every key · scale · normalise to weights that sum to 1 · take the weighted sum of values</span></div>
+
+<p>In self-attention, Q, K and V are all linear projections of the <em>same</em> input — the sequence
+is asking questions of itself. Three learned matrices W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>
+produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back together.</p>
+
+<h2 data-n="40.2">The attention matrix, seen</h2>
+
+<div class="viz" data-viz="attention"></div>
+
+<h2 data-n="40.3">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Query, key, value <span class="tag">basic</span></div>
+    <p>Three different projections of the same token vector, each learned for its own job: what I am
+       looking for, what I offer, and what I will actually hand over.</p>
+    <p class="wh">Separating key from value is what lets a token advertise itself one way and
+       contribute something different — "I am the subject noun" as a label, the noun's semantics as the
+       payload.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Attention weights <span class="tag">basic</span></div>
+    <p>The post-softmax row: a probability distribution over positions, summing to 1.</p>
+    <p class="warn-inline">Summing to 1 means attention is a <em>zero-sum</em> allocation. Attending
+       more to one token necessarily means attending less to another — which is why models often dump
+       spare attention onto a meaningless token (the "attention sink", usually the first one).</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Scaling by √d<sub>k</sub> <span class="tag">mid</span></div>
+    <p>Divide the raw scores by the square root of the head dimension before the softmax.</p>
+    <p class="an">Turning down a microphone before it feeds back. The signal is fine; the gain is the
+       problem.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Multi-head attention <span class="tag">mid</span></div>
+    <p>Run h attention operations in parallel on d/h-dimensional slices, concatenate, project with
+       W<sub>O</sub>.</p>
+    <p class="wh">Total compute is roughly unchanged — you split the dimension rather than adding
+       to it. What you buy is several different relationships attended to simultaneously.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Causal mask <span class="tag">basic</span></div>
+    <p>Set scores for future positions to −∞ before the softmax, so their weight becomes exactly 0.</p>
+    <p class="wh">−∞ before softmax rather than 0 after, because zeroing afterwards would break the
+       normalisation. This one line is the entire difference between BERT and GPT training.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Self vs cross attention <span class="tag">basic</span></div>
+    <p><strong>Self:</strong> Q, K, V from the same sequence. <strong>Cross:</strong> Q from the
+       decoder, K and V from the encoder.</p>
+    <p class="wh">Cross-attention is the direct descendant of Bahdanau's 2014 mechanism (module 32.5).
+       Decoder-only models have no cross-attention at all — everything is concatenated into one
+       sequence instead.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Attention sink <span class="tag">senior</span></div>
+    <p>Trained models put large attention mass on the first token regardless of its content.</p>
+    <p class="wh">A consequence of the softmax having to sum to 1 when a head has nothing it wants:
+       it needs somewhere to park. Practically important — StreamingLLM showed you must <em>keep</em>
+       the first few tokens when you evict KV cache, or quality collapses.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Induction head <span class="tag">senior</span></div>
+    <p>A two-head circuit that implements "this pattern appeared before — continue it the same way".</p>
+    <p class="wh">The best-understood concrete mechanism in a transformer, and its formation coincides
+       with a visible bump in the loss curve and with the onset of in-context learning.</p>
+  </div>
+
+</div>
+
+<h2 data-n="40.4">Cost — the number that governs everything downstream</h2>
+
+<div class="tw">
+<table>
+<tr><th>Quantity</th><th>Cost</th><th>Consequence</th></tr>
+<tr><td>Compute per layer</td><td>O(n² · d)</td><td>Doubling context quadruples attention FLOPs</td></tr>
+<tr><td>Attention matrix memory</td><td>O(n²) per head</td><td>The naive implementation's real
+    limit — FlashAttention removes it</td></tr>
+<tr><td>KV cache at inference</td><td>O(n · d · layers)</td><td>Grows every generated token; the
+    binding constraint on serving — module 45</td></tr>
+<tr><td>Path length between positions</td><td>O(1)</td><td>What we bought with all of the above</td></tr>
+</table>
+</div>
+
+<h2 data-n="40.5">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain attention to someone who has never seen it.</summary>
+  <div class="a">
+    <div class="tldr">Every word looks at every other word, decides how relevant each one is, and
+    updates itself into a weighted blend of them. That is how "it" finds out which noun it refers to.</div>
+    <p>Take "The animal didn't cross the street because it was too tired." To represent "it" properly
+    the model must know it means the animal, not the street. Attention is the mechanism: the vector for
+    "it" is turned into a <em>query</em>, every other token offers a <em>key</em>, the dot products
+    score relevance, a softmax turns those into weights that sum to 1, and the output is the weighted
+    sum of the tokens' <em>values</em>. "Animal" gets most of the weight, so "it" comes out carrying
+    animal-ness.</p>
+    <p>Three properties worth naming right after:</p>
+    <ul>
+      <li><strong>It is learned.</strong> Nobody wrote a coreference rule; W<sub>Q</sub> and
+          W<sub>K</sub> were trained by gradient descent on next-token prediction.</li>
+      <li><strong>It is parallel.</strong> Every token computes its blend at once, unlike an RNN's
+          step-by-step pass — which is why transformers train at scale and RNNs do not.</li>
+      <li><strong>Distance is free.</strong> Position 1 and position 4,000 are one hop apart, so there
+          is no decay with distance.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why divide by √d<sub>k</sub>?</summary>
+  <div class="a">
+    <div class="tldr">Because a dot product of two d-dimensional vectors has variance proportional to
+    d, so without scaling the logits grow with dimension, the softmax saturates to one-hot, and the
+    gradient vanishes.</div>
+    <p><strong>The derivation, which is what they want:</strong> take q and k with independent entries
+    of mean 0 and variance 1. Their dot product is Σ q<sub>i</sub>k<sub>i</sub>, a sum of d independent
+    terms each with variance 1, so the sum has variance d and standard deviation √d. With d = 64,
+    scores routinely land at ±8 or beyond.</p>
+    <p><strong>Why that is fatal:</strong> softmax over logits separated by 8 is effectively a hard
+    argmax — one weight near 1.000, the rest near 0. And a saturated softmax has a near-zero Jacobian,
+    because ∂softmax/∂logit involves p(1−p), which is ≈0 when p is 0 or 1. So no gradient flows back
+    through the attention weights and the model cannot learn <em>what</em> to attend to. Dividing by √d
+    restores unit-variance logits and a soft, differentiable distribution.</p>
+    <p><strong>The check that makes it concrete:</strong> in the visualisation above, turn off the
+    scaling and raise d. At d = 256 the largest weight in a row goes to 1.000 and the readout turns
+    red. That is the failure, live.</p>
+    <p><strong>Worth adding:</strong> this is also why very low sampling temperatures degrade output —
+    it is the same saturation applied to the output softmax. And it is one of the reasons attention
+    logits are often computed in fp32 even in a bf16 model: large logits before the max-subtraction
+    overflow easily in half precision.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why multiple heads instead of one big attention?</summary>
+  <div class="a">
+    <div class="tldr">One softmax can express one weighting per token. Several heads let the model
+    attend to several different relationships at once — syntactic, positional, coreferential — and it
+    costs roughly nothing, because the dimension is split rather than added to.</div>
+    <p>The constraint is real: a single attention operation produces a single distribution per query,
+    so it must choose. "It" cannot simultaneously attend strongly to its antecedent and to the verb
+    governing it. With 12 heads, one head can do coreference, another the previous token, another
+    subject–verb agreement.</p>
+    <p><strong>The cost argument:</strong> with d = 512 and 8 heads, each head works in 64 dimensions.
+    Total FLOPs are essentially the same as one 512-dimensional head; you are partitioning capacity,
+    not buying more. The extra parameters are only W<sub>O</sub>.</p>
+    <p><strong>Honesty about specialisation:</strong> the tidy story — this head does syntax, that one
+    does coreference — is partly true and often overstated. Michel et al. showed a large fraction of
+    heads can be pruned after training with little loss, and Voita et al. found only a minority are
+    clearly specialised. So heads provide useful redundancy and ensembling as much as a clean division
+    of labour.</p>
+    <p><strong>Where this is going:</strong> at inference the KV cache scales with the number of
+    <em>key/value</em> heads, so MQA and GQA keep many query heads while sharing far fewer K/V heads —
+    most of the expressiveness at a fraction of the cache. Module 45.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What does the causal mask do, and why is it needed?</summary>
+  <div class="a">
+    <div class="tldr">It sets the scores for all future positions to −∞ before the softmax, so a token
+    can only attend to itself and the past. Without it, next-token prediction is trivially leaked.</div>
+    <p>The training objective is to predict token t+1 from tokens 1…t, and the whole sequence is
+    processed in one parallel pass. If position t could see position t+1, the model would learn to copy
+    the answer and learn nothing else — it is textbook label leakage (module 20.7), implemented in
+    attention.</p>
+    <p><strong>The implementation detail worth stating:</strong> mask with −∞ <em>before</em> the
+    softmax, not by zeroing weights afterwards. Zeroing afterwards leaves the denominator computed over
+    future tokens, so the remaining weights no longer sum to 1 and their relative sizes are wrong.</p>
+    <p><strong>What it buys:</strong> one forward pass gives a loss at every position simultaneously —
+    n training signals per sequence. That efficiency, plus the parallelism, is why causal LM
+    pretraining scales the way it does.</p>
+    <p><strong>The contrast:</strong> BERT has no causal mask; it sees the whole sequence
+    bidirectionally and hides 15 % of tokens instead. That makes it better at understanding tasks and
+    unable to generate. The mask is exactly the difference — module 42.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is attention's complexity, and what does that cost you in production?</summary>
+  <div class="a">
+    <div class="tldr">O(n²·d) compute and, naively, O(n²) memory per head — so doubling context
+    quadruples the attention cost. At inference the binding constraint is different again: a KV cache
+    that grows linearly with every token generated.</div>
+    <p><strong>Where the quadratic comes from:</strong> QK<sup>⊤</sup> is n×d times d×n, producing an
+    n×n matrix — n² dot products of length d. Then that matrix multiplies V, another n²·d. At n = 128k
+    the score matrix alone is 16 billion entries per head per layer, which is not storable.</p>
+    <p><strong>The most important practical correction:</strong> for realistic n the naive
+    implementation is <em>memory-bandwidth</em> bound, not FLOP bound — writing and re-reading that n×n
+    matrix to HBM dominates. FlashAttention exploits exactly this: tile the computation, keep tiles in
+    SRAM, never materialise the full matrix, and use the online-softmax trick to normalise
+    incrementally. Same maths, same O(n²) FLOPs, but O(n) memory and a large wall-clock speedup. It is
+    not an approximation — a point people get wrong.</p>
+    <p><strong>The inference story is separate.</strong> Generating token by token, you cache K and V
+    for every past token: 2 · layers · heads<sub>kv</sub> · d<sub>head</sub> · n · bytes. For a 70B
+    model at 32k context this reaches tens of gigabytes per sequence, which caps batch size and
+    therefore throughput. Decode is memory-bandwidth bound; prefill is compute bound. Two different
+    regimes needing two different optimisations — module 45.</p>
+    <p><strong>The approaches to the quadratic itself:</strong> sparse or sliding-window attention
+    (Longformer, Mistral) reduce it to O(n·w) but limit what each token can see directly; linear
+    attention (Performer, linear kernels) reaches O(n) by dropping the softmax and generally loses
+    quality; state-space hybrids like Mamba make it linear by changing the model class. The pragmatic
+    consensus is that exact attention plus FlashAttention plus GQA covers most needs, and the
+    approximations have not displaced it at frontier scale.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Does the softmax have to be there?</summary>
+  <div class="a">
+    <div class="tldr">No, and people have removed it — but it is doing three jobs at once, and every
+    replacement has had to give one of them up.</div>
+    <p><strong>What the softmax provides:</strong></p>
+    <ul>
+      <li><strong>Normalisation.</strong> Weights sum to 1, so the output stays in the convex hull of
+          the values and its magnitude does not depend on sequence length. Without that, activations
+          grow with n and training destabilises.</li>
+      <li><strong>Non-negativity.</strong> No token subtracts from another; the output is a genuine
+          blend.</li>
+      <li><strong>Sharpness with differentiability.</strong> It approximates a hard selection while
+          remaining smooth — that combination is the reason it works.</li>
+    </ul>
+    <p><strong>The cost of keeping it:</strong> the softmax is what forces materialising QK<sup>⊤</sup>
+    before multiplying by V. Drop it and the associativity of matrix multiplication lets you compute
+    (K<sup>⊤</sup>V) first — a d×d matrix — giving O(n·d²) instead of O(n²·d). That is precisely how
+    linear attention gets its complexity, and it is why the softmax is the thing every efficient
+    variant attacks.</p>
+    <p><strong>What happens when you do:</strong> linear attention (Katharopoulos et al., Performer)
+    approximates it with feature maps and consistently underperforms on tasks needing precise recall —
+    the low-rank approximation cannot represent a sharp lookup. Sigmoid attention drops normalisation
+    and needs other stabilisation to train. The pattern is consistent: you can remove the softmax and
+    you pay for it in exact retrieval.</p>
+    <p><strong>The related question worth pre-empting</strong> — why keep the value projection at all,
+    rather than averaging the input vectors directly? Because keys and values are doing different jobs.
+    A token advertises "I am the subject" through its key and delivers its semantics through its value;
+    tying them forces one vector to serve both roles. The separation also means W<sub>V</sub> and
+    W<sub>O</sub> compose into a learned transform on what gets moved, which mechanistic-interpretability
+    work treats as the real functional unit of a head — the OV circuit, as opposed to the QK circuit
+    that decides where to look.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The attention equation, and what each of Q, K, V is for.</li>
+    <li>The √d derivation — variance d, std √d, saturated softmax, p(1−p) gradient.</li>
+    <li>Why multiple heads cost nothing extra, and the honest caveat about specialisation.</li>
+    <li>Why the mask is −∞ before softmax rather than 0 after.</li>
+    <li>O(n²·d), why FlashAttention is not an approximation, and why decode is bandwidth-bound.</li>
+    <li>The three jobs of the softmax, and what linear attention gives up.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#34" target="_top"><span class="k">Back</span>← 34 · Reinforcement learning</a>
+  <a href="../index.html#41" target="_top"><span class="k">Next</span>41 · The transformer block →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

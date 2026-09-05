@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The transformer block — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 41</p>
+<h1>The transformer block
+  <span class="lede">Attention is one component. This is the rest of the machine — embeddings,
+  position, the residual stream, normalisation, the feed-forward network — and how to count its
+  parameters on a whiteboard without notes.</span>
+</h1>
+
+<h2 data-n="41.1">The whole architecture in one pass</h2>
+
+<div class="eq">tokens → embed → [ attention → FFN ] × L → final norm → unembed → logits<span class="note">every bracketed block reads from and writes to the same running vector per token</span></div>
+
+<p>Written out, one block is four lines:</p>
+
+<div class="eq">x = x + Attention( Norm(x) )<br>x = x + FFN( Norm(x) )<span class="note">pre-norm form, which is what every modern model uses — the original paper put the norm after</span></div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy — the residual stream as a conveyor belt</span>
+  <p>Each token has a vector travelling down a belt through every layer. A layer never replaces what
+  is on the belt; it reads it, computes something, and <em>adds</em> its contribution.</p>
+  <p>Attention adds information gathered from other tokens. The FFN adds information recalled from the
+  model's own weights. The belt itself is untouched, which is why the gradient can travel from the last
+  layer to the first without decaying — module 30.6.</p>
+</div>
+
+<h2 data-n="41.2">Position — the thing attention throws away</h2>
+
+<p>Self-attention is <strong>permutation-equivariant</strong>: shuffle the input tokens and the outputs
+shuffle identically. It computes a set operation, not a sequence operation. "Dog bites man" and "man
+bites dog" would be indistinguishable. So position must be injected explicitly — one of the two things
+the transformer lost when it deleted recurrence.</p>
+
+<div class="tw">
+<table>
+<tr><th>Scheme</th><th>How</th><th>Extrapolates?</th><th>Used by</th></tr>
+<tr><td>Sinusoidal</td><td>Fixed sin/cos of varying frequency, added to the embedding</td><td>In
+    principle; poorly in practice</td><td>Original transformer</td></tr>
+<tr><td>Learned absolute</td><td>A trainable vector per position</td><td>No — undefined beyond
+    training length</td><td>BERT, GPT-2</td></tr>
+<tr><td><strong>RoPE</strong></td><td>Rotate Q and K by an angle proportional to position</td><td>
+    Somewhat, and extendable by interpolating the base frequency</td><td>Llama, Mistral, Qwen,
+    most current models</td></tr>
+<tr><td>ALiBi</td><td>Subtract a linear penalty from attention scores by distance</td><td>Yes, by
+    design</td><td>BLOOM, MPT</td></tr>
+<tr><td>NoPE</td><td>Nothing at all</td><td>Works surprisingly well in decoder-only models</td><td>
+    Research; the causal mask alone leaks position</td></tr>
+</table>
+</div>
+
+<h2 data-n="41.3">The components</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Token embedding <span class="tag">basic</span></div>
+    <p>A lookup table mapping each vocabulary ID to a d-dimensional vector. Vocab × d parameters —
+       often 100k × 4096, so hundreds of millions before any layer exists.</p>
+    <p class="wh">The unembedding at the output is the mirror image, and is frequently the <em>same
+       matrix transposed</em> — weight tying, which saves a lot of parameters and usually helps small
+       models.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Residual stream <span class="tag">senior</span></div>
+    <p>The running d-dimensional vector per token that every block reads from and adds to.</p>
+    <p class="wh">The framing that mechanistic-interpretability work uses: layers communicate by
+       writing into subspaces of a shared bus. It explains why you can insert or ablate a layer and
+       often get a degraded-but-functional model.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">LayerNorm <span class="tag">mid</span></div>
+    <p>Normalise each token's vector to zero mean and unit variance across its features, then scale and
+       shift with learned γ and β.</p>
+    <p class="wh">Per token, not per batch — so it is independent of batch size and works identically
+       at training and inference. That is exactly why sequence models use it and BatchNorm is
+       unusable here (module 30.5).</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RMSNorm <span class="tag">mid</span></div>
+    <p>Drop the mean-centring and the bias: divide by the root-mean-square and scale.</p>
+    <p class="wh">Same quality, fewer operations, one less reduction over the feature axis. Llama and
+       most current models use it — a small change worth about 7–10 % of step time at scale.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Pre-norm vs post-norm <span class="tag">senior</span></div>
+    <p><strong>Post-norm</strong> (original): x = Norm(x + Sublayer(x)). <strong>Pre-norm</strong>
+       (everything since): x = x + Sublayer(Norm(x)).</p>
+    <p class="wh">Pre-norm keeps the residual path completely clean — no normalisation sits on it — so
+       gradients reach layer 1 undisturbed and training is stable without a warmup schedule.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Feed-forward network (FFN) <span class="tag">mid</span></div>
+    <p>Two linear layers with a non-linearity between, applied identically at every position: expand
+       d → 4d, activate, project 4d → d.</p>
+    <p class="an">Attention is the meeting where tokens exchange information. The FFN is each token
+       going back to its desk and thinking about what it heard, alone.</p>
+    <p class="wh">Roughly two thirds of the parameters in a standard block. Also where factual
+       knowledge appears to live — the key-value-memory result (Geva et al.).</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GELU and SwiGLU <span class="tag">mid</span></div>
+    <p>GELU is a smooth ReLU. SwiGLU adds a gate: one projection is multiplied elementwise by a
+       Swish-activated second projection.</p>
+    <p class="warn-inline">SwiGLU needs <em>three</em> weight matrices, so the hidden size is cut to
+       about ⅔·4d to keep the parameter count level. If you count parameters assuming 4d on a Llama-
+       style model, you will be wrong by a third.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RoPE — rotary position embedding <span class="tag">senior</span></div>
+    <p>Rotate each 2-dimensional pair of the query and key vectors by an angle proportional to the
+       token's position.</p>
+    <p class="wh">Because a dot product of two rotated vectors depends only on the <em>difference</em>
+       of the angles, absolute rotations produce <strong>relative</strong> position information for
+       free — which is the property you actually want, and it needs no extra parameters.</p>
+  </div>
+
+</div>
+
+<h2 data-n="41.4">Counting parameters by hand</h2>
+
+<p>A question that gets asked because it is checkable in thirty seconds and cannot be bluffed.</p>
+
+<div class="tw">
+<table>
+<tr><th>Component</th><th>Parameters</th><th>Note</th></tr>
+<tr><td>Attention: W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub></td><td>4d²</td><td>Each
+    is d×d, independent of head count</td></tr>
+<tr><td>FFN: up + down projection</td><td>8d²</td><td>d×4d and 4d×d</td></tr>
+<tr><td><strong>Per block</strong></td><td><strong>12d²</strong></td><td>Norms and biases are
+    negligible</td></tr>
+<tr><td>All L blocks</td><td>12·L·d²</td><td>The number to quote</td></tr>
+<tr><td>Embedding (+ unembedding if untied)</td><td>V·d each</td><td>Dominates in small models,
+    negligible in large ones</td></tr>
+</table>
+</div>
+
+<div class="eq">GPT-3: L = 96, d = 12288 → 12 × 96 × 12288² ≈ 174 B<span class="note">the published figure is 175 B — the rest is embeddings</span></div>
+
+<h2 data-n="41.5">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Walk me through a transformer block.</summary>
+  <div class="a">
+    <div class="tldr">Two sublayers, each wrapped in a residual connection with a pre-norm: multi-head
+    self-attention, then a position-wise feed-forward network. Stack that L times between an embedding
+    layer and an output projection.</div>
+    <p>In order:</p>
+    <ol>
+      <li><strong>Normalise</strong> the incoming residual stream (LayerNorm or RMSNorm).</li>
+      <li><strong>Multi-head self-attention</strong> — each token gathers information from the other
+          tokens it is allowed to see.</li>
+      <li><strong>Add</strong> the result back to the residual stream.</li>
+      <li><strong>Normalise</strong> again.</li>
+      <li><strong>FFN</strong> — expand to 4d, apply GELU or SwiGLU, project back to d, independently
+          at every position.</li>
+      <li><strong>Add</strong> back to the residual stream.</li>
+    </ol>
+    <p>The division of labour is the part worth stating explicitly: <strong>attention moves
+    information between positions; the FFN processes information within a position.</strong> Attention
+    is the only place tokens interact at all — remove it and you have a per-token MLP.</p>
+    <p>Around the stack: token embeddings plus position information at the input, a final norm, and a
+    projection to vocabulary logits at the output, often tied to the input embedding matrix.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Why do transformers need positional encodings when RNNs do not?</summary>
+  <div class="a">
+    <div class="tldr">Self-attention is permutation-equivariant — it treats the input as a set. An RNN
+    gets order for free from processing tokens one at a time; a transformer processes them all at once
+    and must be told.</div>
+    <p>The proof is short: attention computes weights from dot products between token vectors. Permute
+    the inputs and you permute the rows and columns of the score matrix identically, so the outputs
+    permute with them. Nothing anywhere depends on <em>where</em> a token sits. Without position,
+    "dog bites man" and "man bites dog" have identical representations.</p>
+    <p>That is the price of removing recurrence. The RNN's sequential loop encoded order implicitly;
+    the transformer bought parallelism and had to pay it back explicitly.</p>
+    <p><strong>The interesting complication:</strong> a decoder-only transformer is <em>not</em> fully
+    permutation-equivariant, because the causal mask is itself position-dependent — token 5 sees five
+    tokens, token 50 sees fifty. That leak is enough that "NoPE" models with no positional encoding at
+    all learn position competently. It is a genuine research result and a good thing to know, though
+    explicit schemes still work better in practice.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Sinusoidal, learned, RoPE, ALiBi — what is the actual difference?</summary>
+  <div class="a">
+    <div class="tldr">They differ on whether position is absolute or relative, whether it is added to
+    the embedding or applied inside attention, and whether the model can handle sequences longer than
+    it was trained on. RoPE won because it is relative, parameter-free, and interpolable.</div>
+    <p><strong>Sinusoidal</strong> — fixed sin/cos at geometrically spaced frequencies, added to the
+    input embedding. Parameter-free, and the authors hoped the linear relationship between position
+    encodings would let the model extrapolate. It mostly does not: quality degrades quickly past the
+    training length.</p>
+    <p><strong>Learned absolute</strong> — one trainable vector per position. Simple, slightly better
+    in-distribution, and hard-capped: position 2049 in a 2048-trained model has no vector at all.</p>
+    <p><strong>RoPE</strong> — rotate query and key vectors by an angle proportional to position,
+    inside the attention computation rather than at the input. The key property: the dot product
+    between a rotated query at position m and a rotated key at position n depends only on (m − n). You
+    apply absolute rotations and get relative position for free, with zero added parameters. It also
+    extends: <em>position interpolation</em> rescales positions into the trained range, and NTK-aware
+    or YaRN scaling adjusts the base frequency, so an 8k model can be stretched to 128k with modest
+    fine-tuning. That practicality is why it dominates.</p>
+    <p><strong>ALiBi</strong> — no encoding at all; instead subtract m·|i − j| from the attention score,
+    with a per-head slope. A learned recency bias, effectively. It extrapolates gracefully by
+    construction, and the trade-off is that the penalty is monotonic, so a genuinely important token
+    very far back is always fighting the bias.</p>
+    <p><strong>The way I would summarise it:</strong> the field moved from adding position to the
+    <em>content</em> vector — where it competes with semantics for the same dimensions — to expressing
+    position as a <em>relation</em> between positions inside attention, which is both what the model
+    needs and what generalises past the training length.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why did everyone move from post-norm to pre-norm?</summary>
+  <div class="a">
+    <div class="tldr">Because pre-norm leaves the residual path completely unobstructed, so gradients
+    reach the earliest layers intact. Post-norm transformers need a learning-rate warmup to train at
+    all; pre-norm ones do not.</div>
+    <p><strong>Post-norm:</strong> x = LN(x + Sublayer(x)). The normalisation sits <em>on</em> the
+    residual path, so every backward step through a layer passes through LN's Jacobian. Over 24 or 96
+    layers that compounds, and the gradient at layer 1 can be orders of magnitude off.</p>
+    <p><strong>Pre-norm:</strong> x = x + Sublayer(LN(x)). The identity path is now pure addition all
+    the way from the output to the embedding — the same multiply-by-1 highway argument as the ResNet
+    and the LSTM cell state.</p>
+    <p><strong>The empirical finding</strong> (Xiong et al., 2020) is precise: post-norm has very large
+    gradients at initialisation in the last layers, which is exactly what warmup was silently
+    compensating for. With pre-norm you can remove warmup entirely and use a larger learning rate. At
+    the scale where a failed run costs six figures, "trains reliably" beats a small quality edge.</p>
+    <p><strong>The honest counterpoint:</strong> well-tuned post-norm often reaches slightly
+    <em>better</em> final quality, because pre-norm's residual stream grows in magnitude with depth,
+    which somewhat diminishes what later layers can contribute. Hence the hybrids — sandwich norm,
+    DeepNorm — that try to get both. The mainstream choice is pre-norm plus a final norm before the
+    output projection, and the reason is training stability, not quality.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the FFN for, if attention is doing the work?</summary>
+  <div class="a">
+    <div class="tldr">Attention moves information between tokens; the FFN transforms it within a token.
+    It is also two thirds of the parameters and appears to be where factual knowledge is stored.</div>
+    <p><strong>The structural argument:</strong> attention's output is a weighted <em>average</em> of
+    value vectors — a linear operation given the weights. Stack attention on attention with no FFN and
+    you have very limited per-token expressiveness. The FFN supplies the non-linear, per-position
+    processing that turns "here is what I gathered" into "here is what I conclude".</p>
+    <p><strong>The memory argument:</strong> Geva et al. showed the FFN behaves like a key–value store —
+    the first matrix's rows act as pattern detectors over the residual stream, and the second matrix's
+    columns are the values written back when a pattern fires. That framing is supported by
+    model-editing work like ROME, which changes a specific fact by editing specific FFN weights.</p>
+    <p><strong>The cost argument, which is where this matters in practice:</strong> the FFN is 8d² of
+    the 12d² per block. That is why <strong>mixture-of-experts</strong> targets it — replace one FFN
+    with many, route each token to two of them, and you multiply parameters without multiplying FLOPs
+    per token. Mixtral and DeepSeek-V3 are exactly this. Attention is left alone because every token
+    needs it; the FFN is the part you can make conditional.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How many parameters does a 32-layer model with d_model 4096 have?</summary>
+  <div class="a">
+    <div class="tldr">About 12·L·d² for the blocks — 12 × 32 × 4096² ≈ 6.4 billion — plus vocab × d for
+    the embeddings, so roughly 7 B in total for a 128k vocabulary.</div>
+    <p>The breakdown per block:</p>
+    <ul>
+      <li>Attention — W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub>, each d×d, so
+          <strong>4d²</strong>. Note this does not depend on the number of heads: heads partition d,
+          they do not add to it.</li>
+      <li>FFN — d×4d up and 4d×d down, so <strong>8d²</strong>.</li>
+      <li>Total <strong>12d²</strong> = 12 × 16.8 M ≈ 201 M per block, × 32 ≈ 6.4 B.</li>
+    </ul>
+    <p>Then embeddings: 128,000 × 4096 ≈ 524 M, doubled if input and output are untied. Norms and
+    biases are in the tens of thousands — ignorable.</p>
+    <p><strong>Two corrections worth volunteering,</strong> because they are what separates having
+    memorised the formula from having used it:</p>
+    <ul>
+      <li>With <strong>SwiGLU</strong> there are three FFN matrices, so the hidden dimension is set to
+          about ⅔·4d to keep the count at 8d². Assume 4d with three matrices and you overcount by a
+          third.</li>
+      <li>With <strong>GQA</strong>, W<sub>K</sub> and W<sub>V</sub> are smaller than d×d — with 8 KV
+          heads against 32 query heads they are a quarter the size, so attention drops from 4d² to
+          about 2.5d².</li>
+    </ul>
+    <p>And the related number they usually ask next: training FLOPs ≈ 6 × parameters × tokens, and
+    inference ≈ 2 × parameters per token. Those three formulas cover most back-of-envelope questions in
+    this area.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The six steps of a block, and the attention-moves / FFN-processes division.</li>
+    <li>The permutation-equivariance proof, and the causal-mask leak that qualifies it.</li>
+    <li>RoPE's (m − n) property, in one sentence.</li>
+    <li>Pre-norm vs post-norm, warmup, and the honest counterpoint.</li>
+    <li>12·L·d², plus the SwiGLU and GQA corrections.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#40" target="_top"><span class="k">Back</span>← 40 · Attention</a>
+  <a href="../index.html#42" target="_top"><span class="k">Next</span>42 · Model families →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

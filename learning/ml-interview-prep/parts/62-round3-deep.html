@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 3 · Deep learning — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 62</p>
+<h1>Round 3 · Deep learning
+  <span class="lede">Neural networks, CNNs, RNNs and RL. The bridge round: it establishes that you
+  understand the machinery underneath transformers rather than only the transformer.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>45 minutes.</strong> The debugging question is the one that most reliably separates people
+  who have trained models from people who have read about training them. Rehearse it until the order of
+  checks comes out without thinking.</p>
+</div>
+
+<h2 data-n="62.1">Rapid fire — 20 seconds each</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Why do we need a non-linear activation?</summary>
+  <div class="a"><div class="tldr">Without one, a stack of linear layers collapses into a single linear
+  layer — depth buys nothing. The non-linearity is what makes composition expressive.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why ReLU over sigmoid?</summary>
+  <div class="a"><div class="tldr">Sigmoid saturates at both ends, where its gradient is nearly zero, so
+  deep stacks starve. ReLU has gradient 1 on the positive side, is cheap, and produces sparse
+  activations. Its cost is dead units, which is what leaky ReLU and GELU address.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What causes vanishing gradients?</summary>
+  <div class="a"><div class="tldr">Backprop multiplies derivatives along the chain. If those factors are
+  consistently below 1, the product shrinks exponentially with depth and the early layers stop learning.
+  Residual connections, normalisation and careful initialisation are all responses to this.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does a residual connection do?</summary>
+  <div class="a"><div class="tldr">It adds the input to the output, so the gradient has a path that
+  multiplies by 1. The layer learns a correction rather than a whole transformation, which makes very
+  deep networks trainable.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>BatchNorm versus LayerNorm?</summary>
+  <div class="a"><div class="tldr">BatchNorm normalises each feature across the batch — so it depends on
+  batch size and behaves differently at inference. LayerNorm normalises across features within one
+  example, which is batch-independent and therefore what sequence models use.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is dropout doing?</summary>
+  <div class="a"><div class="tldr">Randomly zeroing units during training so the network cannot rely on
+  any single one — an implicit ensemble that reduces co-adaptation. It is off at inference, with
+  activations scaled to match.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does Adam usually beat plain SGD for getting started?</summary>
+  <div class="a"><div class="tldr">It keeps a per-parameter step size from running estimates of the
+  gradient's mean and variance, so parameters with small or noisy gradients still move. It is far less
+  sensitive to the initial learning rate — though well-tuned SGD with momentum often generalises
+  slightly better.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do we warm up the learning rate?</summary>
+  <div class="a"><div class="tldr">Early in training the gradients and Adam's variance estimates are
+  unreliable, so a full-size step can throw the model somewhere it will not recover from. Warmup is
+  especially necessary for post-norm transformers.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What are the two properties that make convolution work?</summary>
+  <div class="a"><div class="tldr">Locality — a pattern is defined by nearby pixels — and parameter
+  sharing, since a feature detector useful in one place is useful everywhere. Together they cut
+  parameters by orders of magnitude and give translation equivariance.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Equivariance or invariance — which does a convolution give you?</summary>
+  <div class="a"><div class="tldr">Equivariance: shift the input and the feature map shifts with it.
+  Invariance comes from pooling and from global pooling at the end. And it is only approximate —
+  strided convolutions alias, which is why shifting an image by one pixel can change the
+  prediction.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does a 1×1 convolution do?</summary>
+  <div class="a"><div class="tldr">Mixes channels at each spatial position without mixing space —
+  used to change channel depth cheaply, add non-linearity, and build bottlenecks. It is exactly a
+  position-wise fully connected layer, which is what a transformer's FFN is.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does an LSTM help with long sequences?</summary>
+  <div class="a"><div class="tldr">The cell state is updated additively and gated, so ∂c_t/∂c_{t−1} is
+  the forget gate rather than a product of weight matrices. When the gate is near 1 the gradient flows
+  almost unattenuated — the same multiply-by-1 highway idea as a residual connection.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What problem was attention originally invented to solve?</summary>
+  <div class="a"><div class="tldr">The seq2seq bottleneck: compressing an entire source sentence into
+  one fixed vector, whose quality collapsed as sentences got longer. Attention let the decoder look back
+  at all encoder states, weighted by relevance.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Supervised learning versus reinforcement learning, in one sentence?</summary>
+  <div class="a"><div class="tldr">Supervised learning is told the correct answer for each input; RL is
+  only told how good the outcome was, possibly much later, and must work out which of its actions
+  deserved the credit.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the advantage function?</summary>
+  <div class="a"><div class="tldr">A(s,a) = Q(s,a) − V(s): how much better this action is than the
+  state's average. Subtracting the baseline leaves the gradient unbiased while cutting its variance
+  substantially.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What does PPO's clipping actually prevent?</summary>
+  <div class="a"><div class="tldr">A destructively large policy update from one batch. Once the
+  probability ratio leaves [1−ε, 1+ε] the objective flattens, so the gradient vanishes and the policy
+  cannot move further in that direction on that batch — a trust region enforced by the loss shape rather
+  than by a constraint solver.</div></div>
+</details>
+
+<h2 data-n="62.2">Deep questions — 5 minutes each</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your model trains but does not generalise. Walk me through it.</summary>
+  <div class="a">
+    <div class="tldr">Confirm it is genuinely overfitting rather than a broken evaluation, then work in
+    order: data leakage, then more or better data, then augmentation, then regularisation, then
+    capacity. Most "overfitting" I have seen turned out to be a split problem.</div>
+    <p><strong>First, confirm the diagnosis.</strong> Training loss low, validation loss high and
+    rising — that is overfitting. But before accepting it, check that the validation set is actually
+    representative and that the split respects structure: grouped rows split across sides, or a temporal
+    problem split at random, produce a validation score that is meaningless in either direction.</p>
+    <p><strong>Then check for leakage in reverse:</strong> a suspiciously <em>good</em> validation score
+    is as alarming as a bad one, and I would rank feature importances and interrogate the top ones for
+    availability at prediction time.</p>
+    <p><strong>Then the interventions, in this order:</strong> more data always wins if it is available;
+    augmentation is data you already have, and it is where domain knowledge pays; then regularisation —
+    weight decay, dropout, early stopping — tuned on the validation curve; then reduce capacity, which I
+    put last because it is the bluntest tool and, per the double-descent story, not always the right
+    direction.</p>
+    <p><strong>The diagnostic I would actually run first,</strong> though, is the learning curve: plot
+    train and validation error against training-set size. If both are high and converged, the model is
+    underfitting and more data will not help. If there is a large gap that is still narrowing, more data
+    will help. That plot answers "which problem do I have" in one experiment, and it saves days of
+    guessing.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your loss is NaN at step 400. What happened?</summary>
+  <div class="a">
+    <div class="tldr">Almost always one of five things: a learning rate too high, a log or division by
+    zero in the loss, fp16 overflow, exploding gradients, or bad input data. Bisect by reproducing on
+    one batch with the same seed.</div>
+    <p><strong>The checks, in the order I would do them:</strong></p>
+    <ul>
+      <li><strong>Learning rate.</strong> Drop it 10× and rerun. If the NaN moves later or vanishes, it
+          was divergence. Fastest single test.</li>
+      <li><strong>The loss function.</strong> log(0) and division by a near-zero are the classic
+          culprits — an unclamped log-probability, a softmax computed unstably, an epsilon missing from
+          a denominator. Use the framework's numerically stable fused versions rather than composing
+          them yourself.</li>
+      <li><strong>Precision.</strong> fp16 overflows at 65,504, and attention logits get there easily.
+          bf16 has the range and is the reason it is now the default; with fp16 you need loss scaling.</li>
+      <li><strong>Gradient explosion.</strong> Log the gradient norm every step — it usually spikes for
+          several steps before the NaN appears, which both confirms the diagnosis and gives you a clip
+          value.</li>
+      <li><strong>The data.</strong> A NaN or an inf in one input, an unnormalised outlier, or a
+          corrupted sample. Assert on the batch rather than trusting the loader.</li>
+    </ul>
+    <p><strong>How to localise it fast:</strong> make it reproducible — fixed seed, deterministic
+    loader — so you can find the exact batch, then run forward with hooks that check every activation
+    for non-finite values. That tells you which layer produced the first NaN, which usually names the
+    bug outright.</p>
+    <p><strong>The production-side answer</strong> is that a large run needs this handled automatically:
+    gradient clipping on by default, non-finite loss detection that skips the batch and logs it, and
+    frequent checkpoints so you can rewind and continue with different data ordering — which, as module
+    43 covers, is standard practice for loss spikes at scale.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain RLHF to someone who knows supervised learning but not RL.</summary>
+  <div class="a">
+    <div class="tldr">You cannot write the ideal answer for every prompt, but you can say which of two
+    answers is better. So you train a model to predict those preferences, and then optimise the language
+    model against that predictor — with a leash keeping it near where it started.</div>
+    <p><strong>The framing:</strong> supervised learning needs a target per example. For "write a helpful
+    reply", there is no single target — many good answers exist, and writing one by hand for every prompt
+    does not scale. Comparison does scale, because judging is cheaper than generating.</p>
+    <p><strong>The three stages</strong> in that language: fine-tune on demonstrations to get a model
+    that answers rather than continues; train a reward model on preference pairs, which is just a
+    classifier with a Bradley–Terry loss; then optimise the language model to produce responses the
+    reward model likes.</p>
+    <p><strong>Why that last stage is RL and not supervised:</strong> the model generates its own
+    training data — you score what it produced, not a fixed dataset — and the reward is a single number
+    for a whole sequence, so the credit assignment across tokens is exactly the RL problem. That is the
+    sentence to land.</p>
+    <p><strong>And the leash:</strong> a KL penalty against the starting model. Without it the policy
+    drifts into a region where the reward model is confidently wrong and exploits it — Goodhart's law,
+    and the reason "optimise the proxy harder" is not the right instinct.</p>
+    <p><strong>The natural follow-up,</strong> which I would pre-empt: DPO removes the RL loop entirely
+    by deriving the optimal policy in closed form, so you train on the preference pairs directly. Same
+    objective, much simpler pipeline — which is why most open models now use it, and why "RLHF" is
+    increasingly a description of the goal rather than of the algorithm.</p>
+  </div>
+</details>
+
+<h2 data-n="62.3">The design prompt — 15 minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">Talk through this out loud</span>
+  <p>"Design a model that detects fraudulent <em>sequences</em> of transactions rather than scoring each
+  one independently. What architecture, and why?"</p>
+  <p><strong>What a strong answer covers:</strong> why the sequence framing helps at all — fraud is a
+  pattern over time (a small test transaction followed by a large one), invisible per transaction →
+  the candidate architectures and the honest trade-off between them: a GBDT over hand-built velocity
+  features (strong baseline, cheap, interpretable), an LSTM/GRU over the card's recent history
+  (natural fit, sequential inference), a small transformer over the sequence (parallel training, attends
+  to the relevant earlier transaction directly, needs more data) → the practical constraints: sequence
+  length and truncation, the latency budget for a synchronous decision, and the fact that a transformer
+  over 50 events is cheap while over 5,000 is not → and the point most candidates miss: whatever the
+  architecture, the sequence must be built with a point-in-time-correct history, or you have simply
+  built a more sophisticated leak.</p>
+  <p><strong>The strongest close</strong> is to propose the GBDT-plus-velocity-features baseline first
+  and treat the sequence model as the thing that must beat it — and to say what evidence would decide.</p>
+</div>
+
+<h2 data-n="62.4">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th><th>What to do</th></tr>
+<tr><td>1–2</td><td>Knew the names, not the mechanisms</td><td>Modules 30–34; redo the rapid fire</td></tr>
+<tr><td>3</td><td>Mechanisms fine, debugging answers vague</td><td>Rehearse the NaN and generalisation
+    answers until the check order is automatic</td></tr>
+<tr><td>4</td><td>Strong, but the design prompt skipped the baseline</td><td>Always propose the simple
+    baseline first — practise that habit</td></tr>
+<tr><td>5</td><td>Mechanisms, debugging and trade-offs all fluent</td><td>Move on to round 4</td></tr>
+</table>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#61" target="_top"><span class="k">Back</span>← 61 · Round 2 · Classical ML</a>
+  <a href="../index.html#63" target="_top"><span class="k">Next</span>63 · Round 4 · Transformers →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
