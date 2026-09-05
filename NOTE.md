@@ -16,8 +16,8 @@ Read this note in that order — build track first, course second — because th
 priority. The build track produces the artifacts and the numbers you will be asked about. The
 course is what turns those artifacts into answers, and covers the ground you will not have built.
 
-*(Everything else in this repository is career-ops, the job-search pipeline. It is unrelated to the
-two tracks and untouched by them.)*
+Everything else in this repository is career-ops, the job-search pipeline. It is unrelated to the
+two tracks and untouched by them — **Part 3** below is the working cheat sheet for it.
 
 ---
 
@@ -265,6 +265,103 @@ recall, which is a different activity and the only one that moves the number.
 
 ---
 
+# Part 3 — career-ops itself, the short version
+
+The repository is large — 120 scripts and roughly 60 modes — but you only ever touch a handful. The
+rest is machinery those few call. This section is the working set plus the two commands that let you
+find everything else without reading source.
+
+## Start here when you forget what exists
+
+```
+/career-ops
+```
+
+With no arguments it prints the full command menu. That is the canonical index and it is generated
+from the router, so it cannot go stale. Two written indexes back it up, both readable without an
+agent:
+
+```bash
+sed -n '/^| If the user/,/^$/p' AGENTS.md     # every mode and what triggers it
+sed -n '/^| File | Function |/,/^$/p' AGENTS.md   # every script and what it does
+node find.mjs --help                          # and most scripts answer --help
+```
+
+`modes/README.md` explains how a mode file works if you ever want to write or edit one — which you
+are meant to: the modes are prompts in Markdown, not code.
+
+## The daily loop
+
+| Command | What it does |
+|---------|--------------|
+| *paste a JD or URL, no command* | **auto-pipeline** — evaluates, writes the report, generates the CV, updates the tracker. The single most-used path. |
+| `/career-ops scan` | Sweeps the configured portals for new roles. Zero LLM cost — it hits the Greenhouse/Ashby/Lever APIs directly. |
+| `/career-ops triage` | Fast first pass over a batch before spending a full evaluation on any of them |
+| `/career-ops pipeline` | Works through the URLs you parked in `data/pipeline.md` |
+| `/career-ops pdf` | Tailored, ATS-optimised CV for one role |
+| `/career-ops cover` · `email` | Cover letter · formal application email. Both draft-only. |
+| `/career-ops apply` | Live form assistant — reads the form, drafts the answers. Stops before Submit, always. |
+| `/career-ops tracker` | Where everything stands |
+| `/career-ops followup` | Who is overdue a nudge, and the draft to send |
+| `/career-ops outcome` | Record the result and archive the artifacts |
+
+**The parking habit worth forming:** when a role looks interesting but you have no time, append the
+URL to `data/pipeline.md` and move on. `/career-ops pipeline` drains the queue later in one pass.
+`/career-ops agent-inbox` does the same for requests to me rather than for URLs.
+
+## The ones that matter for your situation right now
+
+| Command | What it does |
+|---------|--------------|
+| `/career-ops train` | Your standing loop: classify a JD into have-it-written / have-it-unwritten / don't-have-it, then teach, build, and place. Also takes a bare topic: `/career-ops train GRPO`. |
+| `/career-ops interview-prep` | Company-specific prep document |
+| `/career-ops interview/drill` | Deep JD-specific question set — baseline answer vs. staff-level answer, plus the traps |
+| `/career-ops interview/ready` | Ranks what to study next from your real question-bank history rather than from a guess |
+| `/career-ops interview/practice` · `debrief` | One question at a time with feedback · post-interview gap closing |
+| `/career-ops upskill` | Skill gaps aggregated across every role you have evaluated |
+| `/career-ops interview-redflag` | Is this company safe to join |
+
+## Zero-token utilities
+
+These are plain Node scripts. No model call, no cost, safe to run whenever.
+
+```bash
+node doctor.mjs --json          # is the system set up; what is still template content
+node verify-pipeline.mjs        # health check: broken links, bad statuses, duplicates, orphans
+node stats.mjs --summary        # lifetime funnel, scan totals, portal coverage
+node find.mjs <company|report#> # locate a report, tracker row and artifacts from any fragment
+node merge-tracker.mjs          # merge queued tracker additions — run after every batch
+node set-status.mjs <ref> <State> --note "..."   # the ONLY safe way to change a status
+node analyze-patterns.mjs       # where applications actually die
+node funnel-velocity.mjs --summary   # your funnel against market benchmarks, and stage velocity
+node company-history.mjs <company> --summary   # everything known about one company
+node jd-skill-gap.mjs <jd-file> --summary      # a JD's skills vs. cv.md: have / supported / gap
+node interview-readiness.mjs --summary         # what to study next, measured vs. untested topics
+node weekly-digest.mjs --summary               # this week's interview sessions rolled up
+node scan-ats-full.mjs --resume  # keyword-first sweep of full public ATS datasets, no company list
+```
+
+## Three rules that prevent most of the damage
+
+1. **Never hand-edit `data/applications.md` to add a row.** Write a TSV into
+   `batch/tracker-additions/` and run `node merge-tracker.mjs`. To change a status, use
+   `set-status.mjs` — it validates, locks, and writes atomically.
+2. **Never run `node update-system.mjs apply` in this fork.** Its apply is a raw overwrite of exactly
+   the system files this fork has modified on purpose. Sync with upstream by merging
+   `upstream/main` on a branch instead.
+3. **Personalisation goes in `modes/_profile.md`, `modes/_custom.md` or `config/profile.yml`** —
+   never in `modes/_shared.md`, which system updates overwrite.
+
+## Customising it
+
+The whole point of the design is that you say what you want changed and it gets changed: archetypes
+and targeting in `modes/_profile.md`, house rules and workflow preferences in `modes/_custom.md`,
+companies and search keywords in `portals.yml`, CV design in `templates/cv-template.html` or
+`.tex`. `modes/train.md` is an example of the pattern — a workflow of yours turned into a mode so it
+runs the same way every session.
+
+---
+
 # What to do next
 
 1. **Today (Sat 5 Sep):** `python3 code/check_env.py`, then `modules/build/00-foundations.md`.
@@ -274,16 +371,21 @@ recall, which is a different activity and the only one that moves the number.
    they are the ones you are furthest from using daily.
 4. **The night before:** `GLOSSARY.md` end to end, then walkthrough `70` out loud, timed.
 
-## Open items I could not close
+## Version control
 
-- **Neither track is under version control.** `learning/` is listed in `.git/info/exclude` in this
-  repository, which keeps it out of fork syncs with upstream `santifer/career-ops` but also means
-  none of it is committed anywhere. Two options: drop `learning/` from the exclude file, or run
-  `git init` inside each track so they are versioned independently of career-ops. I would take the
-  second — it keeps the fork clean and gives you a real history for the code you are about to write,
-  which matters because "commit after every lesson" is one of the ground rules.
-- **Left in place at this repository root, untracked:** `GLOSSARY.md` (byte-identical to
-  `learning/llm-from-scratch/GLOSSARY.md`), a `modules/` directory (duplicate of
-  `learning/llm-from-scratch/modules/`), `retheme-40.png` and `shell-10.png`. They are leftovers
-  from earlier sessions and safe to delete, but deleting is your call, not mine.
-- **`WORKTREES.md`** still has no pointer row for either track.
+Both tracks are committed in this fork. `learning/` used to sit in `.git/info/exclude`, which kept
+it out of fork syncs with upstream `santifer/career-ops` but also meant none of it was committed
+anywhere; that line was removed on 5 September 2026 and both tracks were merged to `main`. Your lab
+code in `code/` and your measurements in `notes/` now show up in `git status` like anything else —
+which matters, because "commit after every lesson" is one of the ground rules.
+
+`learning/` is a path upstream never touches, so tracking it adds no merge-conflict risk on a fork
+sync. The finished write-ups still get extracted into their own public repositories, because a CV
+link has to point at a clean, standalone repo.
+
+## Loose ends
+
+- **Inside `.claude/worktrees/llm-curriculum/`** there are leftovers from authoring: a duplicate
+  `GLOSSARY.md`, a duplicate `modules/` tree, and three verification screenshots. That directory is
+  git-excluded, so none of it reaches the fork — but the worktree and its branch are both still on
+  disk if you want the space back.
