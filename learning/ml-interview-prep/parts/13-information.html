@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Information theory — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part A · Maths · Module 13</p>
+<h1>Information theory
+  <span class="lede">Four quantities — surprise, entropy, cross-entropy, KL divergence — that turn
+  up as your training loss, your evaluation metric, your RLHF penalty, and your production drift
+  alarm. Learn them once here and you will recognise them four more times.</span>
+</h1>
+
+<h2 data-n="13.1">The problem this was invented to solve</h2>
+
+<p>Claude Shannon, 1948, at Bell Labs, was asked a purely engineering question: how few symbols can
+you send down a wire and still convey the message? To answer it he had to define
+<em>information</em> as a measurable quantity, and the definition he chose was:</p>
+
+<div class="box analogy">
+  <span class="lbl">The founding idea</span>
+  <p><strong>Information is surprise.</strong> A message that tells you something you already knew
+  carries none. “The sun rose this morning” — zero bits. “The sun did not rise this morning” —
+  an enormous number of bits. The rarer the event, the more information its occurrence carries.</p>
+</div>
+
+<p>This turns out to be exactly what you need for machine learning, because training a model is
+compression: a model that predicts the next token well is a model that can encode the text in few
+bits. That is not a metaphor. The equivalence is exact, and it is why your loss is measured in nats.</p>
+
+<h2 data-n="13.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Surprise / self-information <span class="tag">basic</span>
+        <span class="sym">−log p</span></div>
+    <p>How startling one particular outcome is. Certain event (p = 1) → 0 surprise. Impossible-ish
+       event (p → 0) → surprise → ∞.</p>
+    <p class="an">Being told the coin landed heads: mildly interesting. Being told it landed on its
+       edge: a story you retell for years.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bits vs nats <span class="tag">basic</span></div>
+    <p>Just the base of the logarithm. log₂ gives <strong>bits</strong> (yes/no questions);
+       ln gives <strong>nats</strong>. 1 nat ≈ 1.443 bits.</p>
+    <p class="wh">Your training loss is in nats, because frameworks use natural log. Language-model
+       papers often quote bits-per-character instead. Divide by ln 2 to convert.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Entropy <span class="tag">basic</span>
+        <span class="sym">H(P) = −Σ p log p</span></div>
+    <p>The <em>average</em> surprise of a distribution — the irreducible uncertainty in it. Maximum
+       when everything is equally likely, zero when one outcome is certain.</p>
+    <p class="an">The average number of yes/no questions a perfect player needs in twenty questions.
+       Eight equally likely answers → exactly 3 questions → 3 bits.</p>
+    <p class="wh">The theoretical floor on your loss. If the true next-token distribution has entropy
+       2.1 nats, no model on Earth gets below 2.1.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Cross-entropy <span class="tag">basic</span>
+        <span class="sym">H(P,Q) = −Σ p log q</span></div>
+    <p>The average surprise you actually experience when reality is P but you believed Q. Always at
+       least H(P), equal only when Q = P.</p>
+    <p class="an">You packed for the weather forecast Q. The weather was P. Cross-entropy is how
+       uncomfortable you were on average.</p>
+    <p class="wh">This <em>is</em> your loss function. Every classifier, every language model.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">KL divergence <span class="tag">basic</span>
+        <span class="sym">D(P‖Q) = Σ p log(p/q)</span></div>
+    <p>Cross-entropy minus entropy — the <strong>extra</strong> cost of using Q instead of the truth
+       P. Always ≥ 0, zero only when the distributions match. <strong>Not symmetric</strong>, and
+       not a distance.</p>
+    <p class="an">The wasted part of your discomfort — the part that was your forecast's fault
+       rather than the weather's inherent unpredictability.</p>
+    <p class="wh">The RLHF/PPO penalty that stops a policy drifting from the reference model. The
+       KL term in a VAE. And one of the standard production drift statistics.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Perplexity <span class="tag">basic</span>
+        <span class="sym">exp(cross-entropy)</span></div>
+    <p>Cross-entropy exponentiated back into a count: the <em>effective number of options</em> the
+       model is choosing between at each step.</p>
+    <p class="an">Perplexity 20 means the model is as confused as someone picking uniformly at
+       random from 20 words.</p>
+    <p class="wh">The standard language-model number. Only comparable between models that share a
+       tokenizer — see the trap.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Conditional entropy <span class="tag">mid</span>
+        <span class="sym">H(Y|X)</span></div>
+    <p>The uncertainty left in Y once you already know X.</p>
+    <p class="wh">A language model's loss is exactly this: the entropy of the next token given
+       everything before it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Mutual information <span class="tag">mid</span>
+        <span class="sym">I(X;Y) = H(Y) − H(Y|X)</span></div>
+    <p>How much knowing X reduces your uncertainty about Y. Symmetric, zero exactly when they are
+       independent, and it catches <em>non-linear</em> dependence that correlation misses entirely.</p>
+    <p class="wh">Feature selection that survives non-linearity. And under its other name —
+       <strong>information gain</strong> — it is the split criterion in a decision tree.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Jensen–Shannon divergence <span class="tag">senior</span></div>
+    <p>The symmetric, bounded repair of KL: average both directions against the midpoint
+       distribution M = (P+Q)/2. Finite even when the supports do not overlap.</p>
+    <p class="wh">The original GAN objective is JS divergence — and the fact that it saturates when
+       the distributions do not overlap is precisely the vanishing-gradient problem that Wasserstein
+       GANs were built to fix.</p>
+  </div>
+
+</div>
+
+<h2 data-n="13.3">Why the logarithm?</h2>
+
+<p>Interviewers ask this, and “because Shannon said so” is not an answer. There are three
+requirements you would want from any measure of information, and the log is the <em>only</em>
+function that satisfies all three:</p>
+
+<ol>
+  <li><strong>Certainty carries no information.</strong> p = 1 must give 0. And log 1 = 0. ✓</li>
+  <li><strong>Rarer means more informative</strong> — the function must decrease in p. ✓</li>
+  <li><strong>Independent information adds.</strong> Learning two unrelated facts should give you the
+      sum of their information. But independent probabilities <em>multiply</em>. You need a function
+      that turns multiplication into addition, and that is the defining property of the logarithm.</li>
+</ol>
+
+<p>Requirement 3 is the whole answer. Information is additive; probability is multiplicative; log is
+the bridge. As a bonus, it is also what makes cross-entropy numerically tractable — products of ten
+thousand small probabilities underflow to zero, sums of their logs do not.</p>
+
+<div class="viz" data-viz="entropy"></div>
+
+<h2 data-n="13.4">Cross-entropy, KL, and the one relationship to remember</h2>
+
+<div class="eq">
+  H(P, Q) = H(P) + D<sub>KL</sub>(P ‖ Q)
+  <span class="note">what you pay = what was unavoidable + what your model wasted</span>
+</div>
+
+<p>Read it and several things fall out at once:</p>
+
+<ul>
+  <li><strong>Minimising cross-entropy is minimising KL.</strong> H(P) is a property of the data and
+      does not depend on your parameters, so it is a constant during training. The only thing your
+      optimiser can move is the KL term. Training a classifier <em>is</em> minimising the KL from the
+      truth to your model — people just do not usually say it that way.</li>
+  <li><strong>Your loss has a floor and it is not zero.</strong> If the data genuinely contains
+      ambiguity — and language always does — H(P) &gt; 0 and no model reaches below it. A training
+      loss approaching zero on non-trivial data is evidence of memorisation or leakage, not of a
+      great model.</li>
+  <li><strong>KL ≥ 0 always</strong> (Gibbs' inequality). So cross-entropy is always at least
+      entropy. You can never be less surprised than reality warrants.</li>
+</ul>
+
+<h2 data-n="13.5">KL is not a distance, and the asymmetry is load-bearing</h2>
+
+<div class="viz" data-viz="kl"></div>
+
+<p>D(P‖Q) ≠ D(Q‖P), and it also fails the triangle inequality, so calling it a distance is wrong.
+Worse, the asymmetry is not a technicality — the two directions produce qualitatively different
+models.</p>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Forward KL — D(P‖Q)</th><th>Reverse KL — D(Q‖P)</th></tr>
+<tr><td>Weighted by</td><td>the truth P</td><td>your model Q</td></tr>
+<tr><td>Punishes</td><td>Q ≈ 0 where P &gt; 0 — assigning no probability to something real</td>
+    <td>Q &gt; 0 where P ≈ 0 — inventing probability where there is nothing</td></tr>
+<tr><td>Resulting behaviour</td><td><strong>Mode-covering.</strong> Q spreads out to cover every
+    mode of P, including the gaps between them</td>
+    <td><strong>Mode-seeking.</strong> Q collapses onto one mode and ignores the rest</td></tr>
+<tr><td>You meet it in</td><td>MLE, ordinary supervised training, distillation on the full
+    distribution</td>
+    <td>Variational inference, VAEs, the PPO/RLHF penalty</td></tr>
+</table>
+</div>
+
+<p>The intuition worth carrying: forward KL is <em>“never say impossible about something that
+happens”</em>, because P weights the sum, so any point where P is large and Q is tiny produces a
+huge penalty. Reverse KL is <em>“never claim something that does not happen”</em>, because Q weights
+the sum, so Q can safely ignore whole regions of P as long as it puts no mass there. A generative
+model trained with reverse KL produces fewer but cleaner samples; forward KL produces blurry
+averages that cover everything. That is the same trade-off as “blurry VAE reconstructions” and it
+comes from this single choice of direction.</p>
+
+<h2 data-n="13.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is entropy, in plain language?</summary>
+  <div class="a">
+    <div class="tldr">The average amount of surprise in a distribution — equivalently, the average
+    number of yes/no questions needed to pin down the outcome.</div>
+    <p>Eight equally likely outcomes: you binary-search, three questions, 3 bits. One outcome
+    guaranteed: zero questions, 0 bits. A skewed distribution sits in between, because you can ask
+    about the likely outcomes first and usually finish early.</p>
+    <p>Formally it is the expected value of −log p, which is why it is a sum of p·log p terms.</p>
+    <p>Where it earns its keep in my work: it is the floor on a model's achievable loss. If the true
+    next-token distribution has entropy 2.1 nats, nothing gets below 2.1, and knowing that stops you
+    chasing a loss target that is physically impossible.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Entropy is a property of the distribution, not of a sample. "This dataset has high entropy"
+      is loose talk unless you say which distribution over what.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is the difference between cross-entropy and KL divergence?</summary>
+  <div class="a">
+    <div class="tldr">Cross-entropy is the total cost of using the wrong distribution; KL is just the
+    <em>excess</em> part — cross-entropy minus the entropy that was unavoidable anyway.</div>
+    <p>H(P,Q) = H(P) + D(P‖Q). Since H(P) belongs to the data and not to your parameters, it is
+    constant during training. So minimising cross-entropy and minimising KL are the same
+    optimisation — they differ by a constant that no optimiser can touch.</p>
+    <p>Why we still bother with both: cross-entropy is the practical loss because you never know
+    H(P). KL is the right quantity when you are comparing two distributions you <em>do</em> both
+    have, which is why the RLHF penalty and drift detection use KL and not cross-entropy.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"So loss should go to zero?" Only if the data is deterministic. On real text H(P) is
+      substantially above zero, so a near-zero training loss is a symptom — memorisation, duplicated
+      data, or leakage.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why a logarithm? Why not just use 1/p or (1−p)?</summary>
+  <div class="a">
+    <div class="tldr">Because information from independent events has to <em>add</em>, while their
+    probabilities <em>multiply</em> — and the logarithm is the unique function that converts one into
+    the other.</div>
+    <p>Write down the three properties you want: zero information at p = 1; more information for
+    rarer events; and additivity for independent events, so I(p·q) = I(p) + I(q). That functional
+    equation forces a logarithm up to a constant, and the constant is just your choice of units —
+    base 2 gives bits, base e gives nats.</p>
+    <p>1/p fails additivity: it multiplies instead of adding. (1−p) fails it too, and also gives
+    finite information to an impossible event, which is wrong.</p>
+    <p>There is a practical bonus that matters daily: the likelihood of a dataset is a product of
+    thousands of terms below 1, which underflows to exactly 0 in float32. Logs turn that into a sum
+    that is numerically fine. That is why every framework works in log-space and why
+    <code>log_softmax</code> exists as a fused op rather than a log applied to a softmax.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Never compute <code>log(softmax(x))</code> yourself. The softmax can underflow to 0 and the
+      log then gives −inf. <code>log_softmax</code> uses the log-sum-exp trick with a max
+      subtraction and is stable.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does perplexity mean, and what counts as a good value?</summary>
+  <div class="a">
+    <div class="tldr">Perplexity is the exponential of cross-entropy — the effective number of
+    equally likely options the model is choosing between at each token.</div>
+    <p>Perplexity 20 means the model is about as uncertain as someone picking uniformly among 20
+    words. Perplexity 1 would be perfect certainty; perplexity equal to the vocabulary size means the
+    model has learned nothing at all, which is exactly why the step-0 sanity check is
+    loss ≈ ln(vocab_size).</p>
+    <p>Rough anchors: word-level perplexity on English news was ~200 for a good n-gram model, ~60 for
+    early LSTMs, and modern LLMs sit in the low teens or below on comparable data. But the number
+    alone is close to meaningless without context.</p>
+    <p><strong>The critical caveat, which is really the question being asked:</strong> perplexity is
+    only comparable across models with the <em>same tokenizer and the same test set</em>. A model
+    with a larger vocabulary packs more characters into each token, so it makes fewer predictions
+    over the same text and gets a lower perplexity for free. Comparing a 32k-vocab model to a
+    100k-vocab model on perplexity is meaningless. If you must compare across tokenizers, normalise
+    to bits per character or bits per byte.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Low perplexity does not mean the model is useful. It measures next-token prediction, not
+      instruction-following, factuality or helpfulness. Instruction tuning frequently makes
+      perplexity on raw text <em>worse</em> while making the model far more useful — which is the
+      whole reason LLM evaluation moved to task benchmarks and human preference.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is mutual information, and how does it differ from correlation?</summary>
+  <div class="a">
+    <div class="tldr">Mutual information is how much knowing one variable reduces uncertainty about
+    the other — and unlike correlation it detects <em>any</em> dependence, not just linear ones.</div>
+    <p>I(X;Y) = H(Y) − H(Y|X). Zero exactly when X and Y are independent, which is a much stronger
+    statement than zero correlation.</p>
+    <p>The canonical demonstration: let Y = X² with X symmetric around zero. The correlation is
+    exactly 0, because the linear relationship genuinely is absent. But knowing X tells you Y
+    precisely, so the mutual information is large. Any feature-selection procedure ranking by
+    correlation would discard that feature.</p>
+    <p>Under the name <strong>information gain</strong> it is the split criterion in a decision tree:
+    the reduction in label entropy achieved by splitting on a feature. That is the same quantity,
+    computed per candidate split.</p>
+    <p>The catch is estimation. On continuous variables MI requires density estimation or binning,
+    both of which are unreliable in high dimensions and sensitive to bin width, which is why
+    correlation stays popular despite being weaker.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>MI is not bounded above and has no natural scale, so "MI = 0.4" is uninterpretable on its
+      own. Normalised variants exist for exactly that reason.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain forward versus reverse KL and why the direction changes what you get.</summary>
+  <div class="a">
+    <div class="tldr">Forward KL is mode-covering and reverse KL is mode-seeking, because whichever
+    distribution sits in front of the log is the one whose regions get penalised.</div>
+    <p><strong>Forward, D(P‖Q):</strong> the expectation is taken under the true P. Wherever P has
+    mass and Q does not, log(p/q) blows up. So Q is forced to put probability everywhere P does — it
+    spreads out and covers all modes, including the low-density gaps between them. This is what MLE
+    does, and it is why a Gaussian fitted to a bimodal distribution lands in the middle where neither
+    mode is.</p>
+    <p><strong>Reverse, D(Q‖P):</strong> the expectation is taken under Q. Regions where Q is zero
+    cost nothing at all, no matter what P does there. So Q can safely ignore entire modes; what it
+    cannot do is put mass where P has none. It collapses onto one mode and represents it well.</p>
+    <p>Where it shows up concretely:</p>
+    <ul>
+      <li><strong>Supervised training and distillation</strong> use forward KL — you want the student
+          to reproduce the whole teacher distribution.</li>
+      <li><strong>VAEs</strong> use reverse KL in the ELBO, which is a known cause of posterior
+          collapse and of blurry, over-smoothed reconstructions.</li>
+      <li><strong>RLHF/PPO</strong> penalises KL against the reference policy to stop the model
+          drifting into gibberish that games the reward model. The direction and the estimator
+          matter: implementations typically use a sampled estimate of the reverse direction, and
+          getting the sign or the estimator wrong is a real, hard-to-spot bug.</li>
+    </ul>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>If asked which is "correct" — neither. It is a modelling choice about which failure you can
+      live with: covering everything badly, or covering one thing well. Say that and you have
+      answered the actual question.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Where does KL divergence appear in a production ML system?</summary>
+  <div class="a">
+    <div class="tldr">In four places that look unrelated until you notice they are all the same
+    quantity: the training loss, the RLHF penalty, knowledge distillation, and drift detection.</div>
+    <ul>
+      <li><strong>Training.</strong> Cross-entropy = entropy + KL, so every classifier you have ever
+          trained was minimising a KL you did not name.</li>
+      <li><strong>RLHF / GRPO.</strong> A KL term against the frozen reference policy is what keeps
+          the tuned model from collapsing into reward-hacked nonsense. The coefficient is one of the
+          few genuinely important knobs in the whole pipeline: too small and the model degenerates,
+          too large and it never learns anything.</li>
+      <li><strong>Distillation.</strong> The student matches the teacher's full soft distribution,
+          which is a forward KL. The "dark knowledge" argument is that the teacher's relative
+          probabilities over the <em>wrong</em> classes carry more information than the hard label —
+          and KL is what transfers it.</li>
+      <li><strong>Drift detection.</strong> Bin a feature's distribution today against a training-time
+          reference and compute the divergence. In practice most teams use <strong>PSI</strong>,
+          which is the <em>symmetrised</em> KL — Σ(a−b)·ln(a/b) — precisely so that it does not blow
+          up when one side has an empty bin. That is a nice thing to point out, because it shows you
+          know why PSI exists rather than just its threshold.</li>
+    </ul>
+    <p>The practical warning that ties them together: KL is infinite when the second distribution
+    assigns zero to something the first does not. Every real implementation therefore smooths,
+    clips, or drops empty bins, and how you handle that choice changes your alert rate materially.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>PSI's famous thresholds — 0.1 "moderate", 0.25 "significant" — come from credit-scoring
+      folklore, not from theory, and they depend on your binning scheme. Quote them as conventions
+      and say you would calibrate against your own historical drift, not as if they were laws.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Information = surprise = −log p, and the additivity argument for why it must be a log.</li>
+    <li>H(P,Q) = H(P) + KL(P‖Q), and the two consequences: training minimises KL, and loss has a floor.</li>
+    <li>Perplexity in one sentence, plus why it cannot be compared across tokenizers.</li>
+    <li>Mode-covering vs mode-seeking, with one place each appears.</li>
+    <li>The four places KL shows up in production, PSI included.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#12" target="_top"><span class="k">Back</span>← 12 · Probability &amp; stats</a>
+  <a href="../index.html#14" target="_top"><span class="k">Next</span>14 · Optimisation →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

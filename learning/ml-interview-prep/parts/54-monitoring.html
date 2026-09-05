@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoring &amp; drift — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 54</p>
+<h1>Monitoring &amp; drift
+  <span class="lede">A model degrades silently. No exception, no 500, no alert — just decisions that
+  get gradually worse while every dashboard stays green. PSI, KS and KL are how you see it, and the
+  delayed-label problem is why you need them at all.</span>
+</h1>
+
+<h2 data-n="54.1">Four things that can change</h2>
+
+<div class="tw">
+<table>
+<tr><th>Name</th><th>What shifts</th><th>Example</th><th>Does the model still work?</th></tr>
+<tr><td><strong>Data / covariate drift</strong></td><td>P(X)</td><td>Traffic moves from desktop to
+    mobile</td><td>Maybe — the relationship may be unchanged</td></tr>
+<tr><td><strong>Concept drift</strong></td><td>P(y|X)</td><td>Fraudsters change tactics; the same
+    features now mean something different</td><td>No — this is the one that hurts</td></tr>
+<tr><td><strong>Label drift</strong></td><td>P(y)</td><td>Fraud rate rises from 0.1 % to 0.5 %</td>
+    <td>Calibration breaks even if ranking holds</td></tr>
+<tr><td><strong>Upstream / schema change</strong></td><td>The pipeline</td><td>A field switches from
+    cents to euros</td><td>No — and it looks exactly like sudden drift</td></tr>
+</table>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p><strong>Data drift</strong> is your customers changing. <strong>Concept drift</strong> is the rules
+  of the game changing. You can often survive the first; the second means the thing you learned is no
+  longer true.</p>
+  <p>And the cruel part: you can detect data drift immediately, because it only needs inputs. Concept
+  drift needs <em>labels</em> — which in fraud arrive weeks later. So the drift you can measure fastest
+  is the one that matters least.</p>
+</div>
+
+<h2 data-n="54.2">Watch a distribution drift</h2>
+
+<div class="viz" data-viz="psi"></div>
+
+<h2 data-n="54.3">The measures</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">PSI — Population Stability Index <span class="tag">mid</span></div>
+    <p>Bin both distributions the same way, then sum over bins:</p>
+    <div class="eq">PSI = Σ (a<sub>i</sub> − e<sub>i</sub>) · ln(a<sub>i</sub> / e<sub>i</sub>)<span
+      class="note">a = actual proportion in bin i, e = expected (reference) proportion</span></div>
+    <p class="wh">Industry convention: &lt; 0.1 stable · 0.1–0.25 moderate, investigate · &gt; 0.25
+       significant, act. Ubiquitous in credit and fraud because it is interpretable per bin — you can
+       see <em>which</em> part of the distribution moved.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">PSI is symmetric KL <span class="tag">senior</span></div>
+    <p>PSI is exactly the Jeffreys divergence: KL(a‖e) + KL(e‖a). Expand both and the cross terms give
+       the (a − e)·ln(a/e) form.</p>
+    <p class="wh">Worth saying in an interview — it connects module 13's information theory to the
+       production metric, and it explains the symmetry: PSI does not care which distribution you call
+       the reference.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">KS statistic <span class="tag">mid</span></div>
+    <p>The largest vertical gap between two cumulative distribution functions.</p>
+    <p class="wh">Binning-free and it comes with a p-value. The catch: with millions of rows every
+       trivial difference is "significant", so use the statistic as an effect size and ignore the
+       p-value.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Delayed labels <span class="tag">senior</span></div>
+    <p>The gap between a prediction and knowing whether it was right — days for a chargeback, months for
+       a loan default.</p>
+    <p class="warn-inline">The defining constraint of production ML monitoring. It is why you monitor
+       proxies (input drift, prediction drift, agreement with rules) as leading indicators and treat
+       true performance as a lagging one.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Prediction drift <span class="tag">mid</span></div>
+    <p>PSI on the model's <em>output</em> score distribution rather than on its inputs.</p>
+    <p class="wh">The best single early-warning signal: one number, no labels needed, and it moves when
+       either the inputs or the model change. If you can afford exactly one monitor, this is it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Calibration drift <span class="tag">senior</span></div>
+    <p>Ranking stays fine but the probabilities stop meaning what they say — predicted 3 % events now
+       happen 6 % of the time.</p>
+    <p class="wh">Common when the base rate moves. Often fixable by recalibrating (Platt or isotonic)
+       without retraining the model, which is far cheaper and faster.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Alert fatigue <span class="tag">mid</span></div>
+    <p>Too many alerts, so all of them get ignored.</p>
+    <p class="wh">Every alert needs an owner and a runbook action. If nobody would do anything
+       differently, it is a dashboard, not an alert — and shipping it as an alert degrades every real
+       one.</p>
+  </div>
+
+</div>
+
+<h2 data-n="54.4">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What would you monitor for a model in production?</summary>
+  <div class="a">
+    <div class="tldr">Four layers: infrastructure, data quality, drift, and model performance — in that
+    order of how fast the signal arrives, and in reverse order of how much it matters.</div>
+    <p><strong>Layer 1 — infrastructure (seconds).</strong> Latency percentiles, error rate,
+    throughput, saturation. Standard service monitoring; catches outages, not degradation.</p>
+    <p><strong>Layer 2 — data quality (minutes).</strong> Per feature: null rate, range violations,
+    cardinality, type conformance, and freshness — how old is the newest value in the online store.
+    Staleness is the failure everyone forgets, and a stale feature produces a confident wrong answer
+    rather than an error.</p>
+    <p><strong>Layer 3 — drift (hours to days, no labels needed).</strong> PSI per important feature
+    against the training reference, PSI on the prediction distribution, and the rate at which the model
+    disagrees with the incumbent rules. These are the leading indicators, and they are the whole reason
+    the layer exists.</p>
+    <p><strong>Layer 4 — performance (days to weeks, needs labels).</strong> Precision, recall and
+    calibration at the operating threshold, computed on matured labels, sliced by segment. Plus the
+    business metrics: fraud losses, false-positive cost, analyst queue volume.</p>
+    <p><strong>The two things I would add that get overlooked:</strong> monitor <em>per segment</em>, not
+    just in aggregate, because a serious regression in one merchant category disappears in a healthy
+    overall number; and log the full feature vector and the model version with every prediction, because
+    that log is what makes every layer above debuggable — and it must exist before the incident, not
+    after.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>PSI on a feature is 0.31. What do you do?</summary>
+  <div class="a">
+    <div class="tldr">Do not retrain reflexively. First establish whether this is a pipeline bug, a real
+    population change, or a seasonal pattern — the three have completely different fixes, and retraining
+    on a bug bakes the bug into the model.</div>
+    <p><strong>Step 1 — look at the per-bin contributions.</strong> PSI is a sum, so open it up. A
+    single bin dominating usually means a bug: a new category code, a default value appearing, a unit
+    change. A smooth shift across all bins looks more like a genuine population change. This one plot
+    usually decides the diagnosis.</p>
+    <p><strong>Step 2 — check the shape in time.</strong> A step change on a specific day points at a
+    deployment or an upstream release — go and look at what shipped that day. A gradual ramp points at
+    the world changing. A repeating annual or weekly pattern is seasonality, and the correct action may
+    be to fix the reference window rather than the model.</p>
+    <p><strong>Step 3 — check whether it matters.</strong> Drift on a feature with negligible importance
+    is noise. Drift on a top-five feature is serious. I would weight drift by feature importance rather
+    than alert on every feature equally — otherwise you have built an alert-fatigue machine.</p>
+    <p><strong>Step 4 — check the output.</strong> Has the prediction distribution moved? Has
+    performance moved on the labels that have matured? Input drift with stable predictions and stable
+    performance can be genuinely benign — the model may not be sensitive to that region of the input
+    space.</p>
+    <p><strong>Then act accordingly:</strong> pipeline bug → fix the pipeline and do not retrain;
+    seasonality → widen or realign the reference; genuine population shift with degraded performance →
+    retrain on recent data, with the temporal holdout confirming the improvement; genuine shift without
+    degradation → note it, lower the alert, keep watching.</p>
+    <p><strong>The trap</strong> is treating drift as an automatic retraining trigger. Retraining on
+    drifted data caused by a broken upstream field teaches the model the bug, and then you have two
+    problems and no baseline to compare against.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your labels arrive 30 days late. How do you know the model is working today?</summary>
+  <div class="a">
+    <div class="tldr">Proxies now, truth later. Build a leading-indicator layer from things observable
+    immediately, calibrate those proxies against the lagging truth once, and use a small deliberately
+    unfiltered holdout to keep an unbiased view.</div>
+    <p><strong>The proxies I would use:</strong></p>
+    <ul>
+      <li><strong>Prediction distribution</strong> vs the reference — the strongest single signal, and
+          free.</li>
+      <li><strong>Input drift</strong> weighted by feature importance.</li>
+      <li><strong>Agreement rate</strong> with the previous model or the rules engine. A sudden change
+          in disagreement is informative even without knowing who is right.</li>
+      <li><strong>Fast partial feedback.</strong> Not all labels are equally slow: a customer calling to
+          dispute arrives in hours, an analyst's review decision in minutes. Those are biased samples,
+          but they are fast, and a bias you understand is usable.</li>
+      <li><strong>Human review outcomes</strong> on the queue the model itself populates — the analysts
+          are effectively labelling in near real time.</li>
+    </ul>
+    <p><strong>Calibrate the proxies once.</strong> Using history where you now have both, measure which
+    proxy movements actually preceded performance drops. That converts "PSI is 0.3" into "a PSI of 0.3
+    on this feature preceded a 4-point precision drop twice last year", which is what makes a threshold
+    defensible rather than arbitrary.</p>
+    <p><strong>Handle the censoring correctly.</strong> With a 30-day lag, recent data looks
+    artificially clean — the frauds have not been reported yet. Comparing last week's apparent fraud
+    rate against a fully matured month is a classic mistake that manufactures a false alarm. Either
+    compare only matured cohorts, or model the reporting curve and inflate accordingly.</p>
+    <p><strong>And keep an unbiased window:</strong> a small random holdout that bypasses the model
+    entirely. It costs money — you approve some transactions you would have blocked — and it is the only
+    way to observe the outcomes your own decisions would otherwise censor. Both the feedback loop from
+    module 52 and the counterfactual question depend on it.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>PSI, KS or KL — which would you use?</summary>
+  <div class="a">
+    <div class="tldr">PSI for routine per-feature monitoring, because it is bin-interpretable and has
+    conventional thresholds everyone recognises. KS when you want a binning-free continuous comparison.
+    KL when you are reasoning in information-theoretic terms or comparing model outputs.</div>
+    <p><strong>PSI</strong> wins operationally: bounded interpretation (0.1 / 0.25), symmetric, and the
+    per-bin decomposition tells you <em>where</em> the shift is, which is the first question you ask
+    during an investigation. Its weaknesses are that it needs binning — and the answer depends on the
+    bins — and that it is undefined when a bin is empty, so an epsilon is added, which quietly makes
+    small bins dominate.</p>
+    <p><strong>KS</strong> avoids binning entirely and has a distribution theory. It is only for
+    continuous univariate data, it is most sensitive near the median and weakest in the tails — which is
+    exactly where fraud lives — and its p-value is useless at production sample sizes.</p>
+    <p><strong>KL</strong> is the principled quantity and the one everything else derives from, but it
+    is asymmetric, unbounded, and has no natural threshold, so it is awkward as an alert. JS divergence
+    fixes the symmetry and boundedness and is a reasonable choice for comparing categorical
+    distributions.</p>
+    <p><strong>For categorical features</strong> none of the above is ideal — chi-squared or
+    JS on the category proportions is the usual answer, and new unseen categories deserve their own
+    alert because they often indicate an upstream change rather than drift.</p>
+    <p><strong>What I would run in practice:</strong> PSI per feature and on the prediction distribution
+    as the standing monitor, because it is what fraud and credit teams already read; KS as a secondary
+    check on the continuous features that matter most; and a separate alert for unseen categorical
+    values. The measure matters far less than having a stable reference window, sensible per-feature
+    thresholds, and an owner for each alert.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The four kinds of drift, and which one actually breaks the model.</li>
+    <li>The PSI formula, the 0.1/0.25 thresholds, and its identity with symmetric KL.</li>
+    <li>The four monitoring layers, fastest signal to slowest.</li>
+    <li>The four-step PSI investigation, and why drift is not a retraining trigger.</li>
+    <li>Three proxies for performance under delayed labels, plus the censoring trap.</li>
+    <li>Why prediction drift is the single best monitor if you only get one.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#53" target="_top"><span class="k">Back</span>← 53 · Deployment</a>
+  <a href="../index.html#55" target="_top"><span class="k">Next</span>55 · Governance &amp; risk →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

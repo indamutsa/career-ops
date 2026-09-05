@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classic NLP — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part C · Deep learning · Module 33</p>
+<h1>Classic NLP
+  <span class="lede">Everything that happened to text before transformers. Skimmable — but two things
+  in here are load-bearing for an LLM role: <strong>tokenisation</strong>, which is still exactly how
+  GPT sees the world, and <strong>embeddings</strong>, which are still the representation everything
+  else is built on.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to read this module</span>
+  <p>Read 33.1 and 33.3 properly — tokenisation and embeddings are live topics you will be asked
+  about. The rest (bag of words, TF-IDF, n-grams, POS/NER) is recognition-level: know what each is and
+  when it is still the right tool.</p>
+</div>
+
+<h2 data-n="33.1">Tokenisation — the layer nobody thinks about until it breaks</h2>
+
+<p>A model cannot consume text. It consumes integers. Tokenisation is the mapping, and the choice of
+mapping has consequences that show up months later in production.</p>
+
+<div class="tw">
+<table>
+<tr><th>Granularity</th><th>Vocabulary</th><th>The problem with it</th></tr>
+<tr><td>Characters</td><td>~100</td><td>Tiny vocabulary, but sequences become enormous and the model
+    must learn spelling before meaning</td></tr>
+<tr><td>Words</td><td>100k+ and still incomplete</td><td>Every unseen word becomes &lt;UNK&gt;. Fails
+    completely on morphologically rich languages and on code</td></tr>
+<tr><td><strong>Subwords</strong></td><td>30k–200k</td><td>The compromise everyone uses: common words
+    stay whole, rare ones split into pieces. No &lt;UNK&gt; ever</td></tr>
+</table>
+</div>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">BPE — byte-pair encoding <span class="tag">mid</span></div>
+    <p>Start from single characters; repeatedly merge the most frequent adjacent pair and add it to the
+       vocabulary; stop at the target size.</p>
+    <p class="an">Compression by shorthand. You notice you write "ing" constantly, so you invent one
+       symbol for it. Then you notice "tion". After 50,000 such shortcuts, common text is very short
+       and unusual text still spells out.</p>
+    <p class="wh">GPT-2 onwards uses <em>byte-level</em> BPE — it merges over raw bytes, so every
+       possible input is representable and there is no unknown token, ever.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">WordPiece / Unigram <span class="tag">mid</span></div>
+    <p>WordPiece (BERT) merges by likelihood gain rather than raw frequency. Unigram (SentencePiece,
+       T5, Llama) starts from a large vocabulary and prunes what costs least.</p>
+    <p class="wh">SentencePiece treats the space as a normal character, so it needs no
+       language-specific pre-tokenisation — which is why it dominates multilingual models.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Token ≠ word <span class="tag">basic</span></div>
+    <p>English averages roughly 1.3 tokens per word. Code, rare names, and non-Latin scripts are far
+       worse.</p>
+    <p class="warn-inline">This is a billing and fairness issue, not a curiosity: the same sentence in
+       some languages costs 2–3× more tokens than in English, so those users pay more and hit context
+       limits sooner for identical content.</p>
+  </div>
+
+</div>
+
+<div class="box trap">
+  <span class="lbl">Where tokenisation causes visible failures</span>
+  <ul>
+    <li><strong>Arithmetic.</strong> "1234" may split as "123"+"4" or "12"+"34" depending on the
+        tokeniser, so the digit alignment the model needs for addition is not stable. Several models
+        fixed this by forcing single-digit tokenisation.</li>
+    <li><strong>Character-level tasks.</strong> "How many r's in strawberry" is hard because the model
+        never sees letters — it sees two or three opaque chunks. Not a reasoning failure; a
+        representation failure.</li>
+    <li><strong>Glitch tokens.</strong> Tokens that appear in the tokeniser's training corpus but
+        almost never in the model's, so their embeddings stay near-random — the SolidGoldMagikarp
+        family. They produce bizarre, sometimes evasive outputs.</li>
+    <li><strong>Trailing whitespace.</strong> A prompt ending in a space tokenises differently from one
+        that does not, and completion quality can drop noticeably.</li>
+  </ul>
+</div>
+
+<h2 data-n="33.2">Counting-based representations</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Bag of words <span class="tag">basic</span></div>
+    <p>Represent a document as a vector of word counts. Order is discarded entirely.</p>
+    <p class="an">Emptying a book into a blender and reporting what came out. You learn the topic; you
+       lose the plot.</p>
+    <p class="wh">Still genuinely competitive for topic classification and spam filtering, where the
+       presence of words carries almost all the signal.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">TF-IDF <span class="tag">basic</span></div>
+    <p>Weight each word by how often it appears in this document (TF) times how rare it is across the
+       corpus (IDF = log(N / documents containing it)).</p>
+    <p class="an">"The" appears in everything, so it identifies nothing. "Chargeback" appears in a
+       handful of documents, so it identifies them strongly.</p>
+    <p class="wh">Still the retrieval baseline that RAG systems have to beat — BM25, its refined
+       descendant, is a hard baseline that dense embeddings often only match rather than beat.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">N-grams <span class="tag">basic</span></div>
+    <p>Count sequences of n consecutive words instead of single words, recovering a little local order.</p>
+    <p class="warn-inline">The vocabulary explodes combinatorially and the counts get sparse — the
+       curse of dimensionality from module 20.6 in its original setting.</p>
+  </div>
+
+</div>
+
+<h2 data-n="33.3">Embeddings — the idea that survived</h2>
+
+<p>Counting gives every word its own dimension, so "cat" and "kitten" are as unrelated as "cat" and
+"bulldozer". The distributional hypothesis says otherwise: <em>a word is characterised by the company
+it keeps</em>. Train a model to predict context from a word, and the vector it learns encodes meaning.</p>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">word2vec <span class="tag">mid</span></div>
+    <p>Two objectives: <strong>skip-gram</strong> predicts context words from the centre word;
+       <strong>CBOW</strong> predicts the centre from the context. Skip-gram with negative sampling is
+       the version that mattered.</p>
+    <p class="wh">Negative sampling is the key efficiency trick: instead of a softmax over 100k words,
+       train a binary classifier on the true pair plus a handful of random pairs. That is the same
+       contrastive idea used today in embedding models like SBERT.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GloVe <span class="tag">mid</span></div>
+    <p>Factorises the global word co-occurrence matrix directly rather than sliding a window.</p>
+    <p class="wh">A different route to a very similar place — which is itself the interesting result.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">king − man + woman ≈ queen <span class="tag">basic</span></div>
+    <p>The famous analogy: relationships appear as consistent directions in the vector space.</p>
+    <p class="warn-inline">The honest version: it works partly because the evaluation excludes the
+       input words from the answer. Without that exclusion the nearest vector is often "king" itself.
+       The structure is real but weaker than the demo suggests.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Static vs contextual <span class="tag">mid</span></div>
+    <p>word2vec gives "bank" <em>one</em> vector, averaging the river and the money senses. ELMo, then
+       BERT, then every LLM, give a different vector per occurrence, computed from the sentence.</p>
+    <p class="wh">This is the single biggest jump in the story. The transformer's job, viewed one way,
+       is exactly to turn context-free embeddings into context-dependent ones — which is what
+       self-attention does layer by layer.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bias in embeddings <span class="tag">senior</span></div>
+    <p>Trained on human text, embeddings absorb human associations — occupational gender stereotypes
+       are measurable in the geometry.</p>
+    <p class="wh">Debiasing by projecting out a "gender direction" was shown by Gonen and Goldberg to
+       hide the bias rather than remove it: the clustering structure survives the projection. Connects
+       to module 26.7 — a fairness fix whose failure you cannot measure is not a fix.</p>
+  </div>
+
+</div>
+
+<h2 data-n="33.4">The classic task vocabulary</h2>
+
+<div class="tw">
+<table>
+<tr><th>Task</th><th>What it does</th><th>Status today</th></tr>
+<tr><td>POS tagging</td><td>Label each word noun/verb/adjective</td><td>Solved; still used inside
+    parsing pipelines</td></tr>
+<tr><td>NER</td><td>Find and type entities: people, orgs, places, amounts</td><td>Still a real
+    production task — PII redaction, KYC, document extraction</td></tr>
+<tr><td>Dependency parsing</td><td>Grammatical structure as a tree</td><td>Largely displaced by
+    end-to-end models</td></tr>
+<tr><td>Coreference</td><td>Which "he" refers to which person</td><td>Was hard, now largely implicit
+    in LLM context handling</td></tr>
+<tr><td>Sentiment</td><td>Polarity of a text</td><td>TF-IDF + logistic regression is still a
+    respectable baseline</td></tr>
+<tr><td>Topic modelling (LDA)</td><td>Unsupervised discovery of themes</td><td>Mostly replaced by
+    embedding + clustering</td></tr>
+</table>
+</div>
+
+<h2 data-n="33.5">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Why do modern models use subword tokenisation?</summary>
+  <div class="a">
+    <div class="tldr">It is the only option that keeps the vocabulary small while never producing an
+    unknown token. Word-level vocabularies cannot cover the tail; character-level makes sequences too
+    long.</div>
+    <p>Word-level breaks on every unseen word — new product names, typos, code identifiers,
+    morphologically rich languages where a single lemma has dozens of inflected forms. Every one of
+    those becomes &lt;UNK&gt; and the information is simply lost.</p>
+    <p>Character-level has no coverage problem but multiplies sequence length by four or five, which
+    with attention's O(n²) cost is brutal, and it forces the model to relearn word structure from
+    scratch.</p>
+    <p>Subwords give both: frequent words stay single tokens so common text is short, and rare words
+    decompose into pieces the model has seen. Byte-level BPE goes further — merging over bytes means
+    literally any input is representable, so &lt;UNK&gt; ceases to exist as a concept.</p>
+    <p>The trade to name: the split points are statistical, not linguistic, so "unhappiness" may split
+    as "unh"+"appiness" rather than "un"+"happi"+"ness". The model copes, but it is a real reason
+    character-level tasks are shaky.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do LLMs struggle to count letters in a word?</summary>
+  <div class="a">
+    <div class="tldr">They never see letters. "strawberry" arrives as two or three opaque token IDs,
+    so counting its r's requires recovering spelling the model was never given directly.</div>
+    <p>This is a representation failure, not a reasoning failure, and the distinction matters because
+    it predicts what else will fail: reversing strings, rhyming reliably, character-level edits,
+    counting occurrences of a substring, and some arithmetic — all tasks that need sub-token structure.</p>
+    <p>Models do partially learn spelling, from text that discusses it ("strawberry is spelled
+    s-t-r-a-w..."), which is why they often get it right — inconsistently, since the knowledge is
+    indirect.</p>
+    <p><strong>Digits are the cleanest case.</strong> If "1234" tokenises as "123"+"4" in one number
+    and "12"+"34" in another, place-value alignment is unstable across examples, so the model must
+    learn addition separately for each split pattern. Several recent models force single-digit
+    tokenisation for exactly this reason, and arithmetic improves measurably.</p>
+    <p><strong>What I would do in production:</strong> not ask the model to do it. Character counting,
+    string reversal and exact arithmetic are one line of code — give the model a tool. Fixing it by
+    prompting is fighting the tokeniser.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What changed between word2vec and BERT embeddings?</summary>
+  <div class="a">
+    <div class="tldr">Static became contextual. word2vec gives "bank" one vector forever; BERT computes
+    a fresh vector for each occurrence from its sentence.</div>
+    <p>A static embedding must average every sense of a polysemous word into one point, which is a
+    lossy compromise for exactly the words that carry the most ambiguity. Any downstream model then has
+    to disambiguate from that blurred starting point.</p>
+    <p>Contextual embeddings — ELMo with bidirectional LSTMs, then BERT with transformers — make the
+    representation a function of the whole sentence. "River bank" and "savings bank" land in different
+    regions. Self-attention is the mechanism: each layer lets a token pull in information from the
+    tokens that disambiguate it.</p>
+    <p>The other change is <strong>how they are used</strong>. word2vec vectors were features fed into
+    a separately-trained model. BERT introduced pretrain-then-finetune: the whole network transfers,
+    and you replace only the head. That is the pattern the entire modern field runs on.</p>
+    <p><strong>Where static embeddings still win:</strong> they are a lookup table. Zero inference cost,
+    trivially cacheable, fine when you need a rough semantic prior at massive scale. And for
+    <em>sentence</em>-level retrieval you want neither raw BERT nor word2vec — raw BERT's mean-pooled
+    vectors are famously poor for similarity, which is why SBERT retrains it contrastively.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>When would you still use TF-IDF instead of embeddings?</summary>
+  <div class="a">
+    <div class="tldr">When exact term matching matters, when you need explainability, when latency or
+    cost budgets are tight, or when the domain vocabulary is nothing like the embedding model's
+    training data. In retrieval, the right answer is usually both.</div>
+    <p><strong>Exact matching.</strong> Searching for an error code, a SKU, a case number or a rare
+    proper noun is where dense embeddings are weakest — they retrieve semantically similar things, and
+    "similar to the error code you wanted" is worthless. BM25 nails exact rare terms by construction.</p>
+    <p><strong>Explainability.</strong> A TF-IDF match tells you which terms matched and with what
+    weight. A cosine similarity of 0.87 tells you nothing you can put in front of a compliance
+    reviewer.</p>
+    <p><strong>Cost.</strong> TF-IDF needs no model, no GPU, no embedding service, and no re-embedding
+    of the corpus when the model version changes — an operational burden people routinely under-count.</p>
+    <p><strong>Domain shift.</strong> On specialised corpora — internal ticket jargon, legal citations,
+    chemical names — a general embedding model may have no useful notion of similarity, while term
+    statistics computed on your own corpus are by definition domain-fitted.</p>
+    <p><strong>The production answer is hybrid.</strong> Run BM25 and dense retrieval, fuse with
+    reciprocal rank fusion, optionally rerank the top ~50 with a cross-encoder. That is what strong RAG
+    systems actually do, and it beats either alone on essentially every benchmark. Picked up again in
+    module 46.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The three tokenisation granularities and why subword won.</li>
+    <li>Three concrete failures traceable to tokenisation, including the digit-alignment argument.</li>
+    <li>TF-IDF in one sentence, including what IDF is doing.</li>
+    <li>Static vs contextual embeddings, and why that jump mattered so much.</li>
+    <li>The hybrid retrieval argument — when sparse still beats dense.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#32" target="_top"><span class="k">Back</span>← 32 · RNN, LSTM, attention</a>
+  <a href="../index.html#34" target="_top"><span class="k">Next</span>34 · Reinforcement learning →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

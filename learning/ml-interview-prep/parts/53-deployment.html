@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 53</p>
+<h1>Deployment
+  <span class="lede">Getting a model in front of traffic without betting the business on it. Shadow,
+  canary, blue-green, A/B — four different questions, four different answers, and knowing which
+  question you are asking is the whole skill.</span>
+</h1>
+
+<h2 data-n="53.1">The four strategies</h2>
+
+<div class="tw">
+<table>
+<tr><th>Strategy</th><th>Traffic to new model</th><th>The question it answers</th><th>Rollback</th></tr>
+<tr><td><strong>Shadow</strong></td><td>100 % copied, 0 % served</td><td>Does it work at all — latency,
+    errors, sane outputs?</td><td>Nothing to roll back</td></tr>
+<tr><td><strong>Canary</strong></td><td>1 % → 5 % → 25 % → 100 %</td><td>Does it hurt anything at
+    increasing exposure?</td><td>Shift traffic back, seconds</td></tr>
+<tr><td><strong>Blue-green</strong></td><td>0 % then 100 %, instantly</td><td>Can we switch and revert
+    atomically?</td><td>Flip back, instant</td></tr>
+<tr><td><strong>A/B test</strong></td><td>50/50, held for a fixed period</td><td>Is it measurably
+    better on the business metric?</td><td>Stop the test</td></tr>
+</table>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p><strong>Shadow</strong> is a trainee doctor writing their own diagnosis while the consultant treats
+  the patient — nobody is at risk, and you learn whether the trainee is any good.</p>
+  <p><strong>Canary</strong> is the caged bird in the mine: send a small, expendable sample in first and
+  watch it. <strong>Blue-green</strong> is a second identical kitchen — you switch the whole service to
+  it and switch back if the first plate comes out wrong. <strong>A/B</strong> is the actual experiment,
+  with statistics attached.</p>
+</div>
+
+<h2 data-n="53.2">Watch a canary roll</h2>
+
+<div class="viz" data-viz="canary"></div>
+
+<h2 data-n="53.3">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Shadow / dark launch <span class="tag">mid</span></div>
+    <p>Send production traffic to the new model, log its predictions, discard them. The old model still
+       serves.</p>
+    <p class="wh">Zero user risk, and it catches almost every engineering failure — latency, memory,
+       missing features, encoding mismatches — before anyone is exposed. It cannot measure whether the
+       model is <em>better</em>, because its decisions never take effect.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Canary <span class="tag">mid</span></div>
+    <p>Route a small percentage to the new model, watch guard metrics, then increase in stages.</p>
+    <p class="wh">Each stage needs a hold time long enough for the metrics to be meaningful, and
+       automatic rollback triggers defined <em>before</em> you start. A canary you have to watch
+       manually at 3 a.m. is not a canary.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Blue-green <span class="tag">mid</span></div>
+    <p>Two full environments; switch all traffic at once; keep the old one warm.</p>
+    <p class="wh">Fastest possible rollback and no version-mixing, at the cost of double the
+       infrastructure. Preferred when partial exposure is unacceptable or when the two versions cannot
+       safely coexist — a schema change, for instance.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Guard metrics <span class="tag">senior</span></div>
+    <p>The small set that can automatically abort a rollout: error rate, p99 latency, prediction
+       distribution shift, and one business metric with a fast enough signal.</p>
+    <p class="warn-inline">Model quality metrics usually cannot be a guard, because labels arrive days
+       later. This is what makes ML deployment different from software deployment, and it is the point
+       to make explicitly.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Multi-armed bandit <span class="tag">senior</span></div>
+    <p>Adaptively shift traffic toward whichever variant is performing better, instead of holding a
+       fixed split.</p>
+    <p class="wh">Less regret than a fixed A/B when the feedback is fast and the goal is to exploit a
+       winner. Worse when you need a clean, unbiased estimate of the effect — the adaptive allocation
+       complicates the statistics — or when the reward is delayed, which in fraud it is.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Feature flag / kill switch <span class="tag">mid</span></div>
+    <p>A runtime control that routes traffic to the fallback without a deploy.</p>
+    <p class="wh">The single highest-value piece of deployment infrastructure. Decoupling "ship the
+       code" from "enable the behaviour" is what turns an incident into a config change.</p>
+  </div>
+
+</div>
+
+<h2 data-n="53.4">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How would you deploy a new fraud model?</summary>
+  <div class="a">
+    <div class="tldr">Shadow first to prove it runs, then a staged canary with automatic rollback on
+    guard metrics, then a proper A/B for the business decision — and a kill switch throughout.</div>
+    <p><strong>Phase 1 — shadow, about a week.</strong> Mirror live traffic, log both models'
+    predictions, serve only the old one. I am checking engineering health (p99 latency inside budget,
+    error rate, no missing features) and agreement analysis: where do the two models disagree, and when
+    I sample those cases by hand, which one is right? Disagreement analysis on shadow traffic is the
+    cheapest quality signal available before anyone is exposed.</p>
+    <p><strong>Phase 2 — canary.</strong> 1 % for a day, 5 % for a day, 25 %, then 100 %, with
+    automatic rollback on error rate, latency, approval-rate change beyond a threshold, and prediction
+    distribution shift. Route by a hashed entity id, not per request, so a card gets a consistent
+    experience — otherwise the same card is scored by two models and your comparison is contaminated.</p>
+    <p><strong>Phase 3 — measure what actually matters.</strong> Fraud has delayed labels: chargebacks
+    take weeks. So the canary can only guard the fast signals, and the real quality comparison happens
+    in a held A/B run long enough for outcomes to mature. I would keep the split fixed for that window
+    and be explicit with the business that "no alarms in the canary" is not the same as "the model is
+    better".</p>
+    <p><strong>Throughout:</strong> a kill switch that reverts to the previous version or to rules-only
+    without a deploy; both model versions stamped on every logged decision so the analysis is possible
+    at all; and a documented rollback owner. I would also agree the rollback criteria with the fraud
+    team in writing before starting, because at 2 a.m. nobody wants to negotiate a threshold.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Canary or blue-green — how do you choose?</summary>
+  <div class="a">
+    <div class="tldr">Canary when you can tolerate a small blast radius and want evidence at increasing
+    exposure; blue-green when the two versions cannot coexist or partial exposure is unacceptable. The
+    deciding questions are whether versions can run side by side, and how fast your signal is.</div>
+    <p><strong>Canary suits ML by default.</strong> Model quality is probabilistic — you cannot prove it
+    from a staging environment, only observe it under real traffic. Canary limits exposure to 1 % while
+    you gather that evidence, and rollback is a traffic shift rather than a redeploy.</p>
+    <p><strong>Blue-green wins when:</strong> the versions genuinely cannot coexist (a feature-store
+    schema change, a different online-store layout); consistency matters more than gradualism, e.g. a
+    regulatory rule where two populations must not be treated by different models; the signal is so slow
+    that a staged canary buys nothing anyway; or the rollout must be atomic and instantly reversible.</p>
+    <p><strong>The ML-specific complication with canary,</strong> which is the real content of this
+    answer: the guard metrics available in minutes are engineering metrics. Model quality needs labels,
+    and in fraud those are weeks away. So a canary validates that the model <em>runs correctly</em> and
+    that its output distribution is sane — not that it is better. I use proxy guards for the fast
+    decision (score distribution vs the incumbent, approval-rate delta, agreement rate on overlapping
+    traffic) and defer the quality verdict to a properly powered A/B.</p>
+    <p><strong>In practice I would combine them:</strong> blue-green infrastructure for instant
+    rollback, with traffic weighting on top for staged exposure. They are not exclusive, and saying so
+    is usually the answer the interviewer is waiting for.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your model is 3 % better offline. It ships. Nothing improves. Why?</summary>
+  <div class="a">
+    <div class="tldr">The usual suspects, in order: the offline metric is not the business metric, the
+    evaluation leaked or was optimistic, the deployment changed the data-generating process, or 3 % was
+    inside the noise all along.</div>
+    <p><strong>1 — Metric mismatch.</strong> AUC improved; the business cares about fraud caught at a
+    fixed false-positive budget. A model can gain AUC by improving ranking in a region of the score
+    distribution nobody operates in. Always evaluate at the operating threshold, not on the aggregate
+    curve — this is module 25's point, and it is the most common cause.</p>
+    <p><strong>2 — Optimistic offline evaluation.</strong> Point-in-time leakage (module 51), a random
+    rather than temporal split, or having tuned against the test set across many iterations. If the
+    offline gain does not reproduce on a fresh, untouched period, it was never real.</p>
+    <p><strong>3 — Feedback loops.</strong> Your training labels come from decisions the old model made.
+    The new model's better ranking changes which transactions get approved, which changes which labels
+    you observe — the population it now faces is not the one it was evaluated on. This is why the
+    randomised holdout from module 52 matters.</p>
+    <p><strong>4 — Nothing downstream changed.</strong> A better score that feeds the same threshold,
+    the same review queue with the same analyst capacity, and the same customer flow may produce
+    identical outcomes. The model was never the constraint — the review capacity was. This is the
+    finding that most often surprises the team, and it is worth checking early because it is cheap.</p>
+    <p><strong>5 — Underpowered measurement.</strong> With a low base rate, detecting a 3 % relative
+    improvement needs a lot of events. If you did not compute the required sample size before the test,
+    "no improvement" may just be "no statistical power" — a different problem with a different fix.</p>
+    <p><strong>How I would diagnose it:</strong> compare the offline metric computed on the <em>exact
+    online population</em> during the test window. If the offline gain vanishes there, it is a
+    generalisation or leakage problem; if it holds while the business metric does not move, the gap is
+    between the model output and the decision it feeds — and that is a systems problem, not a modelling
+    one.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The four strategies, and the distinct question each one answers.</li>
+    <li>Why guard metrics for ML cannot be quality metrics.</li>
+    <li>Why canary routing must be by hashed entity, not per request.</li>
+    <li>Shadow's superpower and its one blind spot.</li>
+    <li>Five reasons an offline win does not become an online win.</li>
+    <li>Why a kill switch is worth more than any dashboard.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#52" target="_top"><span class="k">Back</span>← 52 · Tracking &amp; orchestration</a>
+  <a href="../index.html#54" target="_top"><span class="k">Next</span>54 · Monitoring &amp; drift →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

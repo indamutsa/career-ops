@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG assistant over internal docs — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part G · Walkthrough · Module 71</p>
+<h1>RAG assistant over internal documents
+  <span class="lede">The most-asked LLM design question of the moment, and the one candidates most
+  often answer as "embed the docs, stuff the top 5 into the prompt, done". The interesting parts are
+  chunking, permissions, attribution and evaluation — and every one of them is where real
+  deployments fail.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to use this module</span>
+  <p>Same drill as module 70: read once, then draw it from memory in twelve minutes. The parts people
+  drop here are <strong>permissions inside the retrieval filter</strong>, <strong>evaluating retrieval
+  separately from generation</strong>, and <strong>what happens when the answer is not in the
+  corpus</strong>.</p>
+</div>
+
+<h2 data-n="71.1">The prompt, and the first four minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">The prompt</span>
+  <p><em>"Build an assistant that answers employee questions from our internal documentation."</em></p>
+</div>
+
+<div class="tw">
+<table>
+<tr><th>What to ask</th><th>Why it changes the design</th></tr>
+<tr><td>What kind of questions — lookup, synthesis, or troubleshooting?</td><td>Lookup needs precise
+    retrieval of one passage. Synthesis needs many passages and a larger context. They are different
+    systems.</td></tr>
+<tr><td>How big is the corpus, and how fast does it change?</td><td>A million documents changing hourly
+    is an indexing problem; ten thousand static PDFs is not.</td></tr>
+<tr><td>What formats?</td><td>Clean Markdown is easy. Scanned PDFs, tables inside slide decks and
+    Confluence exports are most of the actual work.</td></tr>
+<tr><td>Are documents access-controlled?</td><td><strong>The critical question.</strong> If yes,
+    retrieval must be permission-filtered per user, and that shapes the index.</td></tr>
+<tr><td>What is the cost of a wrong answer?</td><td>An HR policy question answered wrongly is a legal
+    problem; a "which build command do I run" is an annoyance.</td></tr>
+<tr><td>Do answers need citations?</td><td>Almost always yes internally — and attribution changes the
+    prompt, the response format, and the evaluation.</td></tr>
+<tr><td>Latency and volume?</td><td>Determines whether you can afford reranking, multi-step retrieval
+    and a large generator.</td></tr>
+<tr><td>Who maintains the corpus?</td><td>Stale documents are the number-one source of confidently wrong
+    answers, and no model fixes that.</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The assumptions I would design against</span>
+  <ul>
+    <li><strong>~200k documents</strong>, mixed Confluence, Google Docs, PDFs and code READMEs; a few
+        thousand change per day.</li>
+    <li><strong>Access-controlled</strong> — engineering, HR and finance spaces are not universally
+        readable.</li>
+    <li><strong>Citations required</strong>, every claim traceable to a source passage.</li>
+    <li><strong>p95 under 4 seconds</strong> to first token, streaming after that.</li>
+    <li><strong>A few thousand queries a day</strong> — small enough that quality beats cost, but not so
+        small that cost is free.</li>
+  </ul>
+</div>
+
+<h2 data-n="71.2">The architecture in one picture</h2>
+
+<pre><code>  INDEXING (offline, continuous)
+  ┌──────────────────────────────────────────────────────────────────┐
+  │ sources ──► connectors ──► parse ──► chunk ──► embed ──► index    │
+  │ (wiki,      (incremental,  (layout,  (structure  (batch)  (vector │
+  │  drive,      change feed)   tables,   aware,               + BM25 │
+  │  git)                       OCR)      overlap)             + ACL) │
+  └──────────────────────────────────────────────────────────────────┘
+                                                          │
+  QUERY (online, &lt; 4 s)                                    ▼
+  user ──► rewrite ──► retrieve ──────────────────► rerank ──► assemble
+   │       (history,   ├─ dense (embeddings, top 50)  (cross-    (prompt +
+   │        acronyms)  ├─ sparse BM25    (top 50)      encoder,   citations)
+   │                   └─ ACL FILTER (in the query,    top 8)        │
+   │                       never after)                             ▼
+   │                                                            generate
+   │                                                          (stream, cite)
+   ▼                                                                │
+  guardrails ◄────────────────── answer + sources ◄─────────────────┘
+  (refusal when                          │
+   support is weak)                      ▼
+                              logs ──► evaluation ──► corpus fixes
+                                       (retrieval, faithfulness,
+                                        answer quality)</code></pre>
+
+<p>Two systems, as always: an <strong>indexing pipeline</strong> that runs continuously and is a data
+engineering problem, and a <strong>query path</strong> that runs in seconds and is an information
+retrieval problem with a language model bolted to the end. Most failures are in the first one, and
+most candidates spend all their time on the second.</p>
+
+<h2 data-n="71.3">Parsing and chunking — where quality is actually decided</h2>
+
+<p>Retrieval can only return what indexing preserved. Say this early, because it reframes the whole
+answer away from "which embedding model".</p>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Layout-aware parsing <span class="tag">underrated</span></div>
+    <p>A PDF is a bag of positioned glyphs, not a document. Naive extraction interleaves columns,
+       destroys tables and drops headers.</p>
+    <p class="wh">Use a layout parser that recovers reading order, headings and table structure; OCR
+       scanned pages. A table flattened into prose is unanswerable no matter how good the retriever
+       is — and internal docs are full of tables.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Structure-aware chunking <span class="tag">the main lever</span></div>
+    <p>Split on document structure — heading sections first, then paragraphs — with a target size and a
+       small overlap, rather than every N characters.</p>
+    <p class="wh">Fixed-size splitting cuts sentences and separates a claim from the condition that
+       qualifies it, which is exactly how a RAG system produces an answer that is true in general and
+       wrong here. Target roughly 300–600 tokens with ~15 % overlap as a starting point, then tune it
+       against the retrieval metric — this is a hyperparameter, not a constant.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Contextual enrichment <span class="tag">senior</span></div>
+    <p>Prepend each chunk with its document title and heading path, and optionally a one-line
+       model-written summary of where it sits in the document.</p>
+    <p class="wh">A chunk reading "this is not permitted for contractors" is meaningless alone.
+       Enriched with "Travel Policy › Expenses › Business class", it is retrievable and answerable.
+       Cheap at index time, large effect on both retrieval and faithfulness.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Incremental indexing <span class="tag">mid</span></div>
+    <p>Consume the source's change feed, re-embed only what changed, and delete chunks whose source
+       document was deleted.</p>
+    <p class="warn-inline">The deletion path is the one people forget, and it is the one that causes an
+       assistant to quote a policy that was retracted six months ago. Tombstone deletions and treat a
+       full reindex as a recovery mechanism, not a routine.</p>
+  </div>
+
+</div>
+
+<h2 data-n="71.4">Retrieval — hybrid, filtered, then reranked</h2>
+
+<ol>
+  <li><strong>Query rewriting.</strong> Resolve pronouns and follow-ups against the conversation
+      ("what about contractors?" is unretrievable alone), expand internal acronyms, and split a
+      multi-part question into separate retrievals. Cheap, and it fixes a large share of "the model
+      did not find it" complaints.</li>
+  <li><strong>Hybrid search.</strong> Dense embeddings for paraphrase and concept matching; BM25 for
+      exact tokens — error codes, ticket IDs, function names, product names — which is precisely where
+      embeddings are weakest. Fuse with Reciprocal Rank Fusion, which needs no score calibration
+      between the two systems.</li>
+  <li><strong>Permission filtering inside the query.</strong> Every chunk carries the ACL of its source
+      document. The user's groups become a filter <em>in</em> the vector and keyword query, not a
+      post-filter over the results.</li>
+  <li><strong>Reranking.</strong> A cross-encoder scores the ~100 fused candidates jointly with the
+      query and keeps the best 5–10. This is the single highest-leverage quality upgrade in a RAG
+      system, because bi-encoder retrieval is a coarse filter by construction (module 42).</li>
+  <li><strong>Assembly.</strong> Order the kept passages, tag each with an id, and instruct the model to
+      cite the ids it used. Put the most relevant passages at the beginning and end of the context —
+      "lost in the middle" is real (module 45).</li>
+</ol>
+
+<div class="box trap">
+  <span class="lbl">Post-filtering permissions is a data leak, not a bug</span>
+  <p>If you retrieve the top 10 and then remove what the user may not see, two things happen. The
+  obvious one: they get fewer or zero results. The serious one: <strong>the number and shape of what
+  was removed is itself a signal</strong>, and if any part of a filtered document reaches the prompt,
+  the model may paraphrase it into the answer. Filter in the query.</p>
+  <p>The follow-up: what about a document whose <em>existence</em> is confidential? Then the ACL must
+  cover the metadata too, and "no results found" must be indistinguishable from "you cannot see the
+  results". Saying this unprompted marks you as someone who has shipped this.</p>
+</div>
+
+<div class="viz" data-viz="cosine"></div>
+
+<h2 data-n="71.5">Generation, citations and refusal</h2>
+
+<p>The generation step is the easy part, with three requirements that are not:</p>
+
+<ul>
+  <li><strong>Ground the answer.</strong> Instruct the model to answer only from the passages and to say
+      when they are insufficient. This reduces fabrication substantially but does not eliminate it —
+      the model's parametric knowledge is still there, and a plausible-sounding gap-filler is exactly
+      what it is good at (module 46).</li>
+  <li><strong>Cite at the claim level.</strong> Sentence-level citations, not a list of links at the
+      bottom. Then <em>verify</em> them: check post-hoc that each cited passage actually supports the
+      sentence, either with an entailment model or a second cheap LLM call. Uncheckable citations are
+      worse than none, because they manufacture trust.</li>
+  <li><strong>Refuse well.</strong> When the top reranker score is below a threshold, or the passages
+      disagree, say so and show what was found rather than synthesising. Most business damage from
+      these systems is not a wrong answer to a hard question — it is a confident answer to a question
+      whose answer was never in the corpus.</li>
+</ul>
+
+<h2 data-n="71.6">Evaluation — three layers, and none is optional</h2>
+
+<div class="tw">
+<table>
+<tr><th>Layer</th><th>What it measures</th><th>How</th></tr>
+<tr><td><strong>Retrieval</strong></td><td>Is the answer even in the retrieved set?</td><td>Recall@k and
+    MRR against a labelled set of question → correct-passage pairs. Purely mechanical, no LLM
+    needed.</td></tr>
+<tr><td><strong>Faithfulness</strong></td><td>Is every claim supported by the retrieved
+    passages?</td><td>Claim extraction plus entailment against the sources — catches the failure the
+    user cannot see.</td></tr>
+<tr><td><strong>Answer quality</strong></td><td>Would a person accept this?</td><td>LLM judge against a
+    rubric, <em>calibrated against human labels</em> — report the agreement (Cohen's κ) or the judge
+    is decoration.</td></tr>
+</table>
+</div>
+
+<p><strong>Why separating them matters.</strong> They have completely different fixes. Low retrieval
+recall → chunking, hybrid weights, reranking. Good retrieval but low faithfulness → prompt, model,
+citation verification. Both good but users unhappy → the corpus is stale or contradictory, and no
+amount of ML fixes that. A single end-to-end score tells you the system is bad and nothing about
+which of the three to work on.</p>
+
+<p><strong>Building the eval set</strong> is the unglamorous prerequisite: 100–300 real questions with
+verified answers and source passages, drawn from support tickets and search logs rather than invented.
+Synthetic questions generated from the documents test whether you can retrieve a passage you already
+have — the easy case, and not the one that fails.</p>
+
+<h2 data-n="71.7">Operations, cost and the things that break</h2>
+
+<div class="tw">
+<table>
+<tr><th>Problem</th><th>Symptom</th><th>Fix</th></tr>
+<tr><td>Stale corpus</td><td>Confidently quotes a retracted policy</td><td>Index freshness monitoring,
+    deletion propagation, surface each source's last-modified date in the answer</td></tr>
+<tr><td>Embedding model change</td><td>Quality drops after an upgrade</td><td>Re-embed the whole corpus;
+    old and new vectors are not comparable. Version the index and swap atomically</td></tr>
+<tr><td>Acronym and jargon gaps</td><td>Internal shorthand retrieves nothing</td><td>A glossary applied
+    at query-rewrite time; BM25 carries the rest</td></tr>
+<tr><td>Long tail of no-answer questions</td><td>Users lose trust after two bad answers</td><td>Refusal
+    threshold, and route to a human or a search-results view</td></tr>
+<tr><td>Cost drift</td><td>Spend grows with context length</td><td>Cache embeddings, cap retrieved
+    tokens, use a small model for rewriting and judging, reserve the large one for generation</td></tr>
+<tr><td>Prompt injection from documents</td><td>A page contains "ignore previous instructions"</td><td>
+    Treat all retrieved text as data: delimit it, never let it change the system prompt, and never give
+    the generator tools it could be talked into using (module 75)</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">When not to build this</span>
+  <p>Worth saying out loud, because it is a senior signal. If the corpus is small and stable, a good
+  search box plus a curated FAQ beats RAG at a fraction of the cost. If the questions are mostly
+  "what is the current value of X", the answer belongs in a database query, not a document retriever.
+  And if the documentation is wrong, this project makes the wrongness faster to reach — fixing the
+  corpus is the higher-value work, and you should say so before building.</p>
+</div>
+
+<h2 data-n="71.8">Delivering this in 45 minutes</h2>
+
+<div class="tw">
+<table>
+<tr><th>Minutes</th><th>What you are doing</th></tr>
+<tr><td>0–4</td><td>Requirements — and ask about access control early, it changes the index</td></tr>
+<tr><td>4–9</td><td>The two-pipeline picture: indexing offline, query online</td></tr>
+<tr><td>9–17</td><td>Parsing, chunking, enrichment, incremental updates and deletions</td></tr>
+<tr><td>17–26</td><td>Hybrid retrieval, ACL filtering in the query, reranking</td></tr>
+<tr><td>26–32</td><td>Generation, claim-level citations, citation verification, refusal</td></tr>
+<tr><td>32–40</td><td>The three evaluation layers and how the eval set is built</td></tr>
+<tr><td>40–45</td><td>Operations: staleness, re-embedding, injection, cost — and when not to build
+    it</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">If you only get five minutes</span>
+  <p>"Two pipelines. Offline: connectors with a change feed, layout-aware parsing, structure-aware
+  chunking enriched with the heading path, embedded into a hybrid index that carries each document's
+  ACL. Online: rewrite the query against the conversation, retrieve dense and BM25 in parallel with the
+  user's permissions applied <em>inside</em> the query, fuse with RRF, rerank with a cross-encoder to
+  about eight passages, generate with claim-level citations, and refuse when the top score is weak.
+  Evaluate retrieval, faithfulness and answer quality separately, because they have different fixes,
+  against a few hundred real questions rather than synthetic ones. The failure modes that matter are a
+  stale corpus, deletions that never propagate, and confident answers to questions the corpus never
+  covered."</p>
+</div>
+
+<h2 data-n="71.9">Callbacks</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>Modules it draws on</th></tr>
+<tr><td>Embeddings, similarity, bi- vs cross-encoder</td><td>10 linear algebra · 33 NLP · 42 families</td></tr>
+<tr><td>Hybrid retrieval and fusion</td><td>25 metrics · 46 LLM systems</td></tr>
+<tr><td>Context assembly, lost in the middle</td><td>45 inference</td></tr>
+<tr><td>Hallucination and grounding</td><td>46 LLM systems</td></tr>
+<tr><td>Judge calibration, κ</td><td>25 metrics · 46 LLM systems</td></tr>
+<tr><td>Incremental indexing, deletions, change feeds</td><td>50 lifecycle &amp; data</td></tr>
+<tr><td>Index versioning and atomic swap</td><td>52 tracking · 53 deployment</td></tr>
+<tr><td>Freshness and quality monitoring</td><td>54 monitoring</td></tr>
+<tr><td>Permissions, injection, confidential metadata</td><td>55 governance</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint</h4>
+  <ul>
+    <li>Draw both pipelines from memory in ten minutes.</li>
+    <li>Explain why permission filtering must be inside the query, with the leak it prevents.</li>
+    <li>Justify structure-aware chunking with a concrete example of what fixed-size splitting breaks.</li>
+    <li>Say why hybrid beats pure dense retrieval, with the query type that proves it.</li>
+    <li>Name the three evaluation layers and the different fix each one implies.</li>
+    <li>Give two situations where you would recommend <em>not</em> building RAG.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#70" target="_top"><span class="k">Back</span>← 70 · Fraud detection</a>
+  <a href="../index.html#72" target="_top"><span class="k">Next</span>72 · Recommendation &amp; ranking →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

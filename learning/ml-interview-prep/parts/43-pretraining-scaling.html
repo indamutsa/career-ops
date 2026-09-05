@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pretraining &amp; scaling — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 43</p>
+<h1>Pretraining &amp; scaling
+  <span class="lede">Where the capability actually comes from. For a research-engineer role this is
+  the module that separates people who have read about LLMs from people who could plan a run: the
+  data pipeline, the scaling laws, and what the laws do and do not predict.</span>
+</h1>
+
+<h2 data-n="43.1">The data pipeline — the part nobody publishes and everybody fights</h2>
+
+<p>Pretraining is one loss function and an enormous amount of data engineering. In rough order:</p>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>What happens</th><th>Why it matters</th></tr>
+<tr><td>Acquisition</td><td>Common Crawl, code, books, papers, curated corpora</td><td>Sets the
+    ceiling on what the model can ever know</td></tr>
+<tr><td>Extraction</td><td>HTML → text, boilerplate and navigation stripped</td><td>Cheap stage with
+    outsized quality impact</td></tr>
+<tr><td>Language ID + filtering</td><td>Keep target languages, drop machine-generated junk</td><td>
+    Determines multilingual capability</td></tr>
+<tr><td><strong>Deduplication</strong></td><td>Exact and near-duplicate (MinHash/LSH) removal at
+    document and paragraph level</td><td>The single highest-value step: cuts memorisation, improves
+    loss at equal compute</td></tr>
+<tr><td>Quality filtering</td><td>Heuristics plus a classifier trained to recognise
+    reference-quality text</td><td>Where most of the recent gains have come from</td></tr>
+<tr><td>Decontamination</td><td>Remove documents overlapping evaluation benchmarks</td><td>Without
+    it your benchmark numbers are meaningless</td></tr>
+<tr><td>Mixing</td><td>Weight the sources; upsample code and high-quality prose</td><td>Code in the
+    mix measurably improves reasoning on non-code tasks</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The claim worth being able to defend</span>
+  <p>At fixed compute, improving the data has produced larger gains in the last few years than
+  improving the architecture. Deduplication, quality classifiers and better mixing account for much of
+  the distance between a 2020 model and a 2024 model of the same size. If asked "how would you improve
+  this model", data work is usually the correct first answer, and it is the one most candidates skip.</p>
+</div>
+
+<h2 data-n="43.2">Scaling laws</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Scaling law <span class="tag">mid</span></div>
+    <p>Test loss falls as a power law in model size, dataset size and compute — a straight line on a
+       log–log plot, over many orders of magnitude.</p>
+    <p class="an">Not a discovery about intelligence; a discovered regularity, like a materials curve.
+       It lets you predict a big run's loss from small runs, which is the only reason anyone dares
+       spend nine figures on one.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Kaplan (2020) <span class="tag">mid</span></div>
+    <p>Concluded that with extra compute you should mostly grow the model, and only mildly grow the
+       data.</p>
+    <p class="warn-inline">This is why GPT-3 was 175 B parameters trained on only 300 B tokens. The
+       conclusion was an artefact of holding the learning-rate schedule fixed across run lengths.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Chinchilla (2022) <span class="tag">senior</span></div>
+    <p>Redid the experiment with schedules tuned per run: parameters and tokens should scale
+       <em>equally</em>. The rule of thumb is ≈ 20 tokens per parameter.</p>
+    <p class="wh">Chinchilla, at 70 B trained on 1.4 T tokens, beat Gopher's 280 B on 300 B tokens
+       using the same compute. Four times smaller and better — the most consequential empirical
+       correction in the field.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Compute-optimal vs inference-optimal <span class="tag">senior</span></div>
+    <p>Chinchilla minimises loss for a fixed <em>training</em> budget. It says nothing about serving.</p>
+    <p class="wh">If a model will serve billions of requests, a smaller model trained far past 20
+       tokens/param is cheaper overall. Llama-3-8B saw 15 T tokens — roughly 1,875 per parameter,
+       about 90× "optimal" — and that is a deliberate, correct trade.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">The 6ND rule <span class="tag">mid</span></div>
+    <p>Training FLOPs ≈ 6 × parameters × tokens. Inference ≈ 2 × parameters per token.</p>
+    <p class="wh">The 6 is 2 for the forward pass plus 4 for the backward pass. This one formula
+       answers most planning questions asked in an interview.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Emergent abilities <span class="tag">senior</span></div>
+    <p>Capabilities that appear absent below some scale and present above it.</p>
+    <p class="warn-inline">Heavily contested — Schaeffer et al. argue most reported emergence is an
+       artefact of discontinuous metrics like exact-match accuracy. See the question below; this is a
+       favourite discriminating question.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Loss spike <span class="tag">senior</span></div>
+    <p>A sudden divergence mid-run, sometimes unrecoverable.</p>
+    <p class="wh">Mitigations that are standard practice: gradient clipping, skipping the offending
+       batch, rewinding to a checkpoint with different data order, z-loss on the output logits, and
+       careful attention to fp16/bf16 numerics.</p>
+  </div>
+
+</div>
+
+<h2 data-n="43.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is a scaling law, and what is it good for?</summary>
+  <div class="a">
+    <div class="tldr">An empirical power-law relationship between loss and compute, data or parameters,
+    straight on a log–log plot. Its value is prediction: fit it on cheap small runs and forecast what a
+    100× larger run will achieve before committing the budget.</div>
+    <p>The form is L(x) = a·x<sup>−α</sup> + L<sub>∞</sub> — loss falls as a power of the resource and
+    asymptotes to an irreducible floor set by the entropy of language itself (module 13). It holds
+    across roughly seven orders of magnitude, which is remarkable and not theoretically explained.</p>
+    <p><strong>Why it changed how the field works:</strong> before scaling laws, "will a bigger model
+    be better" was a bet. After them it is an extrapolation with error bars. GPT-4's report states its
+    loss was predicted from runs using 10,000× less compute. That predictability is what made
+    nine-figure training runs a defensible decision rather than a gamble.</p>
+    <p><strong>The limits I would state without being asked:</strong> the laws predict
+    <em>pretraining loss</em>, not downstream task performance, and the mapping from one to the other
+    is loose. They say nothing about instruction-following, safety, or reasoning quality. And they
+    assume a fixed data distribution — a law fitted on 2021 web text does not tell you what happens
+    when you triple the code fraction.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What did Chinchilla change?</summary>
+  <div class="a">
+    <div class="tldr">It showed that models of that era were badly undertrained. For a fixed compute
+    budget, parameters and training tokens should grow in equal proportion — about 20 tokens per
+    parameter — not parameters far faster, as Kaplan's paper had implied.</div>
+    <p><strong>What went wrong the first time:</strong> Kaplan et al. used a single learning-rate
+    schedule across runs of different lengths. A cosine schedule tuned for a long run is badly wrong
+    for a short one, so the shorter-data runs looked worse than they should have, which biased the
+    conclusion toward "spend the compute on parameters". Hoffmann et al. tuned the schedule per run and
+    the exponents changed.</p>
+    <p><strong>The demonstration:</strong> Chinchilla at 70 B parameters on 1.4 T tokens beat Gopher at
+    280 B on 300 B tokens, at equal training compute — and being 4× smaller it was also 4× cheaper to
+    serve. Both halves of that matter.</p>
+    <p><strong>The consequence people miss:</strong> GPT-3 at 175 B on 300 B tokens is roughly 1.7
+    tokens per parameter, more than ten times undertrained. A large part of the improvement from GPT-3
+    to Llama-2 was not architecture at all — it was training the same idea on far more data.</p>
+    <p><strong>And where the rule now stops applying:</strong> Chinchilla optimises training compute
+    only. Once a model is served at scale, inference dominates lifetime cost, so you deliberately
+    overtrain a smaller model — Llama-3-8B on 15 T tokens is ~90× past compute-optimal. The loss
+    improvement per token is tiny out there, and it is still worth it, because it buys a permanently
+    cheaper model. "Chinchilla-optimal" is the answer to a question about training budgets, not about
+    products.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Are emergent abilities real?</summary>
+  <div class="a">
+    <div class="tldr">Sharp, unpredictable jumps are largely a measurement artefact — Schaeffer et al.
+    showed the discontinuity usually comes from the metric, not the model. But "smooth underlying
+    improvement" still produces genuinely new usable capabilities, so the practical phenomenon is real
+    even when the cliff is not.</div>
+    <p><strong>The critique, which is the part to get right:</strong> take multi-digit arithmetic
+    scored by exact match. A model whose per-digit accuracy improves smoothly from 0.8 to 0.99 shows
+    almost no exact-match improvement until it crosses the point where all digits are usually right —
+    then exact-match jumps. The underlying capability curve was smooth; the metric is a step function
+    applied to it. Swap to a continuous metric like token edit distance or log-likelihood of the correct
+    answer and the cliff disappears. Their claim is that this accounts for the great majority of
+    published emergence.</p>
+    <p><strong>What survives the critique:</strong> in-context learning appearing at scale, chain-of-
+    thought helping large models and <em>hurting</em> small ones, and induction heads forming abruptly
+    during training with a visible bump in the loss curve. That last one is a genuine phase transition
+    in mechanism, observed in the weights, not in a metric.</p>
+    <p><strong>Why it matters operationally,</strong> which is the answer they are actually probing:
+    if abilities emerge unpredictably, you cannot forecast safety-relevant capabilities and must test
+    empirically at every scale. If they improve smoothly and only <em>look</em> discontinuous, you can
+    forecast them with the right metrics — which argues for tracking continuous proxies rather than
+    accuracy thresholds during a run. I would design evaluation for the second world while keeping
+    checks appropriate to the first.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>You have a fixed compute budget. How do you decide model size and data size?</summary>
+  <div class="a">
+    <div class="tldr">Start from C ≈ 6ND, apply the Chinchilla ratio of ~20 tokens per parameter as a
+    baseline, then move deliberately toward a smaller, longer-trained model in proportion to how much
+    inference you expect to serve.</div>
+    <p><strong>The arithmetic.</strong> With 10²³ FLOPs: 6ND = 10²³ and D = 20N give N ≈ 9 B
+    parameters and D ≈ 180 B tokens. That is the compute-optimal starting point.</p>
+    <p><strong>Then the adjustments, in the order I would raise them:</strong></p>
+    <ul>
+      <li><strong>Inference volume.</strong> If this serves a high-traffic product, shrink N and raise
+          D. Serving cost is ~2N FLOPs per token forever; training is a one-off. A 7 B model trained on
+          2 T tokens will usually beat a 13 B on 260 B tokens in total lifetime value.</li>
+      <li><strong>Data availability and quality.</strong> The ratio assumes you <em>have</em> 180 B
+          good tokens. If you do not, repeating data works for a few epochs — Muennighoff et al. found
+          up to about 4 epochs is nearly as good as fresh data, then returns collapse. Do not train a
+          bigger model just because you ran out of tokens; think about the quality filter first.</li>
+      <li><strong>Memory and topology.</strong> N determines whether the model fits your parallelism
+          strategy. A size that forces awkward sharding can cost more in efficiency than it gains in
+          quality.</li>
+      <li><strong>Target context length.</strong> Attention's n² is outside the 6ND approximation. Long
+          contexts are usually handled by a short-context bulk phase followed by a long-context
+          extension phase, which is cheaper than training long throughout.</li>
+    </ul>
+    <p><strong>And what I would actually do first:</strong> spend a small slice of the budget on a
+    scaling-law sweep — three or four small runs — and fit the exponents on <em>my</em> data mix rather
+    than trusting published constants. The exponents are data-dependent, and that sweep is the cheapest
+    de-risking available.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What actually goes wrong during a large pretraining run?</summary>
+  <div class="a">
+    <div class="tldr">Loss spikes, hardware failures, silent data corruption, and numerical
+    instability — and the operational discipline around them matters more than the architecture.</div>
+    <p><strong>Loss spikes.</strong> The loss diverges suddenly, sometimes recovering, sometimes not.
+    Causes cluster around a bad batch, an attention-logit blowup, and optimiser state going stale after
+    a long flat stretch. Standard responses: gradient clipping, z-loss to keep output logits bounded,
+    skipping the batch, and rewinding to the last checkpoint with a different data order — the trick
+    the OPT and BLOOM logs both document.</p>
+    <p><strong>Hardware.</strong> At thousands of GPUs for weeks, failures are not exceptional, they
+    are scheduled. You need frequent checkpointing, fast restart, and health checks that catch a
+    <em>silently degraded</em> device — one GPU producing subtly wrong numbers is far worse than one
+    that dies, because the run continues and the damage is invisible.</p>
+    <p><strong>Numerics.</strong> fp16 has too little range for attention logits, which is why bf16 is
+    the standard; loss scaling, fp32 master weights, and fp32 accumulation in reductions are all there
+    to stop the run silently degrading rather than obviously failing.</p>
+    <p><strong>Data.</strong> A tokenisation bug or a mis-shuffled shard can put a whole language or
+    domain in one contiguous stretch, and the model will visibly overfit to it. Deterministic,
+    resumable data ordering is not a nicety — without it you cannot reproduce or debug a spike.</p>
+    <p><strong>The thing I would emphasise:</strong> monitor gradient norm, per-source loss, and
+    activation statistics continuously, not just total loss. Total loss is a lagging indicator; the
+    gradient norm usually moves first, and a per-source breakdown tells you <em>which</em> data caused
+    it, which is what you need to act.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The seven data-pipeline stages, and why dedup is the highest-value one.</li>
+    <li>C ≈ 6ND, and 2N FLOPs per token at inference.</li>
+    <li>What Kaplan got wrong and how Chinchilla found it.</li>
+    <li>Why Llama-3-8B on 15 T tokens is correct rather than wasteful.</li>
+    <li>The metric-artefact argument about emergence, and what survives it.</li>
+    <li>Four failure modes of a large run and the standard mitigation for each.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#42" target="_top"><span class="k">Back</span>← 42 · Model families</a>
+  <a href="../index.html#44" target="_top"><span class="k">Next</span>44 · Post-training →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fraud detection, end to end — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part G · Walkthrough · Module 70</p>
+<h1>Fraud detection, end to end
+  <span class="lede">The flagship. One system, built from the requirements up, using every idea in this
+  course in the order you would actually meet it. If you can deliver this walkthrough fluently, you can
+  handle almost any ML system-design prompt — the shape transfers.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to use this module</span>
+  <p>Read it once for the arc. Then close it and <strong>draw the architecture from memory on one sheet
+  of paper</strong> — boxes and arrows, twelve minutes. Then open it and see what you dropped. The parts
+  people drop are always the same: point-in-time correctness, the delayed-label horizon, and the
+  randomised holdout.</p>
+  <p>In a real interview you get 45 minutes for this. Section 70.12 has the timing plan.</p>
+</div>
+
+<h2 data-n="70.1">The prompt, and the first four minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">The prompt</span>
+  <p><em>"Design a real-time fraud detection system for a payments company."</em></p>
+</div>
+
+<p>Do not start drawing. The first four minutes are requirements, and they are worth more than the next
+twenty. Every downstream decision — synchronous or asynchronous, model family, feature store, threshold —
+falls out of the answers.</p>
+
+<div class="tw">
+<table>
+<tr><th>What to ask</th><th>Why it changes the design</th></tr>
+<tr><td>Card payments, account takeover, or merchant fraud?</td><td>Completely different entities,
+    features and label sources. Assume card transactions unless told otherwise, and say so.</td></tr>
+<tr><td>What is the decision — block, hold for review, or flag?</td><td>Blocking needs a synchronous path
+    inside the authorisation window. Review or flag can be asynchronous, which relaxes everything.</td></tr>
+<tr><td>What is the latency budget?</td><td>The single hardest constraint. It determines which features
+    are reachable at all.</td></tr>
+<tr><td>Volume and peak?</td><td>Sizes the ingestion, the online store, and the serving fleet.</td></tr>
+<tr><td>Base rate of fraud?</td><td>Drives the imbalance strategy and makes PR-AUC the right metric.</td></tr>
+<tr><td>Cost of a false positive versus a false negative?</td><td>This is the threshold. Without it there
+    is no defensible operating point.</td></tr>
+<tr><td>When do labels arrive?</td><td>Determines the retraining cadence and how much of your recent data
+    is censored.</td></tr>
+<tr><td>Regulatory constraints — explanations, appeals?</td><td>Changes model family and forces
+    per-decision logging.</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The assumptions I would state and design against</span>
+  <ul>
+    <li><strong>Card transactions</strong>, decision = approve / hold-for-review / decline.</li>
+    <li><strong>5,000 transactions per second</strong> average, 20,000 at peak — a Black Friday factor of
+        four.</li>
+    <li><strong>Latency budget 100 ms p99</strong> for the whole decision, of which the model service
+        owns about 50 ms.</li>
+    <li><strong>Base rate ~0.2 %</strong> fraud — roughly one in 500.</li>
+    <li><strong>Cost asymmetry:</strong> a missed fraud costs the average fraudulent amount, say €200; a
+        false decline costs the margin on the transaction plus a churn risk, call it €20 in expectation.
+        Ratio about 10:1.</li>
+    <li><strong>Labels:</strong> confirmed chargebacks arrive over 30–90 days; manual review outcomes in
+        hours.</li>
+    <li><strong>Regulated:</strong> declines need a reason and an appeal route.</li>
+  </ul>
+  <p>Stating numbers you invented is fine and expected — say "assume" out loud. What is not fine is
+  designing without them.</p>
+</div>
+
+<h2 data-n="70.2">The architecture in one picture</h2>
+
+<pre><code>                    ┌──────────────── the 100 ms path ────────────────┐
+                    │                                                 │
+  payment  ──────►  API gateway ──► decision service ──► model server ──► approve
+  request                                 │                    │           / review
+                                          │                    │           / decline
+                                    online store          rules engine
+                                    (Redis, p99 &lt; 10 ms)   (fast, explainable)
+                                          ▲
+                                          │ materialise
+                    ┌─────────────────────┴──────────────────────────┐
+                    │                                                │
+  every event ───►  Kafka  ───►  stream processor  ───►  feature computation
+  (txn, login,      (keyed by     (Flink / Spark        (velocity, aggregates,
+   device, ...)      entity)       Structured           graph features)
+                                   Streaming)
+                        │                                    │
+                        ▼                                    ▼
+                   raw event lake                       offline store
+                   (immutable,                          (point-in-time
+                    replayable)                          correct joins)
+                                                              │
+                                                              ▼
+                                            training pipeline ──► MLflow registry
+                                            (Airflow / Kubeflow)        │
+                                                                        ▼
+                                                          shadow ──► canary ──► 100 %
+                                                                        │
+                                                                        ▼
+                                                              monitoring + drift
+                                                              + delayed labels
+                                                                        │
+                                                                        └──► retrain gate</code></pre>
+
+<p>Two loops matter, and naming them early makes the whole design legible: the <strong>fast loop</strong>
+across the top, which must answer in 100 ms, and the <strong>slow loop</strong> down the right-hand side,
+which learns from what happened and is measured in weeks because that is how long labels take.</p>
+
+<h2 data-n="70.3">Data gathering — what you actually need</h2>
+
+<p>Fraud signal lives in the relationships between events, not in a single transaction. A transaction row
+on its own is nearly useless; the same row with "this account's fourteenth attempt in ten minutes from a
+device seen on nine other accounts" is decisive.</p>
+
+<div class="tw">
+<table>
+<tr><th>Source</th><th>What it gives you</th><th>Freshness needed</th></tr>
+<tr><td>Transaction stream</td><td>Amount, merchant, MCC, currency, channel, time</td><td>Now — it is the
+    event being scored</td></tr>
+<tr><td>Account history</td><td>Age, tenure, historical spend profile, prior disputes</td><td>Hours</td></tr>
+<tr><td>Device &amp; session</td><td>Device fingerprint, IP, geo, session behaviour</td><td>Seconds</td></tr>
+<tr><td>Auth events</td><td>Logins, failures, password and detail changes</td><td>Seconds — a detail change
+    minutes before a payment is a strong signal</td></tr>
+<tr><td>Merchant profile</td><td>Merchant risk history, category, chargeback rate</td><td>Daily</td></tr>
+<tr><td>Chargeback / dispute feed</td><td><strong>The labels</strong></td><td>Days to months</td></tr>
+<tr><td>Manual review outcomes</td><td>Fast, high-quality labels on a biased subset</td><td>Hours</td></tr>
+<tr><td>Consortium / bureau signals</td><td>Known-compromised cards, shared blocklists</td><td>Daily, and
+    contractually constrained</td></tr>
+</table>
+</div>
+
+<p><strong>Say this about labels, early.</strong> There are two label sources with different properties.
+Chargebacks are authoritative but slow and incomplete — not all fraud is reported. Manual review outcomes
+are fast but only exist for cases the current system already flagged, which makes them a biased sample of
+exactly the region the model already understands. Using them naively for training is the feedback loop
+(module 52) in its purest form.</p>
+
+<h2 data-n="70.4">Ingestion — Kafka, and what backpressure means here</h2>
+
+<p>Every source publishes to Kafka. Not because Kafka is fashionable, but because of three specific
+properties (module 50):</p>
+
+<ul>
+  <li><strong>It is a log, not a queue.</strong> Retention means the fraud model, the analytics warehouse
+      and the rules engine all consume the same stream independently, and it means you can
+      <em>replay</em> — which is how you rebuild features after fixing a bug, and how you build training
+      data at all.</li>
+  <li><strong>Ordering is per partition, and the key picks the partition.</strong> Key by
+      <code>account_id</code> and every event for one account is ordered and lands on one consumer, which
+      is exactly what a stateful velocity computation needs. Different accounts stay parallel.</li>
+  <li><strong>Consumer lag is an observable.</strong> It is the health metric for the whole slow path, and
+      it degrades gracefully instead of dropping data.</li>
+</ul>
+
+<div class="box trap">
+  <span class="lbl">Backpressure — the answer that scores</span>
+  <p>Black Friday arrives and the feature pipeline cannot keep up. The wrong answer is to increase the
+  buffer, which converts a visible slowdown into an invisible one and then an out-of-memory crash. The four
+  legitimate responses, in the order I would use them:</p>
+  <ol>
+    <li><strong>Scale out consumers</strong> — free, up to the partition count, which is why you
+        over-partition from the start (say 64 partitions for a workload needing 8 consumers today).</li>
+    <li><strong>Shed selectively.</strong> Drop the expensive enrichments first — graph features, bureau
+        lookups — and score with a reduced feature set. A slightly worse decision now beats a perfect
+        decision after the payment settled.</li>
+    <li><strong>Degrade to rules.</strong> The rules engine has no dependency on the feature pipeline. If
+        the model path is unhealthy, decisions still happen, conservatively.</li>
+    <li><strong>Drop events</strong> — last resort, and only for non-decision telemetry, never for the
+        transaction stream itself.</li>
+  </ol>
+  <p>The general principle worth stating: <strong>the system must have a defined behaviour when it is
+  overloaded, chosen in advance.</strong> Systems without one do not stay slow; they fall over.</p>
+</div>
+
+<h2 data-n="70.5">Synchronous or asynchronous — the decision that shapes everything</h2>
+
+<p>This is the question the whole design turns on, and it is not one choice but three paths running
+together:</p>
+
+<div class="tw">
+<table>
+<tr><th>Path</th><th>Budget</th><th>What it can use</th><th>What it decides</th></tr>
+<tr><td><strong>Synchronous</strong> — in the authorisation</td><td>~100 ms p99</td><td>The event itself,
+    pre-computed features from the online store, a fast model</td><td>Approve / decline / hold</td></tr>
+<tr><td><strong>Near-real-time</strong> — seconds behind</td><td>1–30 s</td><td>Everything above plus
+    expensive graph and sequence features</td><td>Reverse a decision, freeze the account, queue for
+    review</td></tr>
+<tr><td><strong>Batch</strong> — nightly</td><td>Hours</td><td>Full history, heavy models, cross-entity
+    analysis</td><td>Ring detection, account-level risk, investigation leads</td></tr>
+</table>
+</div>
+
+<p><strong>Why not do everything synchronously?</strong> Because the budget forbids it. A graph feature
+requiring a multi-hop traversal cannot be computed in 100 ms at 20,000 requests per second. The design
+move is to <em>pre-compute asynchronously and look up synchronously</em> — the streaming job maintains the
+aggregates, the online store serves them by key in single-digit milliseconds, and the synchronous path
+does one read and one forward pass.</p>
+
+<p><strong>The corollary people miss:</strong> pre-computed means slightly stale. If the aggregate is 30
+seconds behind, a rapid-fire attack inside that window is scored on pre-attack features. That is exactly
+why the near-real-time path exists — it re-scores with fresh state and can reverse a decision — and saying
+this shows you understand the limit of your own architecture.</p>
+
+<h3>The latency budget, itemised</h3>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>p99 budget</th><th>Notes</th></tr>
+<tr><td>Network + gateway</td><td>15 ms</td><td>Mostly out of your control</td></tr>
+<tr><td>Online feature read</td><td>10 ms</td><td>One batched multi-get, never N sequential reads</td></tr>
+<tr><td>Feature assembly</td><td>5 ms</td><td>On-demand features computed from the event itself</td></tr>
+<tr><td>Model inference</td><td>20 ms</td><td>GBDT on ~200 features is well under this; it is why the
+    model family is not a deep network</td></tr>
+<tr><td>Rules + policy</td><td>5 ms</td><td>Runs in parallel where possible</td></tr>
+<tr><td>Logging + response</td><td>10 ms</td><td>Logging is asynchronous — fire and forget to Kafka</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>~65 ms</strong></td><td>Leaving headroom, because p99 is
+    where you live and the mean is a comfortable lie</td></tr>
+</table>
+</div>
+
+<h2 data-n="70.6">Features — and the four that carry most of the signal</h2>
+
+<p>No code here, just the shapes (module 51's vocabulary throughout):</p>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Velocity <span class="tag">the workhorse</span></div>
+    <p>Counts and sums over trailing windows per entity: transactions per account in 1 h / 24 h / 7 d,
+       distinct merchants, distinct countries, failed attempts.</p>
+    <p class="wh">Cheap, powerful, and the single most useful family in fraud. It is also the exact data
+       structure from module 65 — a per-key deque or bucketed counter, maintained by the streaming job and
+       materialised to the online store.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Deviation from the entity's own baseline <span class="tag">high value</span></div>
+    <p>Amount as a z-score against this account's own history; is this merchant category new for them; is
+       this hour of day unusual for them; distance from their usual geography.</p>
+    <p class="wh">Fraud is much better defined relative to a person than absolutely. €800 is unremarkable
+       for one account and a five-sigma event for another — and this is why per-entity features beat
+       global thresholds.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Graph / network <span class="tag">expensive, distinctive</span></div>
+    <p>How many accounts share this device; component size in the account–device graph; how new the
+       device is; shared IP or shipping address.</p>
+    <p class="wh">Catches organised fraud that per-account features cannot see. Computed asynchronously
+       (module 65's union-find), materialised as a small number of scalars, and read like any other
+       feature. Treat component size as a signal, never a rule — families and public terminals look like
+       rings.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Sequence <span class="tag">senior</span></div>
+    <p>The pattern of the last N events, not just their aggregate: a small-value test transaction followed
+       by a large one; a password change then a new device then a payment.</p>
+    <p class="wh">Where a sequence model earns its place — and the honest framing is that it is a
+       <em>second</em> model on the asynchronous path, feeding a score into the fast path as one more
+       feature, not a replacement for the GBDT inside 100 ms.</p>
+  </div>
+
+</div>
+
+<div class="box trap">
+  <span class="lbl">Point-in-time correctness — the thing you must not fumble</span>
+  <p>Every one of those features is an aggregate over history, which means building training data is an
+  as-of join, not a lookup. The value of <code>chargeback_count</code> for a transaction on 3 March must be
+  what was known on 3 March — not today's value, which includes the chargeback caused <em>by that very
+  transaction</em>.</p>
+  <p>Get this wrong and you get a model with a spectacular offline AUC that fails on its first live day,
+  because the feature it leaned on does not exist at decision time. It is the most common serious bug in
+  fraud modelling and interviewers ask about it precisely because it is a clean test of whether you have
+  built one.</p>
+  <p>Drag the event line below and switch the join mode — the naive join reads a value created by the
+  event it is trying to predict.</p>
+</div>
+
+<div class="viz" data-viz="pit"></div>
+
+<p><strong>The structural fix</strong> is not vigilance, it is architecture: define each feature once in
+the feature store, let the offline store serve the as-of join and the online store serve the current value
+from the same definition, and — best of all — <strong>train on the feature vectors you actually logged at
+serving time</strong>. A logged vector cannot leak, because it is what the model saw. This kills leakage
+and train/serve skew with one mechanism, at the cost of needing production traffic before you can train,
+which is why you build the historical pipeline too.</p>
+
+<h2 data-n="70.7">Class imbalance and the model choice</h2>
+
+<p>At 0.2 % positive, a model that predicts "legitimate" for everything is 99.8 % accurate and worthless.
+That is the module 25 lesson, and here is what I would actually do:</p>
+
+<ul>
+  <li><strong>Metric first.</strong> PR-AUC, not ROC-AUC — with this imbalance ROC-AUC is dominated by the
+      enormous negative class and looks flattering. Then, more importantly, the business metric: expected
+      cost at the chosen threshold, plus recall at a fixed review capacity, because the review team has a
+      finite number of cases per day and that is a real constraint.</li>
+  <li><strong>Do not oversample reflexively.</strong> Modern GBDTs handle imbalance well with
+      <code>scale_pos_weight</code> or class weights. Resampling distorts the predicted probabilities,
+      which matters here because the threshold is chosen on a cost basis and needs calibrated scores. If
+      you resample, recalibrate afterwards.</li>
+  <li><strong>Model family: gradient-boosted trees.</strong> Tabular, heterogeneous, mixed-type features
+      with non-linear interactions — this is precisely where GBDTs still beat deep networks (module 22,
+      and Grinsztajn's result). They are also fast enough for the budget, robust to unscaled features, and
+      produce usable SHAP explanations for the appeal requirement.</li>
+  <li><strong>Plus an unsupervised component.</strong> An isolation forest or autoencoder over the same
+      features catches novel attack patterns with no labelled examples (module 24). It does not decide
+      alone — it raises review cases and its score feeds the supervised model as a feature.</li>
+  <li><strong>Plus rules.</strong> Not as a baseline to be beaten, but permanently. Rules deploy in an
+      hour when a new attack appears, are explainable to a regulator, and cover the known cases; the model
+      covers the tail. The two together are the system.</li>
+</ul>
+
+<h2 data-n="70.8">Training, tracking, and the threshold</h2>
+
+<p>The training pipeline is an orchestrated DAG (Airflow or Kubeflow, module 52), and it must be
+idempotent and backfillable — every task takes the logical date as a parameter and never calls
+<code>now()</code>, or replaying history silently produces different data.</p>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>What it does</th><th>The trap</th></tr>
+<tr><td>Label assembly</td><td>Join chargebacks and review outcomes onto transactions</td><td>The label
+    horizon: only transactions older than ~90 days have complete labels</td></tr>
+<tr><td>Feature retrieval</td><td>Point-in-time join from the offline store</td><td>Silent leakage if the
+    as-of condition is dropped</td></tr>
+<tr><td>Split</td><td><strong>Temporal</strong>: train on the past, validate on the following period</td>
+    <td>A random split leaks the future and inflates every number</td></tr>
+<tr><td>Train</td><td>GBDT with class weighting, early stopping on the validation window</td><td>Tuning on
+    the test window until it looks good</td></tr>
+<tr><td>Calibrate</td><td>Isotonic or Platt on a held-out slice</td><td>Skipping it, then choosing a
+    threshold from uncalibrated scores</td></tr>
+<tr><td>Threshold</td><td>Minimise expected cost on validation (module 65's sweep)</td><td>Choosing it on
+    the test set, or never revisiting it as the base rate drifts</td></tr>
+<tr><td>Evaluate</td><td>Overall and per segment: card type, geography, merchant category, customer
+    tenure</td><td>Reporting one aggregate number and missing a segment that got much worse</td></tr>
+<tr><td>Register</td><td>MLflow: model, metrics, params, data version, code version, threshold</td><td>
+    Registering the model without the threshold — they are one artifact</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The cost matrix, made concrete</span>
+  <p>With €200 per missed fraud and €20 per false decline, and 0.2 % base rate, in a million
+  transactions: 2,000 fraudulent, 998,000 legitimate. Declining nothing costs 2,000 × €200 = €400,000.
+  A model catching 70 % of fraud at a 0.5 % false-positive rate costs
+  (600 × €200) + (4,990 × €20) = €120,000 + €99,800 ≈ €220,000 — a saving of about €180,000 per million
+  transactions.</p>
+  <p>Two things to say alongside the arithmetic. First, the €20 is the shakiest number in the model, since
+  the real cost of a wrongly declined customer includes churn you cannot easily attribute — so I would show
+  the sensitivity, not a point estimate. Second, look at how flat the cost curve is near the optimum: a
+  sharp minimum means the threshold is fragile and will need re-tuning as the base rate moves, which makes
+  it a monitoring concern and not just a training one.</p>
+</div>
+
+<h2 data-n="70.9">Serving and rollout</h2>
+
+<p>The model server is boring by design: a container, horizontally scaled, autoscaled on request rate with
+enough headroom for the peak factor, behind the decision service. The interesting part is how a new model
+gets there (module 53).</p>
+
+<ol>
+  <li><strong>Shadow, for a week.</strong> The candidate scores every live transaction; its output is
+      logged and discarded. This validates the plumbing — that features are available, latency fits, and
+      the live score distribution matches the offline one. Zero blast radius. A mismatch between shadow and
+      offline score distributions is the earliest detectable sign of skew, and this alone justifies the
+      week.</li>
+  <li><strong>Canary: 1 % → 5 % → 25 % → 100 %</strong>, with each stage held long enough for the guard
+      metrics to be statistically meaningful. With a 0.2 % base rate, 1 % of traffic contains few positives
+      — so at the small stages I am watching system metrics and the score distribution, and only at the
+      later stages the fraud metrics. Saying this shows you understand what a canary can and cannot
+      detect.</li>
+  <li><strong>Guard metrics with automatic rollback:</strong> p99 latency, error rate, decline rate,
+      score distribution PSI against the shadow baseline, and the manual-review confirmation rate — which
+      is the fastest available proxy for precision, since real labels are months away.</li>
+  <li><strong>Alert per variant, never blended.</strong> At 1 % traffic a doubled decline rate moves the
+      blended number by a rounding error and nothing fires. Drive the toggle below and watch the blast
+      radius change.</li>
+  <li><strong>Blue-green for the infrastructure</strong> underneath, so a rollback is a routing flip
+      rather than a redeploy — and rehearse it, because an untested rollback is not a rollback.</li>
+</ol>
+
+<div class="viz" data-viz="canary"></div>
+
+<h2 data-n="70.10">Monitoring — and the part nobody prepares</h2>
+
+<p>Four layers, in the order they detect problems (module 54):</p>
+
+<div class="tw">
+<table>
+<tr><th>Layer</th><th>Signal</th><th>Latency to detection</th></tr>
+<tr><td>System</td><td>p99 latency, error rate, consumer lag, online-store hit rate</td><td>Seconds</td></tr>
+<tr><td>Input</td><td>Per-feature PSI against the training reference, null rates, range violations,
+    feature freshness</td><td>Minutes to hours</td></tr>
+<tr><td>Output</td><td>Score distribution, decline rate, alert volume</td><td>Minutes</td></tr>
+<tr><td>Outcome</td><td>Precision from review outcomes (hours), recall from chargebacks (weeks to
+    months)</td><td>Hours to months</td></tr>
+</table>
+</div>
+
+<p><strong>If you keep one, keep the output layer.</strong> The score distribution needs no labels, is
+available instantly, and moves for nearly every failure that matters — a broken feature, a bad deploy, an
+upstream schema change, a genuine population shift. It never tells you <em>why</em>, but it reliably tells
+you to look.</p>
+
+<div class="box trap">
+  <span class="lbl">The shape of a drift, not just its size</span>
+  <p>PSI above 0.25 means "significant", but the diagnosis is in the shape. Mass collapsing into one bin —
+  especially a zero or null bin — is an upstream failure, not a changing world. Mass spreading smoothly is
+  a population shift. Same PSI, completely different response. Inject the bug in the visualisation below
+  and compare the contribution strip against a genuine mean shift.</p>
+</div>
+
+<div class="viz" data-viz="psi"></div>
+
+<h2 data-n="70.11">The feedback loop — the senior part of the answer</h2>
+
+<p>This is where most candidates stop, and it is where the interesting problems start. Three intertwined
+issues:</p>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Delayed labels</div>
+    <p>Chargebacks arrive over 30–90 days, so the last three months of data are <em>censored</em>: they
+       look cleaner than they are simply because the fraud has not been reported yet.</p>
+    <p class="wh">Consequences: never evaluate recent performance as if labels were complete; define an
+       explicit label horizon and only train on data past it; and when you need a fast read, use review
+       outcomes and the confirmation rate as an early proxy while being explicit that they are biased.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">The blocked-decision blind spot</div>
+    <p>You only ever learn the outcome of transactions you approved. For every transaction the model
+       declined, the counterfactual is unobservable — you cannot know whether it was fraud.</p>
+    <p class="wh">Train on that data and the model learns to reproduce its own boundary: it becomes
+       confident about the region it already blocks and blind to whether that region was ever right. This
+       is the single most important thing to say in this walkthrough, because it is a genuine statistical
+       problem that architecture alone cannot solve.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">The randomised holdout — the fix</div>
+    <p>Approve a small random slice of traffic — a fraction of a percent — regardless of score, and record
+       what happens.</p>
+    <p class="wh">It costs real money in let-through fraud, and it is the only way to get an unbiased
+       estimate of what the model is missing. Budget it explicitly, size it against the precision you need
+       on the estimate, exclude very high-value transactions to bound the downside, and present it to the
+       business as the price of knowing whether the system works. Reservoir sampling (module 65) is how you
+       select it in one pass.</p>
+  </div>
+
+</div>
+
+<p><strong>The retraining gate</strong>, then, is not a schedule. It is: assemble labels past the horizon
+→ point-in-time features → temporal split → train → evaluate the challenger against the <em>currently
+deployed</em> champion on the same fresh window, not against the champion's historical offline number →
+check per-segment results → register with lineage → shadow → canary. Retraining nightly with no gate is
+how a bad week becomes a bad model, and drift alone should never trigger a deploy.</p>
+
+<h2 data-n="70.12">Delivering this in 45 minutes</h2>
+
+<div class="tw">
+<table>
+<tr><th>Minutes</th><th>What you are doing</th><th>What to say if you are running short</th></tr>
+<tr><td>0–4</td><td>Requirements and assumptions, stated out loud</td><td>Never cut this</td></tr>
+<tr><td>4–10</td><td>The architecture picture: two loops, three paths</td><td>Never cut this</td></tr>
+<tr><td>10–16</td><td>Ingestion, Kafka keying, backpressure policy</td><td>Compress to the keying decision
+    and the four responses</td></tr>
+<tr><td>16–24</td><td>Features, and point-in-time correctness</td><td>Never cut point-in-time</td></tr>
+<tr><td>24–30</td><td>Imbalance, model choice, threshold from the cost matrix</td><td>Cut the model-family
+    justification, keep the cost matrix</td></tr>
+<tr><td>30–36</td><td>Serving, shadow, canary, rollback</td><td>Compress to "shadow then staged canary
+    with per-variant guard metrics"</td></tr>
+<tr><td>36–42</td><td>Monitoring layers, drift shape</td><td>Compress to the output layer and why</td></tr>
+<tr><td>42–45</td><td>Feedback loop and the randomised holdout</td><td><strong>Never cut this</strong> —
+    it is the highest-value 90 seconds in the whole answer</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">If you only get five minutes</span>
+  <p>"Kafka keyed by account for ordered per-entity features; a streaming job maintains velocity and graph
+  aggregates into an online store; the synchronous path does one batched feature read and a GBDT forward
+  pass inside a 100 ms budget, with rules alongside for explainability and fast response to new attacks.
+  Training joins features point-in-time — that is the bug that kills these systems — with a temporal split,
+  and the threshold comes from a cost matrix, not from a default of 0.5. Rollout is shadow then staged
+  canary with per-variant guard metrics and automatic rollback. Monitoring watches the score distribution
+  first because it needs no labels. And the hard part is the feedback loop: labels are months late and we
+  only see outcomes for what we approved, so a small randomised holdout is what keeps the estimate
+  honest."</p>
+</div>
+
+<h2 data-n="70.13">Every callback, in one table</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage of the walkthrough</th><th>Modules it draws on</th></tr>
+<tr><td>Requirements, cost of errors</td><td>25 metrics · 55 governance</td></tr>
+<tr><td>Kafka, backpressure, delivery semantics</td><td>50 lifecycle &amp; data</td></tr>
+<tr><td>Sync vs async, latency budget</td><td>50 · 53 deployment</td></tr>
+<tr><td>Velocity and deviation features</td><td>12 probability · 51 feature store · 65 DSA</td></tr>
+<tr><td>Graph features and rings</td><td>24 unsupervised · 65 DSA</td></tr>
+<tr><td>Sequence features</td><td>32 RNN &amp; attention · 40 attention</td></tr>
+<tr><td>Point-in-time correctness</td><td>51 feature store · 20 leakage</td></tr>
+<tr><td>Class imbalance, PR-AUC, calibration</td><td>25 metrics</td></tr>
+<tr><td>GBDT choice</td><td>22 trees &amp; ensembles</td></tr>
+<tr><td>Anomaly detection component</td><td>24 unsupervised</td></tr>
+<tr><td>Regularisation, constrained fitting</td><td>14 optimisation · 21 linear models</td></tr>
+<tr><td>Threshold from a cost matrix</td><td>25 metrics · 65 DSA</td></tr>
+<tr><td>MLflow, lineage, reproducibility</td><td>52 tracking &amp; orchestration</td></tr>
+<tr><td>Shadow, canary, blue-green, rollback</td><td>53 deployment</td></tr>
+<tr><td>PSI, KS, drift shape</td><td>13 information theory · 54 monitoring</td></tr>
+<tr><td>SHAP explanations, appeal route</td><td>26 interpretability · 55 governance</td></tr>
+<tr><td>Fairness across segments</td><td>55 governance</td></tr>
+<tr><td>Adversarial features and probing</td><td>55 governance</td></tr>
+<tr><td>Delayed labels, feedback loop, holdout</td><td>52 · 54 · 65 reservoir sampling</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint — the final one</h4>
+  <ul>
+    <li>Draw the architecture from memory in twelve minutes, both loops and all three paths.</li>
+    <li>State the eight requirement questions and why each one changes the design.</li>
+    <li>Explain point-in-time correctness with a concrete leaking feature, in 60 seconds.</li>
+    <li>Give the four backpressure responses in priority order, and say why buffering more is not one.</li>
+    <li>Turn the cost matrix into a threshold and a euro figure, out loud, with the sensitivity caveat.</li>
+    <li>Say why a canary at 1 % cannot detect a recall regression at a 0.2 % base rate.</li>
+    <li>Explain the blocked-decision blind spot and the randomised holdout, including its cost.</li>
+    <li>Deliver the five-minute version verbatim, without notes.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#66" target="_top"><span class="k">Back</span>← 66 · Behavioural &amp; judgment</a>
+  <a href="../index.html#71" target="_top"><span class="k">Next</span>71 · RAG assistant →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

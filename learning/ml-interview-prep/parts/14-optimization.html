@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optimisation — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part A · Maths · Module 14</p>
+<h1>Optimisation
+  <span class="lede">Module 11 told you what a minimum is. This one is about actually getting there —
+  the algorithms, the one hyperparameter that matters more than all the others combined, and the
+  machinery for minimising something <em>subject to a rule</em>: Lagrange, the dual, KKT, and the
+  Laplace approximation.</span>
+</h1>
+
+<h2 data-n="14.1">The whole of training, in one sentence</h2>
+
+<div class="box analogy">
+  <span class="lbl">The picture to hold</span>
+  <p>You are standing in fog on a hilly landscape. Height = how wrong your model is. You cannot see
+  the valley, but you can feel which way the ground slopes under your feet. So you take a step
+  downhill, feel again, step again. That is <strong>every</strong> optimiser in machine learning.
+  Everything else — momentum, Adam, schedules — is a refinement of <em>how big a step</em> and
+  <em>in exactly which direction</em>.</p>
+</div>
+
+<p>The refinements exist because the naive version has three specific problems: it is slow in
+narrow valleys, it stalls on plateaus, and the right step size differs wildly from parameter to
+parameter. Each named optimiser is an answer to one of those three.</p>
+
+<h2 data-n="14.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Objective / loss / cost <span class="tag">basic</span></div>
+    <p>The single number you are trying to make small. Loss is usually per-example, cost is the
+       average over the batch, objective is the whole thing including regularisation.</p>
+    <p class="wh">If you cannot write your objective down, you do not have a machine-learning
+       problem yet — you have a wish.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Gradient descent <span class="tag">basic</span>
+        <span class="sym">θ ← θ − η∇L</span></div>
+    <p>Step in the direction of steepest <em>descent</em>, which is the negative gradient. η is the
+       learning rate.</p>
+    <p class="an">Walking downhill in fog, one careful step at a time.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Batch / mini-batch / stochastic <span class="tag">basic</span></div>
+    <p>How many examples you look at before each step. All of them (batch), a handful (mini-batch,
+       what everyone actually does), or one (stochastic).</p>
+    <p class="an">Polling the entire country before every decision, polling a thousand people, or
+       asking one person on the street. The thousand-person poll is nearly as accurate and
+       enormously cheaper.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Epoch vs step <span class="tag">basic</span></div>
+    <p>A <strong>step</strong> is one parameter update. An <strong>epoch</strong> is one full pass
+       over the training data.</p>
+    <p class="wh">LLM pretraining is usually reported in tokens and steps, not epochs, because you
+       often see the data barely once.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Learning rate <span class="tag">basic</span></div>
+    <p>Step size. Too small: training crawls or gets stuck. Too large: you overshoot the valley,
+       bounce, and diverge to NaN.</p>
+    <p class="wh"><strong>The single most important hyperparameter.</strong> If you tune exactly one
+       thing, tune this.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Schedule &amp; warmup <span class="tag">mid</span></div>
+    <p>Changing the learning rate over training — usually a short linear <em>warmup</em> from near
+       zero, then a <em>cosine</em> decay down to a small final value.</p>
+    <p class="an">Warming up a car engine before flooring it, then easing off as you arrive.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Momentum <span class="tag">mid</span></div>
+    <p>Accumulate an exponentially-weighted average of past gradients and step along <em>that</em>
+       instead of the raw gradient.</p>
+    <p class="an">A heavy ball rolling downhill instead of a cautious walker. It powers through
+       small bumps and ignores side-to-side jitter, because the oscillating components cancel in the
+       average while the consistent downhill component accumulates.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RMSProp / Adam / AdamW <span class="tag">mid</span></div>
+    <p>Give <em>each parameter its own</em> learning rate, scaled down for parameters whose gradients
+       have been large and up for those whose gradients have been tiny.</p>
+    <p class="an">A thermostat per room instead of one for the whole house.</p>
+    <p class="wh">AdamW is the default for transformers. Adam without the W has a subtly wrong
+       weight decay — see the questions.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Gradient clipping <span class="tag">mid</span></div>
+    <p>If the gradient's norm exceeds a threshold, rescale it down before stepping.</p>
+    <p class="wh">Standard in LLM and RNN training. It is the difference between one bad batch
+       causing a loss spike and one bad batch destroying the run.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Constrained optimisation <span class="tag">senior</span></div>
+    <p>Minimise something <em>subject to a rule</em> — "as small as possible, but the weights must
+       not exceed this size" or "but the new policy must stay close to the old one".</p>
+    <p class="wh">Ridge and lasso, SVMs, PPO's trust region, fairness constraints, latency budgets.
+       Most real production objectives are constrained; people just do not phrase them that way.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Lagrange multiplier <span class="tag">senior</span>
+        <span class="sym">λ</span></div>
+    <p>The trick that turns a constrained problem into an unconstrained one: add λ times the
+       constraint to the objective, then solve normally. λ is the <em>price</em> of the constraint.</p>
+    <p class="an">"You may spend as much as you like, but every euro costs you λ units of happiness."
+       Set λ correctly and you will never want to overspend — the budget enforces itself.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Dual problem <span class="tag">senior</span></div>
+    <p>Every minimisation has a shadow maximisation over the multipliers. Solving the dual solves the
+       original when the problem is well-behaved (strong duality).</p>
+    <p class="wh">The SVM is always solved in its dual, which is what makes the kernel trick
+       possible at all.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">KKT conditions <span class="tag">senior</span></div>
+    <p>The generalisation of "∇ = 0" to problems with inequality constraints. Four conditions;
+       the memorable one is <strong>complementary slackness</strong>: either the constraint is tight,
+       or its multiplier is zero. Never both non-zero.</p>
+    <p class="an">You only feel the wall if you are pressed against it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Laplace approximation <span class="tag">senior</span></div>
+    <p>Fit a Gaussian to a distribution at its peak: centre it on the mode, and get the width from
+       the curvature (the Hessian) there.</p>
+    <p class="an">You cannot map the whole mountain, so you stand on the summit and measure how
+       steeply it falls away in each direction. Steep in every direction → a narrow peak → you are
+       confident. Gentle → a broad peak → you are not.</p>
+    <p class="wh">Cheap post-hoc uncertainty on an already-trained network, and the theoretical
+       backbone of BIC and of Bayesian model comparison.</p>
+  </div>
+
+</div>
+
+<h2 data-n="14.3">Learning rate — why it dominates everything</h2>
+
+<div class="viz" data-viz="lr"></div>
+
+<p>Drag the slider. There are three regimes and they are worth being able to name on sight from a
+loss curve alone:</p>
+
+<div class="tw">
+<table>
+<tr><th>Symptom in the loss curve</th><th>Cause</th><th>Fix</th></tr>
+<tr><td>Loss falls, then flatlines high, forever</td><td>LR too small — or you are in a genuine
+    plateau</td><td>Raise LR; add momentum</td></tr>
+<tr><td>Loss bounces around a floor without settling</td><td>LR too large for the final phase</td>
+    <td>Decay the LR — this is exactly what a cosine schedule is for</td></tr>
+<tr><td>Loss goes up, then to NaN</td><td>LR far too large; the step jumped past the valley up the
+    far wall</td><td>Lower LR ~10×, add gradient clipping, check for a bad batch</td></tr>
+<tr><td>Loss spikes early then recovers</td><td>No warmup with Adam</td><td>Add 1–2 % of steps as
+    linear warmup</td></tr>
+</table>
+</div>
+
+<h2 data-n="14.4">The family tree of optimisers</h2>
+
+<p>Each one is the previous one plus a fix. Learn it as a chain and you can derive any of them from
+the one before:</p>
+
+<ol>
+  <li><strong>GD</strong> — use the true gradient. Correct, and far too slow: one step per pass over
+      the entire dataset.</li>
+  <li><strong>SGD</strong> — estimate the gradient from a mini-batch. Noisier per step, vastly more
+      steps per second, and the noise itself turns out to help escape saddles.</li>
+  <li><strong>+ Momentum</strong> — average the gradients over time. Fixes slow progress in narrow
+      ravines, where raw SGD ping-pongs across the valley rather than moving along it.</li>
+  <li><strong>+ RMSProp</strong> — divide by a running average of gradient <em>magnitude</em>. Fixes
+      the "one learning rate cannot suit every parameter" problem.</li>
+  <li><strong>Adam</strong> = momentum + RMSProp, plus a bias correction for the fact that both
+      running averages start at zero and are therefore badly underestimated for the first few
+      hundred steps.</li>
+  <li><strong>AdamW</strong> = Adam with weight decay decoupled from the gradient, which is the
+      version that actually implements the regularisation people think they are getting.</li>
+</ol>
+
+<div class="box note">
+  <span class="lbl">The one thing people get wrong about Adam</span>
+  <p>Adam is <em>not</em> "the smart one that always wins". Well-tuned SGD with momentum still
+  generalises better than Adam on many vision benchmarks. Adam's advantage is that it works
+  acceptably across a very wide range of learning rates with almost no tuning — which is precisely
+  what you want when a single training run costs six figures and you get one attempt.</p>
+</div>
+
+<h2 data-n="14.5">Constrained optimisation — Lagrange, the dual, KKT</h2>
+
+<p>Everything so far minimised freely. Now the real version: minimise f(x) <strong>subject to</strong>
+g(x) ≤ 0.</p>
+
+<div class="viz" data-viz="lagrange"></div>
+
+<p>The geometry is the whole insight, and it is one picture. Draw the contour rings of your loss.
+Draw the constraint region. The best allowed point is where a contour ring first <em>touches</em>
+the constraint boundary — and at the moment of touching, the two curves are tangent, which means
+their gradients point along the same line:</p>
+
+<div class="eq">
+  ∇f = −λ ∇g
+  <span class="note">at the optimum, the two gradients are parallel; λ is how many times bigger one is</span>
+</div>
+
+<p>So define the <strong>Lagrangian</strong> ℒ(x, λ) = f(x) + λ g(x), set all its derivatives to
+zero, and the constraint gets enforced automatically. A constrained problem in x has become an
+unconstrained problem in (x, λ).</p>
+
+<p><strong>What λ means</strong>, and this is the part interviewers press on: λ is the
+<em>shadow price</em> of the constraint — the rate at which your optimal loss would improve if you
+relaxed the constraint by one unit. Big λ: that constraint is really hurting you. λ = 0: the
+constraint is not binding at all, and you could delete it without changing the answer.</p>
+
+<p>With inequality constraints you get the <strong>KKT conditions</strong>. Four of them, but you
+only need to recite them if pushed:</p>
+
+<ol>
+  <li><strong>Stationarity</strong> — ∇ℒ = 0 in x.</li>
+  <li><strong>Primal feasibility</strong> — g(x) ≤ 0, i.e. you obeyed the rule.</li>
+  <li><strong>Dual feasibility</strong> — λ ≥ 0. A constraint can only push you back inside, never
+      pull you out.</li>
+  <li><strong>Complementary slackness</strong> — λ·g(x) = 0. Either you are pressed against the wall
+      (g = 0) or the wall does not matter (λ = 0). Never both.</li>
+</ol>
+
+<p>Condition 4 is where all the payoff is. In an SVM, it says that every training point either sits
+exactly on the margin (λ &gt; 0 — a <strong>support vector</strong>) or is comfortably inside and
+has λ = 0, contributing nothing to the solution. That is <em>why</em> an SVM depends on a handful of
+points and ignores the rest. The sparsity is not a design choice; it falls out of complementary
+slackness.</p>
+
+<h2 data-n="14.6">Where you have already met this without noticing</h2>
+
+<div class="tw">
+<table>
+<tr><th>Problem</th><th>The constraint</th><th>What the multiplier becomes</th></tr>
+<tr><td>Ridge regression</td><td>‖w‖² ≤ t</td><td>The λ in λ‖w‖². Every regularisation strength is
+    a Lagrange multiplier for an implicit size budget on the weights</td></tr>
+<tr><td>Lasso</td><td>‖w‖₁ ≤ t</td><td>Same, but the L1 ball's corners are what produce exact
+    zeros — the geometry from module 10</td></tr>
+<tr><td>SVM</td><td>margin ≥ 1 for every point</td><td>One αᵢ per point; the non-zero ones are
+    the support vectors</td></tr>
+<tr><td>Softmax as max-entropy</td><td>match the observed feature means</td><td>The logits. Softmax
+    is the maximum-entropy distribution under moment constraints — the multipliers <em>are</em> the
+    parameters</td></tr>
+<tr><td>PPO / RLHF</td><td>KL(new ‖ old) ≤ δ</td><td>The KL coefficient β. Adaptive-KL PPO literally
+    tunes the multiplier online to hold the constraint</td></tr>
+<tr><td>Constrained serving</td><td>p99 latency ≤ 50 ms — the 99th percentile, meaning 99 of every 100 requests finish inside the budget</td><td>You do this by hand when you pick a
+    smaller model, and it is worth saying so in a system-design round</td></tr>
+</table>
+</div>
+
+<h2 data-n="14.7">The Laplace approximation</h2>
+
+<p>Bayesian inference wants a full posterior over weights. For any real network that integral is
+hopeless. Laplace's move is aggressively practical: <strong>assume the posterior is a Gaussian,
+centred at the mode you already found</strong>.</p>
+
+<ul>
+  <li>The <strong>mean</strong> is free — it is your trained MAP weights. You already have them.</li>
+  <li>The <strong>covariance</strong> is the inverse Hessian of the negative log-posterior at that
+      point. Sharp curvature → small variance → confident. Flat → large variance → uncertain.</li>
+</ul>
+
+<p>Why anyone cares: it bolts uncertainty onto an <em>already-trained</em> network with no retraining
+and no change to the architecture. Compare that to deep ensembles (train five models) or MC dropout
+(many forward passes at inference). The catch is that the Hessian is d×d, so real implementations
+approximate it — diagonal, Kronecker-factored (K-FAC), or last-layer-only — and the whole thing is
+only as good as the single-mode assumption, which for a deep network with many equivalent minima is
+generous.</p>
+
+<div class="box mem">
+  <span class="lbl">Say it this way</span>
+  <p>"Laplace approximation: put a Gaussian at the mode, get its width from the curvature. It is the
+  cheapest honest uncertainty estimate you can get from a model you have already trained — and it is
+  also where BIC's penalty term comes from."</p>
+</div>
+
+<h2 data-n="14.8">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain gradient descent to someone non-technical.</summary>
+  <div class="a">
+    <div class="tldr">You are on a foggy hillside trying to reach the valley. You cannot see far, but
+    you can feel the slope, so you step downhill, feel again, and repeat.</div>
+    <p>Height is how wrong the model is. The slope is the gradient. The size of each step is the
+    learning rate. Training is thousands of small downhill steps.</p>
+    <p>Two follow-ups worth pre-empting: we go in the <em>negative</em> gradient direction because the
+    gradient points uphill by definition; and we use a mini-batch rather than the full dataset,
+    which makes each step slightly wrong but hundreds of times faster — and the noise turns out to be
+    useful rather than merely tolerable.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>SGD or Adam — which do you choose, and why?</summary>
+  <div class="a">
+    <div class="tldr">Adam when I get few shots at tuning or the gradient scales vary wildly
+    (transformers, sparse features); SGD with momentum when I can afford to tune and I want the last
+    fraction of generalisation (vision).</div>
+    <p><strong>Adam's real advantage is robustness, not speed.</strong> It normalises each parameter's
+    step by that parameter's own gradient history, so it works acceptably across two orders of
+    magnitude of learning rate. That is decisive when a pretraining run costs a fortune and you get
+    one attempt.</p>
+    <p><strong>SGD+momentum's advantage is generalisation.</strong> On CNN benchmarks a well-tuned SGD
+    still beats Adam on test accuracy. The usual story is that Adam's per-parameter rescaling finds
+    sharper minima; that explanation is contested, so I would state it as an observation with a
+    plausible mechanism rather than a settled fact.</p>
+    <p>Practically: transformers, AdamW, cosine schedule with warmup, β₂ = 0.95 rather than 0.999 for
+    large models. Vision from scratch, SGD+momentum, cosine. And in both cases the learning rate gets
+    tuned before anything else does.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Adam adapts the learning rate so I do not need to tune it." No. It changes the sensible
+      range and makes the curve less sharp, but the peak still matters, and it still needs a
+      schedule.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is AdamW, and why is decoupled weight decay not just cosmetic?</summary>
+  <div class="a">
+    <div class="tldr">In plain Adam, weight decay is added to the gradient and then divided by the
+    per-parameter scale — so parameters with large gradients get almost no decay. AdamW applies the
+    decay directly to the weights, after the adaptive step, so every parameter is regularised
+    equally.</div>
+    <p>The mechanism: L2 regularisation adds λw to the gradient. Adam then divides the whole gradient
+    by √v, the running gradient magnitude. So the effective decay on each parameter is λw/√v —
+    inversely proportional to how large that parameter's gradients have been. Exactly the parameters
+    you most want to constrain get decayed least. The regularisation you configured is not the
+    regularisation you got.</p>
+    <p>AdamW decouples them: adaptive step first, then <code>w ← w − ηλw</code> separately. Now the
+    decay is uniform and its hyperparameter means what it says.</p>
+    <p>Why it matters in practice: this is why the sensible weight-decay values differ by roughly an
+    order of magnitude between Adam and AdamW, and it is a real reason a paper fails to reproduce
+    when someone swaps the optimiser and keeps the hyperparameters. It is also standard to exclude
+    biases and LayerNorm gains from decay entirely — decaying a normalisation scale toward zero is
+    just fighting the layer.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"L2 regularisation and weight decay are the same thing." They are identical for plain SGD.
+      They are <em>not</em> identical for any adaptive optimiser, and that difference is the entire
+      content of the AdamW paper.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do transformers need learning-rate warmup?</summary>
+  <div class="a">
+    <div class="tldr">Because Adam's second-moment estimate is computed from almost no data in the
+    first few steps, so its variance is huge — and a huge, badly-scaled early step lands the model
+    somewhere it never recovers from.</div>
+    <p>Adam divides by √v̂, a running average of squared gradients. At step 1 that average has seen
+    exactly one sample. The bias correction fixes its <em>mean</em> but not its <em>variance</em>, so
+    early updates can be wildly over-sized. Warmup keeps η near zero while v̂ accumulates enough
+    samples to be trustworthy.</p>
+    <p>Two contributing factors specific to transformers: with post-LN, gradients through the deep
+    residual stack are badly scaled at initialisation, which is a large part of why pre-LN
+    architectures are more forgiving and need less warmup; and attention logits early in training can
+    be extreme, producing near-one-hot attention and correspondingly large gradients.</p>
+    <p>Typical practice: linear warmup over 1–2 % of total steps, then cosine decay to about 10 % of
+    the peak. The symptom when you skip it is characteristic — a loss spike in the first few hundred
+    steps that either recovers slowly or does not recover at all.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"So just use a smaller LR throughout?" That avoids the spike and then trains far too slowly
+      for the remaining 99 % of the run. Warmup lets you have a small step where you need one and a
+      large step everywhere else.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain Lagrange multipliers, and give a real ML example.</summary>
+  <div class="a">
+    <div class="tldr">A Lagrange multiplier converts "minimise this subject to a rule" into
+    "minimise this plus λ times the rule" — an unconstrained problem. λ is the price of the
+    constraint: how much your objective would improve if you relaxed it by one unit.</div>
+    <p>The geometry: at the constrained optimum, the loss contour is tangent to the constraint
+    boundary, so ∇f and ∇g are parallel. λ is the ratio between them. Form
+    ℒ = f + λg, set the derivatives to zero, and the constraint enforces itself.</p>
+    <p><strong>The example I would give is ridge regression</strong>, because it reframes something
+    everyone already uses. "Minimise squared error subject to ‖w‖² ≤ t" has Lagrangian
+    MSE + λ‖w‖². That λ is your regularisation strength. Every time you tune a regularisation
+    coefficient you are choosing a Lagrange multiplier for a weight budget you never wrote down —
+    and the correspondence between t and λ is one-to-one and monotonic, so tuning either is the same
+    search.</p>
+    <p><strong>The one I would give second is PPO</strong>, because it shows the idea running live in
+    production: keep the updated policy within a KL ball of the reference model. Adaptive-KL PPO
+    tunes the multiplier online — KL too high, raise β; too low, lower it. That is dual ascent, being
+    run inside a training loop.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The sign convention on λ trips people up. For inequality constraints λ ≥ 0 is required —
+      a constraint can push you back inside the feasible region but never pull you out of it.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What are the KKT conditions, and what does complementary slackness buy you?</summary>
+  <div class="a">
+    <div class="tldr">KKT generalises "set the gradient to zero" to problems with inequality
+    constraints. The condition that does the work is complementary slackness: λ·g(x) = 0 — either the
+    constraint is active or its multiplier is zero, never both non-zero.</div>
+    <p>The four: stationarity (∇ℒ = 0), primal feasibility (you obeyed the constraints), dual
+    feasibility (λ ≥ 0), and complementary slackness. For a convex problem satisfying a constraint
+    qualification, they are necessary <em>and</em> sufficient — a KKT point is the global optimum.</p>
+    <p><strong>What complementary slackness buys: sparsity, for free.</strong> In an SVM there is one
+    multiplier per training point. Complementary slackness says every point either sits exactly on
+    the margin, in which case its α is positive, or lies comfortably inside, in which case α = 0 and
+    it contributes nothing to the decision boundary. So the model is defined by a small subset of the
+    data — the support vectors. Delete every other training point and retrain: you get the identical
+    boundary.</p>
+    <p>That is a genuinely useful property, not just theory. It is why SVM inference cost scales with
+    the number of support vectors rather than the dataset size, and it is the same structural
+    argument as coresets and active learning: most of your data is not doing anything.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>KKT is only <em>sufficient</em> for convexity. On a neural network the conditions still
+      characterise stationary points, but a KKT point tells you nothing about global optimality — and
+      that is fine, because we do not expect global optimality there anyway.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is the Laplace approximation and when would you actually reach for it?</summary>
+  <div class="a">
+    <div class="tldr">Approximate the posterior with a Gaussian centred at the mode, with covariance
+    equal to the inverse Hessian there. It is the cheapest way to get uncertainty out of a network
+    you have already finished training.</div>
+    <p>Take the log-posterior, Taylor-expand it around the MAP estimate. The linear term vanishes
+    because you are at a stationary point, so the leading behaviour is quadratic — and a quadratic
+    log-density <em>is</em> a Gaussian. The curvature matrix is the precision; invert it for the
+    covariance.</p>
+    <p><strong>When I would reach for it:</strong> a model is already in production, someone asks for
+    calibrated uncertainty or an out-of-distribution signal, and retraining five models for an
+    ensemble is not on the table. Last-layer Laplace is close to free and measurably improves
+    calibration.</p>
+    <p><strong>When I would not:</strong> when the posterior is genuinely multimodal — which for a
+    deep network it always is, given permutation symmetries alone — a single Gaussian at one mode is
+    a strong claim. Deep ensembles usually beat it on real OOD benchmarks precisely because they
+    capture several modes. And the exact Hessian is d×d, so anything at scale is diagonal, K-FAC, or
+    last-layer-only.</p>
+    <p>Worth knowing that BIC's <sup>k</sup>⁄<sub>2</sub>·log n penalty comes straight out of this
+    approximation applied to the marginal likelihood. Same mathematics, different use.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The Hessian must be positive-definite for this to give a valid Gaussian. At a real minimum
+      of a real network it frequently is not, numerically — implementations use the Gauss–Newton or
+      Fisher approximation, which is positive semi-definite by construction. Say that and you sound
+      like someone who has run it rather than read about it.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Your loss suddenly spikes to NaN at step 40,000. Walk me through the debugging.</summary>
+  <div class="a">
+    <div class="tldr">Check for a bad batch first, then numerical overflow in mixed precision, then
+    the learning rate. In that order, because that is the order of decreasing frequency.</div>
+    <ol>
+      <li><strong>Isolate.</strong> Restart from the last checkpoint with the same seed and data
+          order. Reproduces at the same step → data. Does not → nondeterminism, likely numerical.</li>
+      <li><strong>The batch.</strong> Log the batch index. Corrupted sample, an all-padding sequence,
+          a label out of vocabulary range, a division by a zero-count feature. This is the most
+          common cause by a wide margin.</li>
+      <li><strong>Precision.</strong> In fp16, attention logits or a loss term can overflow to inf,
+          and inf − inf produces NaN. Check the loss scaler is not stuck at a huge value; bf16 — a
+          16-bit format that keeps fp32's range and gives up precision instead — makes this
+          class of bug mostly disappear.</li>
+      <li><strong>Gradients.</strong> Log the global gradient norm every step. If it climbs over
+          several steps before exploding, that is an optimisation instability rather than one bad
+          example — clip, and lower the LR.</li>
+      <li><strong>Adam's state.</strong> If v̂ has collapsed toward zero for some parameters, the
+          division blows up. Raising ε from 1e-8 to 1e-6 is a known mitigation for large models.</li>
+      <li><strong>Structural.</strong> A log or a sqrt of something that reached zero, or a
+          <code>log(softmax(x))</code> written by hand instead of <code>log_softmax</code>.</li>
+    </ol>
+    <p>The prevention that costs nothing: gradient-norm logging on every run, gradient clipping on by
+    default, and frequent enough checkpoints that a restart costs minutes rather than a day.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The optimiser chain GD → SGD → momentum → RMSProp → Adam → AdamW, and the specific problem
+        each link fixes.</li>
+    <li>Why warmup exists, in terms of Adam's second moment.</li>
+    <li>Why decoupled weight decay is not cosmetic.</li>
+    <li>Lagrange multipliers in one sentence, plus the ridge example and the PPO example.</li>
+    <li>Complementary slackness → support vectors.</li>
+    <li>Laplace approximation: mode plus curvature, and one situation where you would use it.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#13" target="_top"><span class="k">Back</span>← 13 · Information theory</a>
+  <a href="../index.html#20" target="_top"><span class="k">Next</span>20 · The learning problem →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

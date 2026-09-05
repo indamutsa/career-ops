@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM serving platform — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part G · Walkthrough · Module 73</p>
+<h1>LLM serving platform
+  <span class="lede">The design question where arithmetic wins. Everyone can say "KV cache" and
+  "batching"; very few can say how much memory a request costs, why prefill and decode are different
+  machines pretending to be one, and where the money actually goes. Do the numbers out loud.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to use this module</span>
+  <p>This is where module 45 cashes out. Learn the three numbers — <strong>KV bytes per token</strong>,
+  <strong>the prefill/decode split</strong>, <strong>cost per million tokens</strong> — well enough to
+  derive them at the whiteboard. The rest of the answer follows from them.</p>
+</div>
+
+<h2 data-n="73.1">The prompt, and the first four minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">The prompt</span>
+  <p><em>"We're serving an open-weights LLM for several internal products. Design the platform."</em></p>
+</div>
+
+<div class="tw">
+<table>
+<tr><th>What to ask</th><th>Why it changes the design</th></tr>
+<tr><td>Interactive chat, or batch/offline jobs?</td><td>Completely different objectives — one optimises
+    latency, the other throughput per dollar, and they should not share a fleet.</td></tr>
+<tr><td>Streaming or full response?</td><td>Streaming makes time-to-first-token the metric users feel,
+    which changes what you optimise.</td></tr>
+<tr><td>Typical prompt and output lengths?</td><td>Decides the prefill/decode ratio, and therefore whether
+    you are compute-bound or memory-bandwidth-bound.</td></tr>
+<tr><td>Model size, and can we quantise?</td><td>Decides GPU count per replica and whether tensor
+    parallelism is needed at all.</td></tr>
+<tr><td>How many tenants, and is isolation required?</td><td>Noisy-neighbour and fairness handling, plus
+    whether one shared pool is even allowed.</td></tr>
+<tr><td>Traffic shape — steady, spiky, business hours?</td><td>GPUs cannot autoscale in seconds; a spiky
+    load with cold starts is the hardest constraint in the whole design.</td></tr>
+<tr><td>Do products need different fine-tunes?</td><td>Multi-LoRA on a shared base versus separate
+    fleets — an order-of-magnitude cost difference.</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The assumptions I would design against</span>
+  <ul>
+    <li><strong>Mixed workload:</strong> an interactive chat product and several batch enrichment jobs.</li>
+    <li><strong>Model:</strong> a 13 B-class open-weights model, bf16 by default, quantised variants
+        allowed for the batch path.</li>
+    <li><strong>Targets:</strong> p95 time-to-first-token &lt; 500 ms — the 95th percentile, so 95 of
+        every 100 requests start streaming within half a second — sustained inter-token latency
+        &lt; 50 ms (≈ 20 tokens/s, faster than reading).</li>
+    <li><strong>Shape:</strong> ~2,000-token prompts, ~300-token outputs — prefill-heavy, which matters.</li>
+    <li><strong>Five internal tenants</strong>, several with their own LoRA adapters.</li>
+  </ul>
+</div>
+
+<h2 data-n="73.2">Architecture</h2>
+
+<pre><code>  clients ──► GATEWAY ─────────────────────────────────────────────┐
+                │  authn/authz · per-tenant quota · token budget   │
+                │  request classification (interactive | batch)    │
+                ▼                                                  │
+              ROUTER                                               │
+                │  model + adapter selection · prefix-cache aware  │
+                │  affinity · queue with priority + admission ctl  │
+       ┌────────┴───────────────┬──────────────────────┐           │
+       ▼                        ▼                      ▼           │
+  INTERACTIVE POOL        BATCH POOL             SMALL-MODEL POOL   │
+  bf16, low batch cap     quantised, high        classification,    │
+  continuous batching     batch cap, spot GPUs   embeddings, guard  │
+       │                        │                      │           │
+       └────────┬───────────────┴──────────────────────┘           │
+                ▼                                                  │
+        INFERENCE ENGINE per replica                               │
+        paged KV cache · continuous batching · chunked prefill     │
+        multi-LoRA · speculative decoding (optional)               │
+                │                                                  │
+                ▼                                                  │
+        OBSERVABILITY  ◄───────────────────────────────────────────┘
+        TTFT/ITL/e2e · queue depth · KV utilisation · tokens/s
+        cost per 1M tokens per tenant · cache hit rate · error taxonomy</code></pre>
+
+<p><strong>Why three pools.</strong> A batch job with a 4,000-token prompt sitting in the same batch as an
+interactive turn destroys that turn's latency. Separating them by SLO — not by model — is the single
+highest-leverage decision in the design, and it also lets the batch pool run quantised on preemptible
+capacity — cheap GPUs the provider may reclaim at short notice, which is fine for a job that can
+simply restart — while the interactive pool stays bf16 on reserved capacity.</p>
+
+<h2 data-n="73.3">The arithmetic, out loud</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Weights <span class="tag">the easy number</span></div>
+    <p>bf16 is 2 bytes per parameter, so a 13 B model is <strong>≈ 26 GB</strong> of weights. INT8 halves
+       it to ~13 GB, INT4 quarters it to ~6.5 GB. On an 80 GB GPU that leaves roughly 50 GB for KV cache
+       and activations in bf16 — and that remainder is what decides your concurrency.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">KV cache per token <span class="tag">the number people fumble</span></div>
+    <p><span class="mono">2 (K and V) × layers × kv_heads × head_dim × bytes</span>. For a 40-layer model
+       with 40 heads of dimension 128 in bf16 that is
+       <span class="mono">2 × 40 × 40 × 128 × 2 ≈ 820 KB per token</span> — so a 2,000-token conversation
+       holds <strong>~1.6 GB of KV</strong>, and 50 GB of headroom serves only about
+       <strong>30 concurrent conversations</strong>.</p>
+    <p class="wh">This is the arithmetic that makes grouped-query attention worth explaining: cutting
+       40 kv_heads to 8 divides KV memory by five, taking the same conversation to ~330 MB and the
+       concurrency to ~150. That is the entire reason modern models ship with GQA.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Prefill vs decode <span class="tag">the mental model</span></div>
+    <p><strong>Prefill</strong> processes the whole prompt in parallel — one big matrix multiply,
+       compute-bound, saturates the GPU, and it sets time-to-first-token.
+       <strong>Decode</strong> produces one token at a time — every step reads all the weights to compute
+       a single token, so it is <em>memory-bandwidth-bound</em>: the limit is how fast weights can be read
+       out of memory, not how fast the chip can multiply, and the GPU's arithmetic units sit mostly
+       idle.</p>
+    <p class="wh">Almost every serving optimisation is one of two things: making decode less
+       bandwidth-starved (batching more sequences so one weight read serves many tokens; speculative
+       decoding so one read produces several tokens), or stopping long prefills from blocking decode
+       (chunked prefill).</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Cost per million tokens <span class="tag">say a number</span></div>
+    <p>Take an 80 GB GPU at ≈ $2/hour. If the replica sustains 2,000 output tokens/second under load,
+       that is 7.2 M tokens/hour, so <strong>≈ $0.28 per million output tokens</strong>. Halve the
+       throughput with poor batching and the cost doubles; a fleet at 20 % utilisation costs five times
+       what the arithmetic suggests.</p>
+    <p class="warn-inline">Utilisation, not the sticker price, is the cost story. Committing to real
+       numbers with stated assumptions is far stronger than "it depends" — and you invite them to correct
+       the assumption rather than the reasoning.</p>
+  </div>
+
+</div>
+
+<div class="viz" data-viz="kvcache"></div>
+
+<h2 data-n="73.4">The engine-level techniques, and what each buys</h2>
+
+<div class="tw">
+<table>
+<tr><th>Technique</th><th>What it does</th><th>What it costs</th></tr>
+<tr><td><strong>Paged KV cache</strong></td><td>Stores KV in fixed blocks instead of one contiguous
+    reservation per sequence, so memory is not reserved for a max length that is rarely reached — the
+    single biggest concurrency win</td><td>Indirection in the attention kernel</td></tr>
+<tr><td><strong>Continuous batching</strong></td><td>New requests join the running batch at the next
+    decode step and finished ones leave immediately, instead of the whole batch waiting for its slowest
+    member</td><td>Scheduler complexity; latency variance under load</td></tr>
+<tr><td><strong>Chunked prefill</strong></td><td>Splits a long prompt into pieces interleaved with decode
+    steps, so one 8,000-token prompt cannot stall everyone else's streaming</td><td>Slightly worse TTFT
+    for that request</td></tr>
+<tr><td><strong>Prefix caching</strong></td><td>Reuses KV for a shared prefix — system prompt, few-shot
+    block, a document read by many users — turning most of prefill into a lookup</td><td>Cache memory;
+    routing must be prefix-aware to hit it</td></tr>
+<tr><td><strong>Multi-LoRA</strong></td><td>One base model in memory, many small adapters swapped per
+    request, so five tenants share one fleet</td><td>Small per-request overhead; adapters must be same
+    base</td></tr>
+<tr><td><strong>Quantisation</strong></td><td>INT8/INT4 weights (and optionally KV) cut memory and raise
+    throughput</td><td>Quality change that must be measured, not assumed</td></tr>
+<tr><td><strong>Speculative decoding</strong></td><td>A small draft model proposes several tokens, the big
+    model verifies them in one pass — output is identical, latency drops when acceptance is
+    high</td><td>Draft model memory; a loss when acceptance is low</td></tr>
+<tr><td><strong>Tensor / pipeline parallel</strong></td><td>Splits a model too big for one GPU</td><td>
+    Inter-GPU communication on every token — use only when you must</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The trap: "just autoscale it"</span>
+  <p>GPU replicas do not scale like stateless web servers. Pulling a multi-gigabyte image, loading 26 GB
+  of weights and warming the engine is <strong>minutes</strong>, and the capacity may not even exist when
+  you ask for it. So the real answer is a layered one: <strong>admission control and queueing</strong>
+  absorb the first burst, <strong>a warm pool</strong> holds pre-loaded spare replicas, <strong>predictive
+  scaling</strong> uses known traffic shape rather than reactive CPU metrics, and
+  <strong>graceful degradation</strong> — shed batch traffic first, then shorten max output length, then
+  route to a smaller model — keeps the interactive product alive. Say what you shed, in what order:
+  that is the part that shows you have operated one of these.</p>
+</div>
+
+<h2 data-n="73.5">Multi-tenancy and safety</h2>
+
+<ul>
+  <li><strong>Quotas in tokens, not requests.</strong> One request can be a thousand times another. Meter
+      and bill in prompt and output tokens per tenant.</li>
+  <li><strong>Fair queueing.</strong> Weighted round-robin across tenants so a batch job cannot starve
+      interactive traffic, plus per-tenant concurrency caps.</li>
+  <li><strong>Hard limits.</strong> Max prompt length, max output length, stop sequences and a per-request
+      timeout — an unbounded generation is a resource leak with a friendly interface.</li>
+  <li><strong>Isolation.</strong> Prefix caching across tenants is a real leak vector if cache keys are
+      not tenant-scoped; scope them and say so.</li>
+  <li><strong>Guardrails.</strong> Input and output classifiers run on the small-model pool so they do not
+      consume the expensive fleet, and their latency is part of the budget.</li>
+</ul>
+
+<h2 data-n="73.6">Observability and rollout</h2>
+
+<div class="tw">
+<table>
+<tr><th>Signal</th><th>Why it is the one to watch</th></tr>
+<tr><td>TTFT p50/p95/p99</td><td>What the user perceives as "did it start"; degrades first under
+    prefill pressure</td></tr>
+<tr><td>Inter-token latency</td><td>Perceived smoothness; degrades as batch size grows</td></tr>
+<tr><td>Queue depth and wait time</td><td>The leading indicator — it moves before latency does</td></tr>
+<tr><td>KV cache utilisation and preemption rate</td><td>Preemptions mean you are over-admitting; the
+    fix is admission control, not more GPUs</td></tr>
+<tr><td>Tokens/second per replica</td><td>The throughput denominator in every cost number</td></tr>
+<tr><td>Prefix-cache hit rate</td><td>Directly proportional to prefill cost saved</td></tr>
+<tr><td>Cost per 1M tokens per tenant</td><td>The number the business asks for; without it you cannot
+    justify the fleet</td></tr>
+</table>
+</div>
+
+<p><strong>Rolling out a model or engine change.</strong> The output is text, so a classic accuracy
+canary does not apply — you need three gates. First, <strong>a fixed prompt suite</strong> replayed
+against old and new, comparing outputs for exact-match on deterministic settings and a judge score
+otherwise. Second, <strong>a shadow pass</strong> on live traffic measuring latency and throughput only.
+Third, <strong>a real canary</strong> at 1/5/25/100 % watching TTFT, error rate and any product-level
+feedback signal. A quantisation change in particular must be gated on the prompt suite, because the
+degradation is quality-shaped, not latency-shaped, and will not show up in any system metric.</p>
+
+<h2 data-n="73.7">Delivering this in 45 minutes</h2>
+
+<div class="tw">
+<table>
+<tr><th>Minutes</th><th>What you are doing</th></tr>
+<tr><td>0–4</td><td>Requirements — interactive vs batch, lengths, SLOs</td></tr>
+<tr><td>4–9</td><td>Architecture: gateway, router, separated pools</td></tr>
+<tr><td>9–18</td><td>The arithmetic: weights, KV per token, concurrency, GQA</td></tr>
+<tr><td>18–26</td><td>Prefill vs decode, and the engine techniques that follow from it</td></tr>
+<tr><td>26–33</td><td>Autoscaling reality, admission control, degradation ladder</td></tr>
+<tr><td>33–39</td><td>Multi-tenancy, quotas in tokens, guardrails</td></tr>
+<tr><td>39–45</td><td>Observability, cost per million, the three-gate rollout</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">If you only get five minutes</span>
+  <p>"A gateway for auth and token quotas, a router that classifies interactive versus batch, and
+  separate pools per SLO — because a long batch prompt sharing a batch with a chat turn ruins that
+  turn. Inside a replica the engine does paged KV, continuous batching and chunked prefill. The design
+  is driven by arithmetic: 13 B in bf16 is 26 GB of weights, KV is about 800 KB per token, so 50 GB of
+  headroom is only around thirty concurrent 2,000-token conversations — which is exactly why GQA
+  matters, cutting that by five. Prefill is compute-bound and sets time-to-first-token; decode is
+  memory-bandwidth-bound, which is why batching and speculative decoding help there and nowhere else.
+  GPUs cannot scale in seconds, so the burst answer is admission control, a warm pool and a stated
+  degradation ladder — shed batch, then cap output length, then route to a smaller model. And I would
+  report cost per million tokens per tenant, because utilisation is the whole cost story."</p>
+</div>
+
+<h2 data-n="73.8">Callbacks</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>Modules it draws on</th></tr>
+<tr><td>Attention cost, O(n²), context length</td><td>40 attention · 43 pretraining &amp; scaling</td></tr>
+<tr><td>KV cache, GQA/MQA, quantisation, speculative decoding</td><td>45 inference</td></tr>
+<tr><td>LoRA and adapters</td><td>44 post-training · 45 inference</td></tr>
+<tr><td>Decoder-only architecture, parameter counting</td><td>41 the block · 42 families</td></tr>
+<tr><td>Guardrails and output classifiers</td><td>46 LLM systems</td></tr>
+<tr><td>Backpressure, queueing, admission control</td><td>50 lifecycle &amp; data · 70 fraud</td></tr>
+<tr><td>Canary, shadow, rollback</td><td>53 deployment</td></tr>
+<tr><td>Latency SLOs, alert design</td><td>54 monitoring</td></tr>
+<tr><td>Tenant isolation, cost accounting</td><td>55 governance</td></tr>
+<tr><td>Judge-scored prompt suites</td><td>46 LLM systems · 71 RAG</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint</h4>
+  <ul>
+    <li>Derive KV bytes per token from layers, heads and head dimension, without notes.</li>
+    <li>Say why prefill and decode are bound by different resources, and name one optimisation for
+        each.</li>
+    <li>Explain what paged KV and continuous batching each fix, separately.</li>
+    <li>Give the degradation ladder for a traffic burst, in order.</li>
+    <li>Quote a cost per million tokens and state the assumptions behind it.</li>
+    <li>Say how you would gate a quantisation change, and why system metrics would miss the risk.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#72" target="_top"><span class="k">Back</span>← 72 · Recommendation &amp; ranking</a>
+  <a href="../index.html#74" target="_top"><span class="k">Next</span>74 · Post-training pipeline →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
