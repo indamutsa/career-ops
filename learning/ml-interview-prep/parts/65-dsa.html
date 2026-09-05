@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding round (DSA) — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 65</p>
+<h1>The coding round
+  <span class="lede">The one module with code in it, because a coding round is a coding round. These are
+  not random LeetCode problems — they are the patterns that keep appearing in ML and data-platform
+  interviews, and several of them are literally the feature-engineering code from the rest of this
+  course.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>Do not read the solutions first.</strong> Open a problem, close the accordion, and write it
+  on paper or in an editor with no autocomplete. Give yourself 20 minutes for the warm-ups and 30 for the
+  rest. Then open the solution and compare — not just whether it works, but whether you stated the
+  complexity and the failure mode before being asked.</p>
+  <p>Say everything out loud as you go. In a real round, silent correct code scores below narrated
+  nearly-correct code, because the interviewer is grading your reasoning and cannot see it otherwise.</p>
+</div>
+
+<h2 data-n="65.1">The patterns worth having in your fingers</h2>
+
+<div class="tw">
+<table>
+<tr><th>Pattern</th><th>The tell in the question</th><th>Where it shows up in ML work</th></tr>
+<tr><td>Hash map counting</td><td>"how many times", "most frequent"</td><td>Vocabulary building, categorical
+    cardinality, label counts</td></tr>
+<tr><td>Heap / top-k</td><td>"top k", "k largest", streaming</td><td>Nearest neighbours, retrieval,
+    highest-risk alerts queue</td></tr>
+<tr><td>Sliding window</td><td>"within the last N", "contiguous"</td><td>Velocity features — the fraud
+    feature</td></tr>
+<tr><td>Monotonic deque/stack</td><td>Window max/min in O(n)</td><td>Rolling extremes without
+    recomputing</td></tr>
+<tr><td>Sorting + sweep</td><td>Intervals, overlaps, sessions</td><td>Sessionisation, point-in-time
+    joins</td></tr>
+<tr><td>Union-find</td><td>"connected", "same group"</td><td>Fraud rings, entity resolution,
+    deduplication</td></tr>
+<tr><td>Binary search on answer</td><td>"smallest x such that"</td><td>Threshold selection under a cost
+    constraint</td></tr>
+<tr><td>Reservoir / streaming sampling</td><td>"one pass", "unknown length"</td><td>Randomised holdouts,
+    log sampling</td></tr>
+<tr><td>Numerical stability</td><td>Implement softmax / log-loss</td><td>Every loss function you will
+    ever write</td></tr>
+</table>
+</div>
+
+<h2 data-n="65.2">Warm-ups</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Top k most frequent elements</summary>
+  <div class="a">
+    <div class="tldr">Count with a hash map, then either a size-k heap for O(n log k) or bucket-by-count
+    for O(n). Say both; implement the heap unless they push for linear.</div>
+    <p><strong>Clarify first:</strong> can k exceed the number of distinct values? Are ties broken
+    arbitrarily? Does the input fit in memory — because if it is a stream, the honest answer is that exact
+    top-k needs O(distinct) memory and you would reach for Count-Min Sketch or Space-Saving instead.</p>
+<pre><code>from collections import Counter
+import heapq
+
+def top_k_frequent(nums, k):
+    counts = Counter(nums)
+    return heapq.nlargest(k, counts, key=counts.get)   # O(n log k)</code></pre>
+    <p>The linear version, when they ask for better than n log k — counts are bounded by n, so they can
+    index buckets directly:</p>
+<pre><code>def top_k_frequent_linear(nums, k):
+    counts = Counter(nums)
+    buckets = [[] for _ in range(len(nums) + 1)]
+    for value, c in counts.items():
+        buckets[c].append(value)
+
+    out = []
+    for c in range(len(nums), 0, -1):
+        for value in buckets[c]:
+            out.append(value)
+            if len(out) == k:
+                return out
+    return out</code></pre>
+    <p><strong>Complexity:</strong> heap version O(n log k) time, O(distinct) space. Bucket version O(n)
+    time, O(n) space — the trade you are making is memory for the log factor.</p>
+    <p class="warn-inline">The follow-up that catches people: "now it is a stream of a billion events."
+    Exact top-k is no longer possible in bounded memory. Name Count-Min Sketch, accept the one-sided
+    error, and say what the error bound depends on.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Sessionise a user's events by an inactivity gap</summary>
+  <div class="a">
+    <div class="tldr">Sort by timestamp, sweep once, and start a new session whenever the gap since the
+    previous event exceeds the threshold. It is merge-intervals wearing different clothes.</div>
+    <p><strong>Clarify:</strong> is the input already sorted (it is, if it came from a keyed Kafka
+    partition)? Are timestamps in event time or processing time — because out-of-order events break the
+    single sweep and that is exactly the watermark problem from module 50.</p>
+<pre><code>def sessionize(timestamps, gap):
+    """timestamps: one user's event times. Returns [(start, end), ...]."""
+    if not timestamps:
+        return []
+
+    ts = sorted(timestamps)
+    sessions = []
+    start = prev = ts[0]
+
+    for t in ts[1:]:
+        if t - prev &gt; gap:
+            sessions.append((start, prev))
+            start = t
+        prev = t
+
+    sessions.append((start, prev))
+    return sessions</code></pre>
+    <p><strong>Complexity:</strong> O(n log n) for the sort, O(n) if the input arrives ordered, O(1)
+    additional space beyond the output.</p>
+    <p class="warn-inline">Trap: forgetting to append the final session after the loop. Write one test
+    with a single event and one with all events inside one session before you say you are done.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>LRU cache with O(1) get and put</summary>
+  <div class="a">
+    <div class="tldr">Hash map plus a doubly linked list. In Python, <code>OrderedDict</code> is exactly
+    that data structure, so use it — and be ready to write the linked list by hand if they ask you
+    to.</div>
+<pre><code>from collections import OrderedDict
+
+class LRUCache:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.data = OrderedDict()
+
+    def get(self, key):
+        if key not in self.data:
+            return -1
+        self.data.move_to_end(key)          # mark as most recent
+        return self.data[key]
+
+    def put(self, key, value):
+        if key in self.data:
+            self.data.move_to_end(key)
+        self.data[key] = value
+        if len(self.data) &gt; self.capacity:
+            self.data.popitem(last=False)   # evict least recent</code></pre>
+    <p><strong>Why the linked list.</strong> A plain dict gives O(1) lookup but no notion of order; a list
+    gives order but O(n) removal from the middle. The doubly linked list gives O(1) removal given a node,
+    and the hash map is what hands you the node.</p>
+    <p class="warn-inline">The ML follow-up: "you are caching feature lookups — is LRU the right policy?"
+    Often not. Feature access in fraud is bursty per entity and highly skewed, so LFU or a TTL policy may
+    beat LRU, and correctness matters more than either: a stale cached feature is silent skew. Cache with
+    a TTL shorter than your freshness requirement.</p>
+  </div>
+</details>
+
+<h2 data-n="65.3">The ones a fraud or streaming shop will actually ask</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Sliding window maximum in O(n)</summary>
+  <div class="a">
+    <div class="tldr">A monotonic deque of indices whose values are decreasing. The front is always the
+    window's maximum; each index is pushed and popped at most once, so it is linear.</div>
+<pre><code>from collections import deque
+
+def sliding_max(nums, k):
+    dq = deque()      # indices; nums[dq] is decreasing
+    out = []
+
+    for i, x in enumerate(nums):
+        while dq and nums[dq[-1]] &lt;= x:
+            dq.pop()                 # x dominates these: they can never be a max again
+        dq.append(i)
+
+        if dq[0] &lt;= i - k:
+            dq.popleft()             # front has fallen out of the window
+
+        if i &gt;= k - 1:
+            out.append(nums[dq[0]])
+
+    return out</code></pre>
+    <p><strong>The insight to say out loud:</strong> if a later element is larger than an earlier one, the
+    earlier one is useless forever — it will leave the window first <em>and</em> it is smaller. That single
+    observation is the whole algorithm.</p>
+    <p><strong>Complexity:</strong> O(n) time (amortised — each index enters and leaves the deque once),
+    O(k) space.</p>
+    <p class="warn-inline">Follow-up: "make it a rolling <em>mean</em> instead." Now a running sum works
+    and is simpler — but mention floating-point drift over a long stream, and that recomputing periodically
+    or using Welford's method avoids it.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Velocity counter — events per key in the last N seconds</summary>
+  <div class="a">
+    <div class="tldr">A deque of timestamps per key, evicting from the front on every access. This is
+    literally the <code>txn_count_1h</code> feature from the fraud walkthrough, so treat it as a design
+    question as much as a coding one.</div>
+<pre><code>from collections import defaultdict, deque
+
+class VelocityCounter:
+    """Count events per key within a trailing time window."""
+
+    def __init__(self, window_seconds):
+        self.window = window_seconds
+        self.events = defaultdict(deque)
+
+    def record(self, key, ts):
+        q = self.events[key]
+        q.append(ts)
+        self._evict(q, ts)
+
+    def count(self, key, ts):
+        q = self.events[key]
+        self._evict(q, ts)
+        return len(q)
+
+    def _evict(self, q, now):
+        cutoff = now - self.window
+        while q and q[0] &lt;= cutoff:
+            q.popleft()</code></pre>
+    <p><strong>Complexity:</strong> amortised O(1) per operation; space O(events currently in window),
+    which is the number you must bound.</p>
+    <p><strong>The four follow-ups, and they always come:</strong></p>
+    <ul>
+      <li><strong>Memory across keys.</strong> The dict grows forever — a key seen once is never removed.
+          Add TTL eviction of idle keys, or back it with Redis and let key expiry do the work.</li>
+      <li><strong>Out-of-order events.</strong> <code>record</code> assumes monotonic timestamps. Late
+          events need either insertion into a sorted structure or an accepted lateness bound — the
+          watermark trade-off.</li>
+      <li><strong>Exact counts are expensive at scale.</strong> Bucketed counters (per-minute buckets
+          summed over the window) trade a little precision for constant memory per key, and that is what
+          most production systems actually run.</li>
+      <li><strong>Point-in-time correctness.</strong> When you build training data for this feature, the
+          count must be as of the transaction's own timestamp — not the count today. The same class that
+          serves it should be the one that replays history.</li>
+    </ul>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Find fraud rings — accounts connected by shared devices</summary>
+  <div class="a">
+    <div class="tldr">Union-find over a bipartite account–device graph. Union each account with each device
+    it used; accounts that end up in the same component share a device chain.</div>
+<pre><code>class DSU:
+    def __init__(self):
+        self.parent = {}
+        self.size = {}
+
+    def find(self, x):
+        self.parent.setdefault(x, x)
+        self.size.setdefault(x, 1)
+
+        root = x
+        while self.parent[root] != root:
+            root = self.parent[root]
+
+        while self.parent[x] != root:            # path compression
+            self.parent[x], x = root, self.parent[x]
+        return root
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra == rb:
+            return False
+        if self.size[ra] &lt; self.size[rb]:        # union by size
+            ra, rb = rb, ra
+        self.parent[rb] = ra
+        self.size[ra] += self.size[rb]
+        return True
+
+
+def rings(logins, min_size=3):
+    """logins: [(account_id, device_id), ...] -&gt; components of accounts."""
+    dsu = DSU()
+    for account, device in logins:
+        dsu.union(('a', account), ('d', device))
+
+    groups = {}
+    for account, _ in logins:
+        groups.setdefault(dsu.find(('a', account)), set()).add(account)
+
+    return [g for g in groups.values() if len(g) &gt;= min_size]</code></pre>
+    <p><strong>Complexity:</strong> effectively O(n·α(n)) — near linear — with path compression and union
+    by size. Say "inverse Ackermann, effectively constant" and move on.</p>
+    <p><strong>Why namespaced tuples.</strong> Account ids and device ids can collide as raw values;
+    tagging them keeps the two node types distinct in one structure. Small detail, and interviewers
+    notice it.</p>
+    <p class="warn-inline">The judgment follow-up: "so is a large component fraud?" No. Shared devices
+    also mean a family, a public terminal, a corporate NAT, or a device-id reset. A big component is a
+    <em>signal</em> — good as a feature (component size, growth rate) and as a review trigger, dangerous as
+    a rule. Saying this unprompted is the difference between a coding answer and an ML answer.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Reservoir sampling — a uniform sample from a stream</summary>
+  <div class="a">
+    <div class="tldr">Keep the first k. For item i (0-indexed) beyond that, replace a random slot with
+    probability k/(i+1). Every item seen ends up in the sample with equal probability, in one pass, with
+    O(k) memory and no knowledge of the stream length.</div>
+<pre><code>import random
+
+def reservoir(stream, k):
+    sample = []
+    for i, item in enumerate(stream):
+        if i &lt; k:
+            sample.append(item)
+        else:
+            j = random.randint(0, i)     # inclusive
+            if j &lt; k:
+                sample[j] = item
+    return sample</code></pre>
+    <p><strong>The proof sketch they may ask for.</strong> By induction: after n items each is held with
+    probability k/n. Item n+1 is taken with probability k/(n+1); an existing item survives if either the
+    new item is rejected, or it is accepted but a different slot is overwritten — which multiplies out to
+    exactly k/(n+1). Being able to sketch this in three sentences is a strong signal.</p>
+    <p><strong>Where this is not a puzzle.</strong> The randomised holdout that fixes the fraud feedback
+    loop is a sampling problem of exactly this shape: choose a small unbiased slice of traffic to approve
+    regardless of score, in one pass, without knowing the day's volume in advance.</p>
+    <p class="warn-inline">Follow-up: "make it weighted." Uniform reservoir sampling does not extend
+    naively. The standard answer is the A-Res algorithm — draw a key u<sup>1/w</sup> per item and keep the
+    k largest in a heap.</p>
+  </div>
+</details>
+
+<h2 data-n="65.4">Implement the ML primitive</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Numerically stable softmax and cross-entropy</summary>
+  <div class="a">
+    <div class="tldr">Subtract the row max before exponentiating — it leaves the softmax unchanged
+    algebraically and prevents overflow. And never compute log(softmax) by taking a log of a
+    probability: fold it into log-sum-exp.</div>
+<pre><code>import numpy as np
+
+def softmax(z):
+    z = z - z.max(axis=-1, keepdims=True)      # shift-invariant, kills overflow
+    e = np.exp(z)
+    return e / e.sum(axis=-1, keepdims=True)
+
+
+def cross_entropy(logits, labels):
+    """logits: (n, c) raw scores. labels: (n,) integer class indices."""
+    z = logits - logits.max(axis=-1, keepdims=True)
+    logsumexp = np.log(np.exp(z).sum(axis=-1))
+    correct = z[np.arange(len(labels)), labels]
+    return float(np.mean(logsumexp - correct))</code></pre>
+    <p><strong>Why the shift is free.</strong> softmax(z + c) = softmax(z) for any constant c, because the
+    constant factors out of numerator and denominator. Choosing c = −max makes the largest exponent
+    exactly 0, so nothing overflows and the largest term is 1.</p>
+    <p><strong>Why not log(softmax(z)).</strong> If a probability underflows to 0, its log is −∞ and the
+    loss is destroyed. Computing logsumexp(z) − z<sub>correct</sub> never forms the small probability at
+    all. This is why every framework has a <code>cross_entropy_with_logits</code> and why passing it
+    softmax output is a classic bug.</p>
+    <p class="warn-inline">Follow-up: "now write the gradient." For cross-entropy over softmax logits it
+    is beautifully simple — <code>softmax(z) − onehot(y)</code>, averaged over the batch. If you can state
+    that instantly you have shown you understand why this pairing is used at all.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>One iteration of k-means</summary>
+  <div class="a">
+    <div class="tldr">Assign every point to its nearest centroid, then move each centroid to the mean of
+    its assigned points. Handle the empty-cluster case, because that is what they are checking.</div>
+<pre><code>import numpy as np
+
+def kmeans_step(X, centroids):
+    """X: (n, d). centroids: (k, d). Returns (assignments, new_centroids)."""
+    # squared distances, (n, k) via broadcasting
+    d2 = ((X[:, None, :] - centroids[None, :, :]) ** 2).sum(-1)
+    assign = d2.argmin(axis=1)
+
+    new = np.stack([
+        X[assign == j].mean(axis=0) if np.any(assign == j) else centroids[j]
+        for j in range(len(centroids))
+    ])
+    return assign, new</code></pre>
+    <p><strong>Complexity:</strong> O(n·k·d) per iteration, and the broadcast above allocates an
+    (n, k, d) array — fine on a whiteboard, wasteful at scale. Mention that
+    <code>||x−c||² = ||x||² − 2x·c + ||c||²</code> turns it into one matrix multiply, which is what real
+    implementations do.</p>
+    <p><strong>The three details that earn the point:</strong> squared distance (no need for the square
+    root — it does not change the argmin); the empty-cluster branch (otherwise you get NaN and silently
+    lose a cluster); and that this converges to a local optimum, which is why k-means++ initialisation and
+    multiple restarts exist.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Pick the decision threshold that minimises expected cost</summary>
+  <div class="a">
+    <div class="tldr">Sort by score descending, sweep once accumulating true and false positives, and
+    evaluate the cost at every possible cutoff. This is the threshold-selection step from the fraud
+    walkthrough, and it is a sorting-plus-prefix-sum problem.</div>
+<pre><code>import numpy as np
+
+def best_threshold(scores, labels, cost_fp, cost_fn):
+    """Flag everything scoring at or above the returned threshold."""
+    order = np.argsort(-scores)
+    y = labels[order]
+
+    tp = np.cumsum(y)                    # positives caught if we flag the top i+1
+    fp = np.cumsum(1 - y)                # legitimate customers wrongly flagged
+    fn = y.sum() - tp                    # fraud we let through
+
+    cost = fp * cost_fp + fn * cost_fn
+    do_nothing = y.sum() * cost_fn       # the baseline you must beat
+
+    i = int(cost.argmin())
+    if cost[i] &gt;= do_nothing:
+        return None, float(do_nothing)   # no threshold is worth deploying
+
+    return float(scores[order][i]), float(cost[i])</code></pre>
+    <p><strong>Complexity:</strong> O(n log n) for the sort, O(n) for the sweep. Note that computing a
+    confusion matrix independently at each of n candidate thresholds would be O(n²) — the prefix sum is
+    what makes it tractable, and saying so is the algorithmic content of the answer.</p>
+    <p><strong>The ML content, which matters more here.</strong> The threshold is a business decision, not
+    a model property: cost_fp is the value of a wrongly declined customer (including churn, not just the
+    transaction), cost_fn is the loss on missed fraud. Both are estimates, so I would show the cost curve
+    rather than a single number, and check how flat it is around the optimum — a sharp minimum means the
+    threshold is fragile and will need re-tuning as the base rate drifts.</p>
+    <p class="warn-inline">Two traps. First, the threshold must be chosen on validation data and then
+    <em>held</em>, not re-fit on the test set. Second, this optimises on the score distribution you have —
+    if the live base rate differs from the validation set, the optimal threshold moves, which is why
+    threshold re-calibration belongs in the monitoring loop and not only at training time.</p>
+  </div>
+</details>
+
+<h2 data-n="65.5">How to talk while you code</h2>
+
+<div class="box note">
+  <span class="lbl">The sequence that scores</span>
+  <ol>
+    <li><strong>Restate the problem</strong> in one sentence and confirm it. Thirty seconds, and it
+        catches half of all misunderstandings.</li>
+    <li><strong>Ask about input size, ordering, duplicates, and edge cases</strong> — empty, one element,
+        all identical. This is where the interviewer decides whether you write production code or
+        exercises.</li>
+    <li><strong>State the brute force and its complexity</strong>, then say what you will improve and
+        why. Never start typing the optimal solution silently.</li>
+    <li><strong>Name the pattern</strong> — "this is a monotonic deque", "this is union-find". It shows
+        recognition rather than rediscovery.</li>
+    <li><strong>Write it, narrating the invariant</strong>, not the syntax. "The deque holds indices whose
+        values are decreasing" is useful; "now I loop over the array" is not.</li>
+    <li><strong>Trace one small example by hand</strong> before claiming it works, and check the edge
+        cases you named in step 2.</li>
+    <li><strong>State final complexity</strong>, time and space, and one thing you would change for
+        production.</li>
+  </ol>
+</div>
+
+<h2 data-n="65.6">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th></tr>
+<tr><td>Not yet</td><td>You recognise the problems but need the solution to get the code out; complexity
+    is stated only when asked.</td></tr>
+<tr><td>Solid mid</td><td>All warm-ups and at least two of the streaming problems written correctly and
+    unaided, with complexity given unprompted and edge cases handled.</td></tr>
+<tr><td>Senior</td><td>Every problem written cleanly; you name the pattern before coding, and you answer
+    the scaling follow-up (bounded memory, out-of-order events, approximate counting) without
+    prompting.</td></tr>
+<tr><td>Strong senior</td><td>You connect each problem back to the system — the velocity counter to
+    point-in-time correctness, the ring detector to feature-versus-rule judgment, the threshold sweep to
+    the cost matrix and its fragility.</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint — you can move on when you can</h4>
+  <ul>
+    <li>Write the monotonic-deque window maximum from scratch and state why it is amortised O(n).</li>
+    <li>Write union-find with path compression and union by size without looking.</li>
+    <li>Explain reservoir sampling's correctness in three sentences.</li>
+    <li>Say why the max is subtracted in softmax, and why cross-entropy takes logits rather than
+        probabilities.</li>
+    <li>Turn a cost matrix into a threshold with one sort and one prefix sum — and say why you would show
+        the curve rather than the number.</li>
+    <li>Name the bounded-memory version of every streaming answer above.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#64" target="_top"><span class="k">Back</span>← 64 · Round 5 · MLOps</a>
+  <a href="../index.html#66" target="_top"><span class="k">Next</span>66 · Behavioural &amp; judgment →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

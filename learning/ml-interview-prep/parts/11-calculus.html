@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculus &amp; minima — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part A · Maths · Module 11</p>
+<h1>Calculus &amp; minima
+  <span class="lede">Training a model is one question asked ten million times: <em>which way do I
+  turn this knob to make the error smaller?</em> Calculus is the machinery that answers it, and a
+  “minimum” is the place where the answer becomes “nowhere”.</span>
+</h1>
+
+<h2 data-n="11.1">The problem this was invented to solve</h2>
+
+<p>Imagine you are on a hillside in thick fog. You want to get to the bottom of the valley. You
+cannot see the valley. All you can do is feel the ground under your feet and notice which way it
+tilts. So you take a step downhill, feel again, step again.</p>
+
+<p>That is gradient descent, and it is the entire training algorithm of every model in this course.
+The fog is real: a model with 7 billion parameters lives on a 7-billion-dimensional hillside that
+nobody has ever seen or ever will. All we ever have is the local tilt.</p>
+
+<p><strong>The derivative is the tilt.</strong> That is the whole of calculus for our purposes.
+Everything else is bookkeeping for when there are many knobs instead of one.</p>
+
+<h2 data-n="11.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Function <span class="tag">basic</span> <span class="sym">f(x)</span></div>
+    <p>A machine: put a number in, get a number out. In ML the machine is
+       <em>“given these parameter values, how wrong am I?”</em></p>
+    <p class="wh">Your loss function. Input = every weight in the model. Output = one number.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Slope <span class="tag">basic</span></div>
+    <p>Rise over run: how much the output changes per unit of input change. Positive = going up as
+       you move right. Negative = going down.</p>
+    <p class="an">On a road sign, “12 % gradient” is a slope of 0.12.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Derivative <span class="tag">basic</span>
+        <span class="sym">f′(x), df/dx</span></div>
+    <p>The slope <em>at a single point</em>, obtained by measuring the average slope over a gap and
+       then shrinking the gap to nothing.</p>
+    <p class="an">Your speedometer. Average speed over an hour is rise/run; your speed <em>right
+       now</em> is the derivative of distance with respect to time.</p>
+    <p class="wh">Every number in <code>.grad</code> after <code>loss.backward()</code>.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Partial derivative <span class="tag">basic</span>
+        <span class="sym">∂f/∂x</span></div>
+    <p>The slope in one direction while every other input is held frozen. “If I nudge <em>only</em>
+       this knob, what happens?”</p>
+    <p class="wh">One weight's gradient. Seven billion of them per step.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Gradient <span class="tag">basic</span> <span class="sym">∇f</span></div>
+    <p>All the partial derivatives collected into one vector. It points in the direction of
+       <strong>steepest ascent</strong>, and its length says how steep.</p>
+    <p class="an">Standing on the hill, the gradient is the compass bearing straight <em>up</em> the
+       slope, with the needle length telling you how brutal the climb is.</p>
+    <p class="wh">This is why the update is <span class="m">w ← w − lr·∇L</span>. The minus sign is
+       the entire reason: the gradient points uphill and we want down.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Stationary point <span class="tag">basic</span></div>
+    <p>Anywhere the gradient is exactly zero — flat ground. Could be a minimum, a maximum, a saddle,
+       or a plateau. Zero gradient alone does not tell you which.</p>
+    <p class="wh">Training “converging” means the gradient got small. It does not by itself mean
+       you arrived anywhere good.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Minimum <span class="tag">basic</span></div>
+    <p>A stationary point where the ground curves <em>upward</em> in every direction — step any way
+       you like and you go up. <strong>Local</strong>: the lowest point in its own neighbourhood.
+       <strong>Global</strong>: the lowest point anywhere.</p>
+    <p class="an">A puddle on a hillside is a local minimum. The lake at the bottom is the global one.
+       Water in the puddle has no local reason to move.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Saddle point <span class="tag">mid</span></div>
+    <p>Flat ground that goes <em>down</em> in some directions and <em>up</em> in others. Zero
+       gradient, but not a minimum.</p>
+    <p class="an">A horse's saddle, or a mountain pass: downhill to the two valleys, uphill to the
+       two peaks.</p>
+    <p class="wh">In high dimensions saddles vastly outnumber local minima, and they are the real
+       reason training stalls — this is the key insight below.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Second derivative <span class="tag">mid</span>
+        <span class="sym">f″(x)</span></div>
+    <p>The slope of the slope — how sharply the curve bends. Positive = bowl-shaped (minimum-like).
+       Negative = dome-shaped (maximum-like). Zero = flat or an inflection.</p>
+    <p class="an">Your speedometer is the first derivative; your <em>accelerator pedal</em> is the
+       second.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Hessian <span class="tag">senior</span> <span class="sym">H</span></div>
+    <p>The matrix of all second partial derivatives — curvature in every direction at once. Its
+       eigenvalues classify a stationary point: all positive ⇒ minimum, all negative ⇒ maximum,
+       mixed signs ⇒ saddle.</p>
+    <p class="wh">Its condition number (largest eigenvalue over smallest) is what makes a loss
+       surface a “ravine”, and is precisely what momentum and Adam exist to compensate for.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Jacobian <span class="tag">mid</span> <span class="sym">J</span></div>
+    <p>The matrix of first partial derivatives when the function takes many inputs <em>and</em>
+       returns many outputs. Row <em>i</em> is the gradient of output <em>i</em>.</p>
+    <p class="wh">Backprop never builds a Jacobian. It computes vector–Jacobian products, which is
+       why it costs about the same as a forward pass rather than N times more.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Chain rule <span class="tag">basic</span>
+        <span class="sym">(f∘g)′ = f′(g)·g′</span></div>
+    <p>To get the sensitivity through a chain of steps, multiply the sensitivities of each step.</p>
+    <p class="an">Turn a dial that moves a lever that lifts a bucket. How much does the bucket rise
+       per turn of the dial? Multiply the three ratios.</p>
+    <p class="wh"><strong>Backpropagation is the chain rule.</strong> Not “uses”, not “is like” —
+       it <em>is</em> the chain rule, applied right to left so the shared work is done once.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Convex <span class="tag">mid</span></div>
+    <p>A function shaped like a single bowl: the straight line between any two points on the graph
+       lies on or above the graph. A convex function has exactly one minimum, and every local
+       minimum is global.</p>
+    <p class="an">A salad bowl is convex. An egg carton is not.</p>
+    <p class="wh">Linear regression, logistic regression, and SVMs are convex — one answer, always
+       reachable. Neural networks are wildly non-convex. That difference explains why the classical
+       models have closed-form or guaranteed solutions and deep ones need seeds, schedules and luck.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Differentiable <span class="tag">mid</span></div>
+    <p>Smooth enough to have a slope everywhere. A sharp kink (like |x| at 0) has no single slope
+       there.</p>
+    <p class="wh">ReLU is not differentiable at exactly 0, and nobody cares: frameworks pick a
+       subgradient (usually 0) and the probability of landing precisely on the kink is nil. But it
+       is why you cannot backprop through <code>argmax</code> — and why Gumbel-softmax and
+       straight-through estimators exist.</p>
+  </div>
+
+</div>
+
+<h2 data-n="11.3">What a derivative actually is</h2>
+
+<p>Take two points on a curve and draw the straight line between them: that is the average slope
+over the gap, and it is a thing you can genuinely measure. Now slide the second point toward the
+first. The line pivots. As the gap goes to zero, the line settles on one particular tilt — the
+tangent. <strong>That settled value is the derivative.</strong></p>
+
+<div class="viz" data-viz="derivative"></div>
+
+<p>This matters practically because it is exactly how you would check a gradient implementation by
+hand. Perturb one weight by a tiny ε, see how much the loss changes, divide. If that number does not
+match what autograd reported, your backward pass is wrong. That is gradient checking, and it is
+still the fastest way to find a bug in a custom layer.</p>
+
+<h2 data-n="11.4">So what <em>is</em> a minimum?</h2>
+
+<p>Two conditions, and interviewers want both:</p>
+
+<ol>
+  <li><strong>First order:</strong> the gradient is zero. Flat ground. This alone is not enough — a
+      hilltop and a mountain pass are also flat.</li>
+  <li><strong>Second order:</strong> the curvature is positive in every direction. Whichever way you
+      step, you go up.</li>
+</ol>
+
+<p>In one dimension that is “f′ = 0 and f″ &gt; 0”. In many dimensions it is “∇f = 0 and every
+eigenvalue of the Hessian is positive”. That second version is the answer to the interview question,
+because it hands you saddle points for free: a saddle is where the gradient is zero but the Hessian
+has both positive and negative eigenvalues.</p>
+
+<div class="viz" data-viz="minima"></div>
+
+<div class="box analogy">
+  <span class="lbl">Why local minima turned out not to be the problem</span>
+  <p>For twenty years the fear was that gradient descent would get trapped in bad local minima. It
+  mostly does not, and the reason is a counting argument. At a stationary point in <em>d</em>
+  dimensions you have <em>d</em> curvature directions, each independently positive or negative. For
+  a local minimum you need <strong>all d of them positive</strong>. If it were a coin flip, that is
+  2<sup>−d</sup> — and d is in the millions. Saddle points, where the signs are mixed, are
+  overwhelmingly more common.</p>
+  <p>So training does not get stuck in a hole; it gets <em>slowed down</em> crawling across nearly
+  flat saddle regions. And that is a very different problem, with a very different fix: momentum,
+  which keeps you moving through flat ground, and stochastic noise, which knocks you off the exact
+  saddle. This is the single best thing to say if asked “why does deep learning work despite
+  non-convexity”.</p>
+</div>
+
+<h2 data-n="11.5">The chain rule is backpropagation</h2>
+
+<p>A neural network is a chain: input → layer 1 → layer 2 → … → loss. You want ∂loss/∂w for a weight
+buried in layer 1. The chain rule says: multiply the sensitivity of the loss to layer 2's output, by
+layer 2's output's sensitivity to layer 1's output, by layer 1's output's sensitivity to w.</p>
+
+<div class="eq">
+  <span class="frac"><span>∂L</span><span>∂w₁</span></span> =
+  <span class="frac"><span>∂L</span><span>∂a₃</span></span> ·
+  <span class="frac"><span>∂a₃</span><span>∂a₂</span></span> ·
+  <span class="frac"><span>∂a₂</span><span>∂a₁</span></span> ·
+  <span class="frac"><span>∂a₁</span><span>∂w₁</span></span>
+  <span class="note">Backprop computes this right to left, so the shared prefix is computed once for
+  every weight in the layer instead of once per weight.</span>
+</div>
+
+<p>Two consequences fall straight out of that product, and both are interview answers:</p>
+
+<ul>
+  <li><strong>Vanishing gradients.</strong> Each factor in the product is typically less than 1.
+      Multiply fifty of them and you get something like 0.9⁵⁰ ≈ 0.005. The early layers receive
+      almost no signal and effectively stop learning. Sigmoid makes this much worse, because its
+      derivative maxes out at 0.25 — fifty layers of that is 0.25⁵⁰, which is zero in any float
+      format.</li>
+  <li><strong>Exploding gradients.</strong> Same product with factors above 1. Now you get 1.5⁵⁰,
+      which is about 6×10⁸, a single catastrophic step, and NaNs on the next iteration. Hence
+      gradient clipping.</li>
+</ul>
+
+<p>And this is why <strong>residual connections</strong> work. Writing a block as
+<span class="m">x + f(x)</span> instead of <span class="m">f(x)</span> makes the local derivative
+<span class="m">1 + f′(x)</span>. That constant 1 gives the gradient a path straight through the
+network that is never multiplied down. It is the single most important architectural idea of the
+last decade and it is a one-line consequence of the chain rule.</p>
+
+<h2 data-n="11.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is a derivative? Explain it without notation.</summary>
+  <div class="a">
+    <div class="tldr">It is the steepness of a curve at one exact point — the reading on a
+    speedometer rather than the average speed over the whole trip.</div>
+    <p>The construction is: take two points, measure the average slope between them (rise over run),
+    then slide them together. As the gap shrinks the answer settles on one number, and that is the
+    derivative.</p>
+    <p>In machine learning the curve is “how wrong is my model”, plotted against a parameter. The
+    derivative tells me which way to turn that parameter and how urgently. Every entry in
+    <code>.grad</code> after a backward pass is one of these.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“So a zero derivative means we are at the best point?” No — a zero derivative means flat
+      ground, which is a minimum, a maximum, or a saddle. You need the second derivative to tell
+      which, and in high dimensions the flat point is a saddle far more often than a minimum.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is a gradient and why does the update subtract it?</summary>
+  <div class="a">
+    <div class="tldr">The gradient is the vector of all the partial derivatives, and it points
+    straight uphill — so to go downhill you subtract it.</div>
+    <p>Each component answers “if I nudge only this one weight, how does the loss respond?”.
+    Assemble them and you get a direction in parameter space. That direction is provably the
+    steepest <em>ascent</em>; its negative is the steepest descent. Hence
+    <span class="m">w ← w − lr·∇L</span>.</p>
+    <p>The length matters too: a large gradient means a steep surface, so the same learning rate
+    produces a bigger step. That coupling is why an unscaled loss (say, summing instead of averaging
+    over a batch) silently changes your effective learning rate.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Steepest descent is only the best direction <em>locally</em>, and only when the axes are
+      comparably scaled. On an elongated ravine the steepest direction points across the valley, not
+      along it, so you zig-zag. That is exactly the failure momentum and Adam fix.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is a saddle point and why does it matter more than local minima?</summary>
+  <div class="a">
+    <div class="tldr">A saddle is a point with zero gradient that goes down in some directions and up
+    in others — and in high dimensions it is overwhelmingly the more common kind of flat point.</div>
+    <p>The counting argument: at a stationary point in d dimensions you have d curvature directions.
+    A local minimum needs every single one positive. Treat the signs as roughly independent and the
+    probability is about 2<sup>−d</sup> — for a model with millions of parameters, effectively zero.
+    Saddles, which need only a mix, dominate.</p>
+    <p>This reframes what “stuck” means. Training is not trapped in a bad hole it can never escape;
+    it is crawling across an almost-flat region where the gradient is tiny in most directions. The
+    fixes follow directly: <strong>momentum</strong> carries velocity through flat ground,
+    <strong>stochastic noise</strong> from mini-batching knocks you off the exact saddle, and
+    <strong>adaptive methods</strong> rescale the tiny directions back up.</p>
+    <p>The empirical result that backs this up — Choromanska and LeCun's work, and Dauphin's
+    saddle-point paper — is that in large networks the local minima that exist are nearly all close
+    in value to the global one. Which minimum you land in matters much less than people assumed.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“So local minima never matter?” They matter a great deal in <em>small</em> models and in
+      classical non-convex problems like k-means or GMM fitting, where the dimension is low and
+      restarts genuinely change the answer. The saddle argument is a large-d argument; do not
+      generalise it to your 8-cluster k-means.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How does the chain rule become backpropagation?</summary>
+  <div class="a">
+    <div class="tldr">Backpropagation <em>is</em> the chain rule, evaluated right to left so the
+    shared factors are computed once instead of once per parameter.</div>
+    <p>The loss depends on a first-layer weight through a chain of intermediate activations, so its
+    derivative is a product of per-step sensitivities. You could evaluate that product left to right
+    (forward-mode) or right to left (reverse-mode).</p>
+    <p>Reverse-mode wins by an enormous margin for our shape of problem: one scalar output, millions
+    of inputs. Going backward from the single loss, every prefix of the product is shared across all
+    the parameters in a layer, so you compute it once. The total cost is roughly two forward passes
+    regardless of parameter count. Forward-mode would cost one pass <em>per parameter</em>.</p>
+    <p>The practical consequences: you must keep the forward activations in memory to compute the
+    backward pass, which is why activation memory dominates training and why gradient checkpointing
+    (recompute instead of store) trades compute for memory.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“Is backprop an optimisation algorithm?” No. Backprop computes gradients. SGD, Adam and
+      friends are the optimisers that consume them. Conflating the two is a very common and very
+      visible slip.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain vanishing and exploding gradients in terms of calculus.</summary>
+  <div class="a">
+    <div class="tldr">The gradient reaching an early layer is a long product of per-layer
+    derivatives; if the typical factor is below 1 the product decays to zero, if above 1 it blows up.</div>
+    <p>Fifty layers with an average factor of 0.9 gives 0.9⁵⁰ ≈ 0.005 — the first layers get
+    essentially no learning signal. With 1.5 you get 1.5⁵⁰ ≈ 6×10⁸ and one step destroys the model.</p>
+    <p>Sigmoid was the classic culprit: its derivative peaks at 0.25 and is far smaller once the unit
+    saturates, so deep sigmoid stacks were untrainable. The fixes each attack one factor of the
+    product:</p>
+    <ul>
+      <li><strong>ReLU/GELU</strong> — derivative of 1 on the active side instead of ≤ 0.25.</li>
+      <li><strong>Residual connections</strong> — the block derivative becomes 1 + f′, giving the
+          gradient an unattenuated path all the way back. This is the big one.</li>
+      <li><strong>Normalisation layers</strong> — keep activations in the regime where derivatives
+          are healthy, which also flattens the loss surface.</li>
+      <li><strong>Careful init</strong> (He, Xavier) — set the initial factor near 1 by construction.</li>
+      <li><strong>Gradient clipping</strong> — a hard cap on the norm; treats the symptom, but it is
+          what actually saves a transformer run at 3 a.m.</li>
+    </ul>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>People say residuals “let gradients flow”. Be ready to say <em>why</em>: the identity path
+      contributes a derivative of exactly 1, so the product has a term that is never multiplied down
+      no matter how deep the stack. Without that sentence it sounds memorised.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What does the Hessian tell you, and why don't we use second-order optimisers?</summary>
+  <div class="a">
+    <div class="tldr">The Hessian is the curvature in every direction; we skip it because it has
+    N² entries and N is in the billions.</div>
+    <p>What it buys you: its eigenvalues classify stationary points (all positive = minimum, mixed =
+    saddle), and its <em>condition number</em> — largest eigenvalue over smallest — tells you how
+    elongated the loss ravine is. A high condition number is precisely why plain gradient descent
+    zig-zags: the steepest direction points across the ravine rather than along it. Newton's method
+    uses <span class="m">H⁻¹∇L</span>, which rescales every direction by its curvature and would
+    reach the minimum of a quadratic in a single step.</p>
+    <p>Why it is impractical: for a 7B-parameter model the Hessian has 4.9×10¹⁹ entries. Storing it
+    is impossible, inverting it far more so. Even a rank-limited approximation like L-BFGS wants
+    consistent gradients across steps, which mini-batch noise destroys.</p>
+    <p>So we use cheap surrogates, and this is the useful framing: <strong>Adam is a crude diagonal
+    approximation to the inverse Hessian.</strong> Dividing by √v (the running second moment of the
+    gradient) rescales each coordinate by an estimate of its own curvature. That is why Adam handles
+    badly conditioned surfaces so much better than SGD, and why it needs almost no learning-rate
+    tuning per layer.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Do not claim Adam <em>is</em> second order — it uses squared first derivatives, not second
+      derivatives. It approximates the Fisher information diagonal, which coincides with curvature
+      under some assumptions. Say “approximates”, and say which assumption.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Deep networks are non-convex. Why is that not fatal?</summary>
+  <div class="a">
+    <div class="tldr">Because in very high dimensions the bad local minima people feared are
+    vanishingly rare, most flat points are saddles you can escape, and the many minima that do exist
+    turn out to have similar loss.</div>
+    <p>Three strands, and a good answer touches all three:</p>
+    <ul>
+      <li><strong>Geometry.</strong> A local minimum requires all d Hessian eigenvalues positive.
+          Saddles need only a mixture, so they dominate combinatorially. Getting stuck in a hole is
+          not the failure mode; crawling across a plateau is.</li>
+      <li><strong>Empirical flatness.</strong> The minima that large networks actually reach cluster
+          tightly in loss value. Which one you land in barely changes test performance — a very
+          different situation from a small non-convex problem where restarts change the answer.</li>
+      <li><strong>Over-parameterisation.</strong> With more parameters than constraints the solution
+          set is a connected manifold rather than isolated points, and there is nearly always a
+          descent direction available.</li>
+    </ul>
+    <p>Where the honesty belongs: non-convexity does still cost you. There is no uniqueness
+    guarantee, so results depend on seed, initialisation and data order; you cannot certify
+    optimality; and reproducibility becomes an engineering discipline rather than a mathematical
+    fact. That is exactly why MLflow tracking seeds and data versions is not bureaucracy — with a
+    convex model you could re-derive the fit, and here you cannot.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“Then convexity is irrelevant?” No. It is exactly why logistic regression is still the right
+      first model for a fraud baseline: one global optimum, reached deterministically, in seconds,
+      with coefficients a regulator can read. You should be able to say when you would <em>choose</em>
+      the convex model.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why can't you backpropagate through argmax, and what do people do instead?</summary>
+  <div class="a">
+    <div class="tldr">Because argmax is a step function — its derivative is zero almost everywhere
+    and undefined at the jumps — so it transmits no gradient at all.</div>
+    <p>Nudge the logits by a hair and the winning index almost always stays the same, so the output
+    does not change: derivative zero. At the precise tie where the winner flips, the output jumps
+    discontinuously: derivative undefined. Multiply zero into the chain rule and everything upstream
+    receives nothing.</p>
+    <p>The three standard escapes:</p>
+    <ul>
+      <li><strong>Use softmax instead</strong> — a smooth relaxation of the same idea. This is why
+          training uses the full probability distribution and only <em>inference</em> takes an argmax.</li>
+      <li><strong>Gumbel-softmax / concrete relaxation</strong> — sample discretely in the forward
+          pass but use a temperature-controlled soft version in the backward pass. Anneal the
+          temperature down during training.</li>
+      <li><strong>Straight-through estimator</strong> — take the hard argmax forward and simply
+          pretend the backward pass was the identity. Biased, and it works anyway; it is how
+          vector-quantised models like VQ-VAE train their codebooks.</li>
+    </ul>
+    <p>And the fourth option, which is the honest answer for LLMs: when the discrete step genuinely
+    cannot be relaxed — sampling text, calling a tool, choosing an action — stop trying to
+    differentiate and use reinforcement learning instead. That is exactly why RLHF and GRPO exist:
+    they optimise through a non-differentiable sampling step using policy gradients rather than
+    backprop through the choice.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Straight-through is not an approximation that gets better with more compute — it is a
+      genuinely biased gradient. It works because the bias points roughly the right way, not because
+      it is nearly correct.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Derivative in one sentence, with the speedometer analogy.</li>
+    <li>The two conditions for a minimum, and how they classify a saddle.</li>
+    <li>The counting argument for why saddles beat local minima in high dimensions.</li>
+    <li>Backprop = the chain rule right-to-left, and <em>why</em> right-to-left is cheaper.</li>
+    <li>Vanishing gradients as a product of factors, and the one-sentence reason residuals fix it.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#10" target="_top"><span class="k">Back</span>← 10 · Linear algebra</a>
+  <a href="../index.html#12" target="_top"><span class="k">Next</span>12 · Probability &amp; stats →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

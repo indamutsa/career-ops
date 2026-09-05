@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data &amp; the ML lifecycle — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part E · MLOps &amp; production · Module 50</p>
+<h1>Data &amp; the ML lifecycle
+  <span class="lede">Where the data comes from, how it arrives, and what happens when it arrives faster
+  than you can absorb it. Kafka, backpressure, delivery semantics, and the synchronous/asynchronous
+  decision — the vocabulary the fraud-detection walkthrough in Part G is built on.</span>
+</h1>
+
+<h2 data-n="50.1">The lifecycle</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>What it produces</th><th>The failure that bites</th></tr>
+<tr><td>Ingestion</td><td>Raw events landed durably</td><td>Silent loss under load; no replay</td></tr>
+<tr><td>Storage</td><td>Queryable history</td><td>No schema enforcement → downstream breaks quietly</td></tr>
+<tr><td>Transformation</td><td>Cleaned, joined tables</td><td>Logic duplicated between training and
+    serving</td></tr>
+<tr><td>Feature engineering</td><td>Model inputs</td><td>Leakage from the future (module 51)</td></tr>
+<tr><td>Labelling</td><td>Targets</td><td>Delay, and labels that are themselves model outputs</td></tr>
+<tr><td>Training</td><td>A model artifact</td><td>Not reproducible six months later</td></tr>
+<tr><td>Serving</td><td>Predictions</td><td>Train/serve skew</td></tr>
+<tr><td>Monitoring</td><td>Evidence it still works</td><td>Nobody notices decay until a business
+    metric moves</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The sentence worth saying out loud in a system-design round</span>
+  <p>The model is maybe 5 % of the system. The other 95 % is data plumbing, and almost every production
+  ML incident is a data incident — a schema change, a broken upstream job, a unit that switched from
+  cents to euros — not a modelling one. Interviewers are listening for whether you know that.</p>
+</div>
+
+<h2 data-n="50.2">Streaming, and why backpressure exists</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Kafka <span class="tag">mid</span></div>
+    <p>A distributed, durable, append-only log. Producers append to <em>topics</em> split into
+       <em>partitions</em>; consumers read at their own pace and track an <em>offset</em>.</p>
+    <p class="an">Not a queue that drains — a tape that keeps everything for its retention period. That
+       is why you can replay last Tuesday to rebuild a feature, and why the same stream can feed the
+       model, the warehouse and the audit trail independently.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Partition &amp; key <span class="tag">mid</span></div>
+    <p>The unit of parallelism. Ordering is guaranteed <em>within</em> a partition only, and records
+       with the same key land in the same partition.</p>
+    <p class="wh">Key by <code>card_id</code> and every transaction for a card is ordered and handled by
+       one consumer — which is exactly what stateful per-entity features need. Also the source of hot
+       partitions when one key dominates.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Consumer lag <span class="tag">mid</span></div>
+    <p>Latest offset minus committed offset: how far behind the consumer is, in records.</p>
+    <p class="wh">The single most important number to alert on in a streaming ML system. Rising lag
+       means your "real-time" features are stale, and a fraud score computed on stale features is worse
+       than no score.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Backpressure <span class="tag">senior</span></div>
+    <p>The mechanism by which a slow consumer tells the system to stop sending faster than it can
+       cope — rather than silently dropping data or running out of memory.</p>
+    <p class="an">A queue at a coffee counter. The barista cannot serve faster, so either the queue
+       grows (buffer), people are turned away (load shedding), or the door is held (blocking). What you
+       must never do is accept orders you have no intention of making — that is an unbounded buffer, and
+       it ends in an OOM kill with the data gone.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Delivery semantics <span class="tag">senior</span></div>
+    <p><strong>At-most-once</strong> — may lose. <strong>At-least-once</strong> — may duplicate.
+       <strong>Exactly-once</strong> — neither, within a bounded system.</p>
+    <p class="wh">At-least-once plus idempotent processing is the standard production answer.
+       "Exactly-once" is real inside Kafka's transactional boundary, but the moment you write to an
+       external system it becomes at-least-once plus deduplication again.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Idempotency <span class="tag">mid</span></div>
+    <p>Applying the same message twice has the same effect as applying it once.</p>
+    <p class="wh">Achieved with a deterministic key: upsert on <code>event_id</code> rather than append,
+       or keep a seen-set with a TTL. This is what makes at-least-once safe, and it is the property to
+       name when someone asks how you handle duplicates.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Event time vs processing time <span class="tag">senior</span></div>
+    <p>When the thing happened, versus when your system saw it. They diverge, and events arrive out of
+       order.</p>
+    <p class="warn-inline">Windowed aggregations must use event time with a watermark and an allowed
+       lateness, or a network hiccup silently changes your feature values. Computing "transactions in
+       the last hour" on processing time is a bug that only appears under load.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">CDC <span class="tag">mid</span></div>
+    <p>Change Data Capture: stream a database's changes by reading its replication log rather than
+       polling it.</p>
+    <p class="wh">How an operational database becomes an event stream without the application having to
+       publish events, and without the polling query hammering production.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Data contract <span class="tag">senior</span></div>
+    <p>An enforced, versioned agreement about a stream's schema, semantics, and quality guarantees —
+       validated at the boundary, with a compatibility policy for changes.</p>
+    <p class="wh">The organisational fix for the most common ML outage: an upstream team renames a field
+       or changes a unit, and your model degrades silently because nothing rejected the change.</p>
+  </div>
+
+</div>
+
+<h2 data-n="50.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is backpressure, and how do you handle it?</summary>
+  <div class="a">
+    <div class="tldr">It is the feedback signal from a slow consumer back to the producer. You handle it
+    by choosing deliberately between buffering, slowing the producer, shedding load, or scaling out —
+    and the one thing you never do is buffer without a bound.</div>
+    <p><strong>Why it exists.</strong> Producers and consumers have independent rates. Without a
+    feedback path, a faster producer fills memory until the process is killed and everything in flight
+    is lost. Backpressure converts an unbounded, invisible failure into a bounded, visible one.</p>
+    <p><strong>The four responses, and when each is right:</strong></p>
+    <ul>
+      <li><strong>Buffer (bounded).</strong> Absorbs bursts. Correct when the overload is transient —
+          but the bound is the entire point, and the buffer's depth is a latency cost you are choosing
+          to pay.</li>
+      <li><strong>Block / slow the producer.</strong> Correct when the producer can wait, e.g. a batch
+          job. Wrong on a user-facing path, because the pressure propagates all the way to the user.</li>
+      <li><strong>Shed load.</strong> Drop or sample the lowest-value work. Correct when partial service
+          beats no service — and it demands a policy about <em>what</em> to drop. For fraud scoring I
+          would shed the low-value transactions and always score the high-value ones.</li>
+      <li><strong>Scale out.</strong> Add consumers. Real fix if the load is sustained, but bounded by
+          partition count — you cannot have more useful consumers in a group than partitions, which is a
+          capacity decision made months earlier.</li>
+    </ul>
+    <p><strong>With Kafka specifically,</strong> the log <em>is</em> the buffer: the consumer pulls, so
+    a slow consumer just lags rather than overwhelming anyone, and lag is observable. That converts
+    backpressure from a crash into a metric — which is a large part of why the architecture is
+    log-based. The danger becomes silent staleness instead of loss, so lag alerting is mandatory, and
+    retention must exceed your worst realistic outage or you lose data to the retention window while
+    catching up.</p>
+    <p><strong>The design point I would close on:</strong> decide the degradation policy up front, at
+    design time, and write it down. Under overload the system <em>will</em> pick one of those four
+    behaviours; the only question is whether you chose it or the OOM killer did.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Synchronous or asynchronous scoring — how do you decide?</summary>
+  <div class="a">
+    <div class="tldr">Synchronous when the decision blocks an action that cannot proceed without it —
+    approving a payment. Asynchronous when the decision informs something that can happen later — a
+    review queue, an alert, a batch. The question is whether the caller must wait for correctness.</div>
+    <p><strong>Synchronous</strong> means the transaction waits for the score. It gets you a decision
+    before the money moves, which for card authorisation is the whole product. The costs are severe and
+    should be stated: you inherit a hard latency budget (typically tens of milliseconds end to end); the
+    model is now on the critical path of revenue, so its availability is the payment system's
+    availability; and you need a defined fallback for when the model is slow or down — a timeout with a
+    rules-based default, and the business must agree in advance whether that default is approve or
+    decline.</p>
+    <p><strong>Asynchronous</strong> means the event is written to a stream and scored downstream. You
+    get to spend more compute, use features that arrive late, batch for efficiency, and fail without
+    taking payments down. The cost is that the action already happened — you are detecting, not
+    preventing, and recovery becomes a chargeback rather than a block.</p>
+    <p><strong>The architecture I would actually propose</strong> is both, which is what real fraud
+    systems do: a fast synchronous path with cheap precomputed features and a small model inside the
+    latency budget, plus an asynchronous path that rescores with expensive graph and sequence features,
+    feeds a review queue, and updates the features the fast path will read next time. The synchronous
+    path buys prevention; the asynchronous path buys accuracy; and the async path's outputs are what
+    keep the sync path's features fresh.</p>
+    <p><strong>The trap to avoid:</strong> putting a slow feature lookup — an external API, a graph
+    traversal — inside the synchronous path. Every synchronous dependency's latency and failure rate
+    become yours. Precompute into a fast store (module 51) and let the sync path do lookups only.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do you guarantee correctness with at-least-once delivery?</summary>
+  <div class="a">
+    <div class="tldr">Make processing idempotent so duplicates are harmless, rather than trying to
+    eliminate them. Deterministic keys, upserts instead of appends, and a dedup window on the
+    consumer.</div>
+    <p><strong>Why at-least-once is the realistic target.</strong> A consumer that commits its offset
+    before processing can lose messages on a crash; one that commits after can reprocess them. Since
+    losing a transaction is worse than counting one twice, you choose commit-after and accept
+    duplicates. Everything then rests on making duplicates a non-event.</p>
+    <p><strong>How, concretely:</strong></p>
+    <ul>
+      <li><strong>Deterministic ids.</strong> Derive the output key from the input — a natural
+          <code>transaction_id</code>, or a hash of the payload — never a generated UUID or a timestamp,
+          which make a reprocessed message look new.</li>
+      <li><strong>Upsert, don't append.</strong> "Set the score for transaction X" is idempotent;
+          "insert a score row" is not. Counters are the classic non-idempotent operation — keep the
+          contributing set and count it, or use a mergeable sketch, rather than incrementing.</li>
+      <li><strong>Dedup window.</strong> A seen-set of ids with a TTL longer than your worst replay
+          window, sized against realistic retry behaviour.</li>
+      <li><strong>Idempotent side effects.</strong> The hard part is external: sending an email twice or
+          blocking a card twice is a real incident. Guard those with a dedup key at the boundary, and
+          treat the side-effect layer as the only place that needs strong guarantees.</li>
+    </ul>
+    <p><strong>On "exactly-once":</strong> Kafka's transactions do give it for read-process-write within
+    Kafka, by writing offsets and outputs in one atomic transaction. It is genuine, and it is bounded —
+    the moment a side effect leaves that boundary you are back to at-least-once plus idempotency. So I
+    treat exactly-once as a useful local property, not as an excuse to skip idempotent design.</p>
+    <p><strong>And the ML-specific version of this:</strong> reprocessing must be safe, because you
+    <em>will</em> replay the stream — to backfill a feature, to fix a bug, to rebuild after an outage. A
+    pipeline that cannot be replayed without corrupting its own outputs is a pipeline you can never fix.
+    Replayability is a feature, and idempotency is what buys it.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>An upstream team changes a field and your model degrades. How do you prevent it?</summary>
+  <div class="a">
+    <div class="tldr">Validate at the boundary and fail loudly: an enforced schema with a compatibility
+    policy, statistical checks on the values as well as the types, and monitoring on the <em>inputs</em>
+    rather than only on the outputs.</div>
+    <p><strong>Why it is so damaging.</strong> A model does not crash on bad input — it produces
+    plausible numbers from wrong data. A currency field that switches from cents to euros makes every
+    amount 100× smaller, the model still scores confidently, and nothing alerts until someone notices
+    the approval rate weeks later. Silent is the operative word.</p>
+    <p><strong>The layered defence:</strong></p>
+    <ul>
+      <li><strong>Schema enforcement</strong> at ingestion — a registry with an explicit compatibility
+          policy, so a breaking change is rejected at publish time rather than discovered at inference
+          time.</li>
+      <li><strong>Semantic validation.</strong> Types are not enough; the cents/euros bug is
+          type-valid. Assert ranges, units, null rates, and cardinalities.</li>
+      <li><strong>Input distribution monitoring</strong> — PSI per feature (module 54). This is what
+          catches the change that passes every static check, and it is the reason drift monitoring earns
+          its keep even before concept drift matters.</li>
+      <li><strong>A data contract</strong> with the producing team: an owner, a version, a deprecation
+          window, and their tests running in <em>their</em> CI. The technical controls detect;
+          the contract prevents.</li>
+      <li><strong>Fail closed on the features that matter.</strong> If a critical feature is missing or
+          out of range, fall back to a rules-based decision and alert — do not impute a median and score
+          anyway, which converts a visible outage into an invisible one.</li>
+    </ul>
+    <p><strong>The organisational point I would make:</strong> the upstream team is usually not doing
+    anything wrong — they own a service, not your model, and they have no way of knowing you depend on
+    that field. The fix is to make the dependency explicit and testable on their side, which is exactly
+    what a data contract is for. Blaming them scales to zero; a contract with a test in their pipeline
+    scales.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The eight lifecycle stages and the characteristic failure of each.</li>
+    <li>Why Kafka is a log, not a queue — and what that buys you.</li>
+    <li>The four responses to backpressure and when each is correct.</li>
+    <li>At-least-once + idempotency, and the three tricks that make processing idempotent.</li>
+    <li>The sync/async decision rule, and the dual-path fraud architecture.</li>
+    <li>Event time vs processing time, and the bug that only appears under load.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#46" target="_top"><span class="k">Back</span>← 46 · LLM systems</a>
+  <a href="../index.html#51" target="_top"><span class="k">Next</span>51 · Feature stores →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

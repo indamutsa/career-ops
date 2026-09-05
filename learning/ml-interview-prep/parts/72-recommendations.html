@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recommendation &amp; ranking — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part G · Walkthrough · Module 72</p>
+<h1>Recommendation &amp; ranking
+  <span class="lede">The classic ML system-design question, and the one with the most structure to
+  recall: a funnel from millions of items to ten, with a different model at each stage because each
+  stage has a different budget. The subtle content is all in the labels — they are biased by the system
+  that produced them.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to use this module</span>
+  <p>The funnel is the skeleton and it is worth memorising exactly. The parts candidates drop are
+  <strong>position bias</strong>, <strong>the offline/online metric mismatch</strong>, and
+  <strong>what the system does on day one for a new user</strong>.</p>
+</div>
+
+<h2 data-n="72.1">The prompt, and the first four minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">The prompt</span>
+  <p><em>"Design the recommendation system for our home feed."</em></p>
+</div>
+
+<div class="tw">
+<table>
+<tr><th>What to ask</th><th>Why it changes the design</th></tr>
+<tr><td>What are we optimising — clicks, watch time, purchases, retention?</td><td>The objective is the
+    design. Clicks give you clickbait; long-term retention is what the business wants and is much harder
+    to measure.</td></tr>
+<tr><td>How many items, how many users?</td><td>Millions of items forces two-stage retrieval; ten
+    thousand does not.</td></tr>
+<tr><td>How fresh must items be?</td><td>News and social feeds are dominated by items minutes old, which
+    breaks any design that relies on accumulated engagement.</td></tr>
+<tr><td>What signals exist — explicit ratings or implicit behaviour?</td><td>Almost always implicit,
+    which means no true negatives.</td></tr>
+<tr><td>Latency budget per request?</td><td>Typically 100–300 ms for the whole funnel, which decides how
+    heavy the ranker can be.</td></tr>
+<tr><td>Business constraints — diversity, promoted items, creator fairness?</td><td>These are hard
+    constraints applied after ranking, and forgetting them makes the design naive.</td></tr>
+<tr><td>Cold start: new users, new items, or both?</td><td>Both, always, and they need different
+    answers.</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The assumptions I would design against</span>
+  <ul>
+    <li><strong>10 M items, 50 M users</strong>, a few hundred requests per second at peak.</li>
+    <li><strong>Implicit feedback only</strong> — impressions, clicks, dwell time, completion, saves.</li>
+    <li><strong>p99 200 ms</strong> for the whole funnel.</li>
+    <li><strong>Primary objective: long-session satisfaction</strong>, approximated by a weighted blend
+        of engagement signals; retention as the north-star measured in A/B tests, not in training.</li>
+    <li><strong>Freshness matters</strong> — a meaningful share of items are less than a day old.</li>
+  </ul>
+</div>
+
+<h2 data-n="72.2">The funnel</h2>
+
+<pre><code>  10,000,000 items
+        │
+        ▼   CANDIDATE GENERATION            ~10 ms, many sources in parallel
+  ┌─────────────────────────────────────────────────────────┐
+  │ two-tower ANN │ co-visitation │ trending │ following │   │
+  │ (user emb ×   │ (item→item    │ (fresh,  │ (explicit │   │
+  │  item index)  │  from logs)   │  global) │  graph)   │   │
+  └─────────────────────────────────────────────────────────┘
+        │  union + dedup
+        ▼   ~1,000 candidates
+        │   FILTERING                        hard rules, cheap
+        │   (already seen, blocked, region, age-gated, out of stock)
+        ▼   ~500
+        │   RANKING                          ~50 ms, the expensive model
+        │   GBDT or DNN over user × item × context features
+        │   multi-task heads: p(click), p(dwell&gt;30s), p(save), p(hide)
+        ▼   scored
+        │   BLENDING + POLICY                business logic
+        │   value = Σ wᵢ · pᵢ  −  penalties
+        ▼
+        │   RE-RANKING                       ~5 ms, list-aware
+        │   diversity, creator caps, freshness boost, promoted slots  
+        ▼
+      10 items shown ──► impressions + engagement ──► logs ──► training data
+                                                        │
+                                                        └──► the feedback loop</code></pre>
+
+<p><strong>Why a funnel at all.</strong> Scoring ten million items with a good model is impossible in
+200 ms, and scoring a thousand with a cheap model is wasteful. Each stage trades recall for precision:
+candidate generation must be fast and high-recall, ranking must be accurate and can afford to be slow,
+re-ranking sees the whole list and can enforce properties no per-item score can express. Saying this
+principle before drawing the stages shows you understand why, not just what.</p>
+
+<h2 data-n="72.3">Candidate generation</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Two-tower retrieval <span class="tag">the workhorse</span></div>
+    <p>One encoder for the user (history, demographics, context), one for the item. Train them so the dot
+       product is high for engaged pairs. Item vectors are indexed offline in an ANN index; at request
+       time you embed the user once and take the approximate nearest neighbours.</p>
+    <p class="wh">The two towers must be separate so item vectors can be precomputed — that constraint is
+       the whole reason the architecture looks like this, and it is the same bi-encoder trade-off as RAG
+       retrieval (module 71). No user–item interaction features are possible here; that is what ranking
+       is for.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Negative sampling <span class="tag">senior</span></div>
+    <p>There are no true negatives in implicit feedback, so you sample them: in-batch negatives (cheap,
+       popularity-biased), random negatives (easy, teach little), and hard negatives (items the user saw
+       and did not engage with).</p>
+    <p class="warn-inline">Getting this wrong is the most common two-tower failure. In-batch negatives
+       need a popularity correction — otherwise the model learns to rank popular items down, because they
+       appear as negatives constantly. A mix of random and hard negatives is the practical answer.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Co-visitation <span class="tag">underrated</span></div>
+    <p>"Users who engaged with X also engaged with Y", computed from logs as an item→item table.</p>
+    <p class="wh">No model, no training, very strong for sessions with clear intent, and it covers items
+       the embedding model has not learned yet. Always propose several candidate sources — a system with
+       one source is fragile, and the union is nearly free because they run in parallel.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Cold start <span class="tag">always asked</span></div>
+    <p><strong>New item:</strong> no engagement history, so the item tower must accept content features —
+       text, category, creator, embeddings of the content itself — and you deliberately allocate a small
+       exploration budget to give it impressions.</p>
+    <p><strong>New user:</strong> fall back to popularity within their inferrable segment, ask for a few
+       explicit interests if the product allows, and update the user representation within the session
+       from the first few interactions.</p>
+  </div>
+
+</div>
+
+<h2 data-n="72.4">Ranking — and the label problem</h2>
+
+<p>The ranker sees a few hundred candidates and can afford real features: user history, item statistics,
+<strong>user × item interaction</strong> features (has this user engaged with this creator, this category,
+this language before), and context — time of day, device, session position, what they just watched.</p>
+
+<p><strong>Multi-task, not single-objective.</strong> One head per signal — click, long dwell, save, share,
+hide, report — because they disagree and the disagreement is the point. Clickbait scores high on click and
+high on hide; a single click objective cannot see that. The heads share a trunk, and the final score is a
+weighted blend whose weights are a <em>product decision</em> tuned by A/B test, not learned. Being explicit
+that the blend is a policy lever, not a model parameter, is a senior distinction.</p>
+
+<div class="box trap">
+  <span class="lbl">Position bias — the thing you must bring up unprompted</span>
+  <p>An item at slot 1 gets far more clicks than the same item at slot 10. Train naively on logged clicks
+  and the model learns "items that were ranked highly get clicked", which is a description of your old
+  ranker, not of user preference. The system then reinforces its own past decisions.</p>
+  <p><strong>Three standard treatments:</strong> include position as a feature at training time and set it
+  to a constant at inference (the model absorbs the bias into that feature); inverse-propensity weighting,
+  where each example counts for 1 ÷ the probability that the user actually looked at that slot — so a
+  click down at slot 10, which was unlikely to be seen at all, is far stronger evidence of preference
+  than a click at slot 1; or a small randomised slice of traffic with shuffled slots, which is what
+  lets you measure those look-probabilities honestly in the first place.</p>
+  <p>Note the structural similarity to fraud: <strong>you only observe outcomes for what the system chose
+  to show</strong>. Same disease as module 70's blocked-decision blind spot, same class of cure — deliberate
+  randomisation you pay for on purpose.</p>
+</div>
+
+<h2 data-n="72.5">Re-ranking — properties a per-item score cannot express</h2>
+
+<ul>
+  <li><strong>Diversity.</strong> Ten items on the same topic score well individually and make a bad list.
+      Maximal Marginal Relevance — choose the next item by its score <em>minus</em> its similarity to what
+      you have already placed — trades a little relevance for coverage;
+      the weight is tuned against session-level metrics, because per-item metrics will always say diversity
+      hurts.</li>
+  <li><strong>Freshness and exploration.</strong> A slot or two reserved for items with little history —
+      this is the exploration budget that keeps the catalogue from ossifying, and it is also how new items
+      ever get their first impressions.</li>
+  <li><strong>Fatigue and caps.</strong> At most N items per creator or topic; suppress what was shown
+      recently and ignored.</li>
+  <li><strong>Business rules.</strong> Promoted slots, editorial pins, compliance suppressions. Keep these
+      declarative and outside the model, so they can be changed without a retrain and audited.</li>
+</ul>
+
+<h2 data-n="72.6">Evaluation — and why offline wins so often vanish</h2>
+
+<div class="tw">
+<table>
+<tr><th>Layer</th><th>Metric</th><th>What it cannot tell you</th></tr>
+<tr><td>Retrieval</td><td>Recall@k of engaged items</td><td>Whether the ranker can use them</td></tr>
+<tr><td>Ranking</td><td>AUC, NDCG (a ranking score that gives more credit for a correct item placed
+    near the top than for one buried further down), log loss on logged impressions</td><td>Anything about items you never
+    showed</td></tr>
+<tr><td>List</td><td>Simulated diversity, coverage, gini over creators (one number for how unevenly
+    impressions are shared out: 0 is perfectly even, 1 is winner-takes-all)</td><td>Whether users like
+    it</td></tr>
+<tr><td>Online</td><td>A/B test: engagement, session length, retention, complaints</td><td>Long-horizon
+    effects inside a two-week test</td></tr>
+</table>
+</div>
+
+<p><strong>Offline metrics are computed on logged impressions, which your current system chose.</strong>
+A new model that would surface something better gets no credit, because that item was never shown and has
+no label. This is why offline gains routinely fail to reproduce online, and why the A/B test is the
+decision — offline metrics are a filter to decide what is worth testing, not evidence of value.</p>
+
+<p><strong>The A/B design questions</strong> to raise: the randomisation unit (user, not request, or the
+experience is incoherent), the minimum detectable effect and therefore the duration, novelty effects that
+inflate week one, network interference when users influence each other, and guardrail metrics — a
+watch-time win alongside a rise in "hide" or a fall in next-week return is not a win.</p>
+
+<h2 data-n="72.7">Serving and operations</h2>
+
+<div class="tw">
+<table>
+<tr><th>Concern</th><th>Approach</th></tr>
+<tr><td>Latency</td><td>Candidate sources in parallel; item features precomputed in an online store;
+    truncate aggressively at each stage; cache user embeddings within a session</td></tr>
+<tr><td>Freshness of the index</td><td>Stream new items into the ANN index within minutes; periodic full
+    rebuild; version the index and swap atomically</td></tr>
+<tr><td>Feature skew</td><td>The same definitions offline and online, and train on the features that were
+    <em>logged at serving time</em> — the same fix as module 70</td></tr>
+<tr><td>Model refresh</td><td>Rankers retrain daily or continuously; embeddings less often, and re-embed
+    everything when the model changes</td></tr>
+<tr><td>Monitoring</td><td>Prediction distribution, per-slot CTR, coverage and gini over items shown,
+    candidate-source contribution, stage latencies</td></tr>
+<tr><td>Rollout</td><td>Shadow for latency and score distribution, then a real A/B — a canary alone cannot
+    measure the metric you care about</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">The judgment question that often closes this round</span>
+  <p><em>"Your engagement metric goes up 8 % and complaints go up 3 %. Do you ship?"</em></p>
+  <p>The answer is not a number. Engagement is a proxy for a thing you actually want — people finding the
+  product valuable over months — and a proxy that rises while satisfaction falls is the classic
+  optimisation failure. I would look at which signals moved (dwell up but saves down is very different
+  from both up), check whether the gain is concentrated in a segment, look at next-week return rather
+  than in-test engagement, and run it longer if the retention read is not yet significant. Then I would
+  present the trade honestly and let the product own the call — while pointing out that the objective
+  blend is the lever, and that if we do not want this behaviour we should change the weights rather than
+  hope the model chooses not to exploit them.</p>
+</div>
+
+<h2 data-n="72.8">Delivering this in 45 minutes</h2>
+
+<div class="tw">
+<table>
+<tr><th>Minutes</th><th>What you are doing</th></tr>
+<tr><td>0–4</td><td>Requirements — objective first, and push back on "clicks"</td></tr>
+<tr><td>4–10</td><td>Draw the funnel and say why each stage exists</td></tr>
+<tr><td>10–18</td><td>Candidate generation: two-tower, negatives, co-visitation, cold start</td></tr>
+<tr><td>18–28</td><td>Ranking: features, multi-task heads, the blend as policy, position bias</td></tr>
+<tr><td>28–33</td><td>Re-ranking: diversity, exploration, caps, business rules</td></tr>
+<tr><td>33–40</td><td>Offline vs online evaluation, and why offline wins vanish</td></tr>
+<tr><td>40–45</td><td>Serving, freshness, monitoring — and the engagement-vs-complaints judgment</td></tr>
+</table>
+</div>
+
+<div class="box note">
+  <span class="lbl">If you only get five minutes</span>
+  <p>"A funnel, because the budget per item shrinks as the candidate set grows. Candidate generation from
+  several parallel sources — a two-tower model over an ANN index, co-visitation from logs, trending,
+  follows — gives about a thousand items with high recall. Hard filters remove seen and ineligible items.
+  A multi-task ranker scores a few hundred with real user × item interaction features and separate heads
+  for click, dwell, save and hide, blended with weights that are a product decision. Re-ranking enforces
+  what per-item scores cannot — diversity, creator caps, an exploration slot. The two things that decide
+  whether it works are position bias, because logged clicks describe the old ranker rather than user
+  preference, and the fact that offline metrics only cover items we already chose to show — so the A/B
+  test is the decision and offline is only a filter."</p>
+</div>
+
+<h2 data-n="72.9">Callbacks</h2>
+
+<div class="tw">
+<table>
+<tr><th>Stage</th><th>Modules it draws on</th></tr>
+<tr><td>Embeddings, dot product, ANN</td><td>10 linear algebra · 33 NLP · 24 unsupervised</td></tr>
+<tr><td>Two-tower, bi-encoder trade-off</td><td>42 families · 71 RAG</td></tr>
+<tr><td>GBDT vs DNN for the ranker</td><td>22 trees &amp; ensembles</td></tr>
+<tr><td>Multi-task heads, loss weighting</td><td>30 neural nets · 14 optimisation</td></tr>
+<tr><td>AUC, NDCG, calibration</td><td>25 metrics</td></tr>
+<tr><td>Position bias, propensity weighting</td><td>20 learning problem · 70 fraud (feedback loop)</td></tr>
+<tr><td>Feature store, skew, logged features</td><td>51 feature store · 70 fraud</td></tr>
+<tr><td>A/B design, guardrails, rollout</td><td>53 deployment</td></tr>
+<tr><td>Monitoring coverage and drift</td><td>54 monitoring</td></tr>
+<tr><td>Creator fairness, exposure</td><td>55 governance</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint</h4>
+  <ul>
+    <li>Draw the funnel with the item counts and the budget at each stage.</li>
+    <li>Say why the two towers must be separate, and what that costs you.</li>
+    <li>Explain the negative-sampling problem and the popularity correction.</li>
+    <li>Explain position bias and give two ways to correct for it.</li>
+    <li>Say why an offline NDCG win frequently does not reproduce online.</li>
+    <li>Answer the engagement-up, complaints-up question without giving a number.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#71" target="_top"><span class="k">Back</span>← 71 · RAG assistant</a>
+  <a href="../index.html#73" target="_top"><span class="k">Next</span>73 · LLM serving platform →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

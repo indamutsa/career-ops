@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Interpretability — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 26</p>
+<h1>Interpretability
+  <span class="lede">Why did the model say that? In fraud and credit this is not curiosity — it is a
+  legal requirement, a debugging tool, and the only way anyone will let your model make decisions
+  about people. SHAP, LIME, PDP, counterfactuals, and a clear account of how each one lies.</span>
+</h1>
+
+<h2 data-n="26.1">Four different people asking "why"</h2>
+
+<p>"Explain the model" is four different requests, and answering the wrong one is the most common
+mistake here. Naming which one you are solving is itself the senior move:</p>
+
+<div class="tw">
+<table>
+<tr><th>Who asks</th><th>What they mean</th><th>What actually answers it</th></tr>
+<tr><td><strong>A customer</strong> whose payment was declined</td><td>"What do I do differently?"</td>
+    <td>A <em>counterfactual</em> — the smallest change that flips the outcome</td></tr>
+<tr><td><strong>A regulator</strong></td><td>"What were the principal reasons for this adverse
+    decision, and is the model discriminating?"</td><td>Local attributions per decision, plus a
+    fairness audit across groups</td></tr>
+<tr><td><strong>A fraud analyst</strong> working a queue</td><td>"Which signals fired on this case, so
+    I can decide faster?"</td><td>Local attributions, ranked, in the case UI</td></tr>
+<tr><td><strong>You, debugging</strong></td><td>"Is this model relying on something stupid?"</td>
+    <td>Global importance, PDPs, and inspecting the extreme cases</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">The two axes that organise everything</span>
+  <p><strong>Global vs local</strong> — how the model behaves overall, versus why it made this one
+  prediction. <strong>Intrinsic vs post-hoc</strong> — a model that is readable by construction (a
+  linear scorecard, a shallow tree), versus an explanation method bolted onto a black box afterwards.
+  Every technique in this module is one cell of that 2×2, and stating which cell you are in makes
+  any answer here sound organised.</p>
+</div>
+
+<h2 data-n="26.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Intrinsic interpretability <span class="tag">basic</span></div>
+    <p>The model is readable as it stands: linear coefficients, a depth-3 tree, a credit scorecard
+       with points per band.</p>
+    <p class="wh">Still the standard in regulated credit decisioning, because the explanation is the
+       model rather than an approximation of it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Post-hoc explanation <span class="tag">basic</span></div>
+    <p>A second procedure that explains a model it did not train.</p>
+    <p class="warn-inline">Always an <em>approximation</em>. It can be wrong, and it can be wrong in
+       ways that look plausible — which is the central risk of the whole field.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Permutation importance <span class="tag">mid</span></div>
+    <p>Shuffle one feature's column on held-out data and measure how much performance drops.</p>
+    <p class="an">Removing one player from a team and seeing how much worse it plays.</p>
+    <p class="wh">Global, model-agnostic, and honest about <em>predictive</em> value because it uses
+       held-out performance. Correlated features mask each other — see 26.5.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">PDP — partial dependence plot <span class="tag">mid</span></div>
+    <p>Force a feature to a value for every row, average the predictions, sweep across values, plot
+       the curve.</p>
+    <p class="an">"If everyone in the dataset were 40, what would the average prediction be? And if
+       everyone were 41?"</p>
+    <p class="wh">Shows the average <em>shape</em> of a feature's effect. Averaging hides
+       heterogeneity, which is what ICE fixes.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">ICE — individual conditional expectation <span class="tag">mid</span></div>
+    <p>The same sweep, but one line per row instead of the average.</p>
+    <p class="wh">If the ICE lines fan out in opposite directions, the PDP's flat average is a lie —
+       the feature has opposite effects on different subpopulations. This is the standard way to
+       detect an interaction.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">LIME <span class="tag">mid</span></div>
+    <p>Perturb one instance many times, see how the black box responds, and fit a small weighted
+       linear model to that local neighbourhood.</p>
+    <p class="an">You cannot map a whole mountain range, so you stand at one spot and measure the
+       slope right there.</p>
+    <p class="wh">Fast and intuitive. Its weakness is instability — the perturbation is random, so two
+       runs on the same instance can disagree.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Shapley value <span class="tag">senior</span></div>
+    <p>From cooperative game theory: the fair share of a payout for each player, computed by averaging
+       their marginal contribution over every possible order of joining the team.</p>
+    <p class="an">Three people share a taxi. Shapley works out each person's fair share by considering
+       every order in which they could have been picked up, and averaging.</p>
+    <p class="wh">The unique attribution satisfying efficiency, symmetry, dummy and additivity — which
+       is why SHAP is the default when an explanation has to be defended.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">SHAP <span class="tag">senior</span></div>
+    <p>Shapley values applied to features, so each prediction decomposes exactly into a base value
+       plus one contribution per feature.</p>
+    <p class="wh"><strong>Additivity is the property that matters operationally:</strong> the
+       contributions sum to the prediction, so an explanation can be shown to a customer without
+       arithmetic that does not add up. TreeSHAP computes it exactly for tree ensembles in polynomial
+       time, which is why it is practical at all.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Counterfactual explanation <span class="tag">senior</span></div>
+    <p>The smallest change to the input that would flip the decision.</p>
+    <p class="an">"If your balance had been €200 higher, this would have been approved."</p>
+    <p class="wh">The only explanation type that is directly <em>actionable</em>, and the one a
+       declined customer actually wants. Must be constrained to realistic, changeable features — "be
+       five years younger" is not a recourse.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Adverse action reasons <span class="tag">senior</span></div>
+    <p>The specific principal reasons a credit decision was negative, which US lenders must provide
+       under ECOA/Reg B.</p>
+    <p class="wh">Usually the top few features by contribution, mapped to plain-language reason codes.
+       This is the concrete commercial reason interpretability budgets exist.</p>
+  </div>
+
+</div>
+
+<h2 data-n="26.3">SHAP, properly</h2>
+
+<p>The setup: treat a prediction as a payout, and each feature as a player who contributed to it. How
+much credit does each player deserve?</p>
+
+<p>The naive answer — remove a feature and see how much the prediction drops — depends on which other
+features are already present. Removing "income" from a model that still has "job title" changes
+little; removing it first changes a lot. Shapley's answer is to average the marginal contribution
+over <strong>every possible order</strong> of adding features, which removes the arbitrariness.</p>
+
+<p>That averaging is combinatorial — 2ⁿ subsets — which is why exact Shapley values were a
+theoretical curiosity until TreeSHAP gave an exact polynomial-time algorithm for tree ensembles. For
+other model types you use approximations: KernelSHAP by sampling, DeepSHAP for networks.</p>
+
+<p>What you get, and what to say about each:</p>
+
+<ul>
+  <li><strong>Local:</strong> for one prediction, a signed contribution per feature that sums exactly
+      to prediction minus base rate. This is what a fraud analyst sees on a case.</li>
+  <li><strong>Global, by aggregation:</strong> mean absolute SHAP per feature is a far better global
+      importance than gain, because it is not biased by cardinality.</li>
+  <li><strong>Direction and shape:</strong> a beeswarm or dependence plot shows not just that a
+      feature matters but which direction it pushes and where the effect saturates.</li>
+</ul>
+
+<div class="box trap">
+  <span class="lbl">The three honest limitations</span>
+  <ul>
+    <li><strong>Correlated features break the assumption.</strong> The common implementations sample
+        features independently when computing marginal contributions, which evaluates the model on
+        combinations that cannot exist — a 22-year-old with 30 years of credit history. The
+        attributions in that region are extrapolations of the model into territory it never saw.</li>
+    <li><strong>It explains the model, not the world.</strong> A large SHAP value means the model
+        relies on that feature, not that the feature causes the outcome. If the model learned a proxy,
+        SHAP faithfully reports the proxy.</li>
+    <li><strong>It is expensive.</strong> TreeSHAP is fine; KernelSHAP on a large model at serving
+        latency is not. In production you typically precompute explanations asynchronously for
+        reviewed cases rather than on every request.</li>
+  </ul>
+</div>
+
+<h2 data-n="26.4">SHAP vs LIME vs PDP — when to use which</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>SHAP</th><th>LIME</th><th>PDP / ICE</th></tr>
+<tr><td>Scope</td><td>Local, aggregates to global</td><td>Local only</td><td>Global (PDP), per-row
+    (ICE)</td></tr>
+<tr><td>Guarantees</td><td>Efficiency, symmetry, additivity — contributions sum to the
+    prediction</td><td>None; a local surrogate fit</td><td>None; a marginal average</td></tr>
+<tr><td>Stability</td><td>Deterministic for TreeSHAP</td><td><strong>Unstable</strong> — random
+    perturbations, so repeat runs differ</td><td>Deterministic</td></tr>
+<tr><td>Cost</td><td>Cheap for trees, expensive otherwise</td><td>Cheap</td><td>Cheap</td></tr>
+<tr><td>Main weakness</td><td>Assumes feature independence in the usual implementations</td>
+    <td>Instability, and the neighbourhood definition is arbitrary</td><td>Averages away
+    heterogeneity; extrapolates off-manifold</td></tr>
+<tr><td>Use it for</td><td>Anything that must be defended — regulators, customer explanations, case
+    review</td><td>A quick look at one prediction, especially text or images</td><td>Understanding
+    the shape of a feature's effect while debugging</td></tr>
+</table>
+</div>
+
+<h2 data-n="26.5">The failure mode they all share: correlated features</h2>
+
+<p>Every method in this module has the same weak point, and being able to state it once, generally,
+is worth more than memorising each method's caveat separately.</p>
+
+<p>Suppose two features carry nearly the same information — say <code>account_age_days</code> and
+<code>number_of_past_transactions</code>. Then:</p>
+
+<ul>
+  <li><strong>Permutation importance</strong> under-reports both. Shuffle one and its twin still
+      supplies the signal, so the measured drop is small for each — and you conclude neither matters,
+      when together they matter enormously.</li>
+  <li><strong>SHAP</strong> splits the credit between them, in a way that depends on the sampling
+      scheme, and evaluates the model on impossible combinations while doing so.</li>
+  <li><strong>PDP</strong> sweeps one feature while holding the other at its observed values, which
+      generates rows that could not exist and reads the model's behaviour in a region it never
+      trained on.</li>
+  <li><strong>Tree gain importance</strong> gives the credit to whichever twin happened to be picked
+      first at the top split, essentially arbitrarily.</li>
+</ul>
+
+<p>What to do about it: check the correlation structure before explaining anything; group correlated
+features and permute or attribute them as a block; or use methods designed for it — conditional
+permutation, grouped SHAP. The answer that lands in an interview is simply recognising that
+<em>all</em> attribution methods are trying to divide credit between features that are not actually
+separable, and that no method makes that ambiguity go away.</p>
+
+<h2 data-n="26.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain SHAP to a non-technical stakeholder.</summary>
+  <div class="a">
+    <div class="tldr">It splits a prediction into a fair share for each feature, so you can say
+    exactly how much each one pushed the score up or down — and the pieces add up to the score.</div>
+    <p>The analogy I would use: three people share a taxi with different destinations. What is each
+    person's fair share of the fare? You cannot just divide by three, and the answer depends on who
+    you imagine getting out first. Shapley's solution is to consider every possible order and average
+    over them. SHAP does that with features instead of passengers.</p>
+    <p>What that gives us in practice: for any single decision, a statement like "the score started at
+    the 0.8 % average, the new device added 12 points, the unusual amount added 6, and the customer's
+    five-year history subtracted 3." Those numbers add up to the final score exactly, which is the
+    property that makes it usable in a customer letter or an analyst's queue.</p>
+    <p>The caveat I would state in the same breath: it tells you what the model relied on. It does not
+    tell you what caused the fraud.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>SHAP or LIME — which and why?</summary>
+  <div class="a">
+    <div class="tldr">SHAP for anything that has to be defended, because it is deterministic on trees
+    and its contributions provably sum to the prediction. LIME for a fast look, especially on text or
+    images where a local surrogate over interpretable units is natural.</div>
+    <p><strong>The deciding difference is stability.</strong> LIME builds its explanation by randomly
+    perturbing the instance and fitting a local linear model. Run it twice on the same case and you
+    can get materially different attributions, because the neighbourhood was sampled differently. That
+    is disqualifying when the explanation goes to a customer or a regulator — two people asking the
+    same question must not get different reasons.</p>
+    <p><strong>The second difference is the additivity guarantee.</strong> SHAP's contributions sum
+    exactly to prediction minus base value. LIME's coefficients come from a surrogate fit and have no
+    such relationship to the actual output, so you cannot present them as a decomposition.</p>
+    <p><strong>Where LIME still earns its place:</strong> it is much cheaper on non-tree models, and
+    its notion of "interpretable features" — words, superpixels — is often more natural than raw model
+    inputs for text and images.</p>
+    <p>What I would actually do in a fraud system: TreeSHAP, precomputed asynchronously for every case
+    that enters the review queue, surfaced as the top three contributions in the analyst UI, and
+    aggregated weekly into a global importance view for drift monitoring.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Both are post-hoc approximations of a black box. If explainability is a hard requirement from
+      day one, the stronger answer is an intrinsically interpretable model — a monotone-constrained
+      GBDT or a scorecard — rather than an unconstrained model plus an explanation layer that can be
+      challenged.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>A customer's card was declined by your model. What do you tell them?</summary>
+  <div class="a">
+    <div class="tldr">A counterfactual, not an attribution. They do not want to know which features
+    weighted the score — they want to know what to do now.</div>
+    <p><strong>Why attribution is the wrong output here.</strong> "Your transaction was declined
+    because the device was new and the amount was unusual" is accurate and useless — the customer
+    cannot un-buy a phone. A counterfactual gives recourse: "this would have gone through if you had
+    verified the device first," which is an action.</p>
+    <p><strong>The constraints on generating one:</strong></p>
+    <ul>
+      <li><strong>Actionable features only.</strong> Never propose changing age, country of birth or
+          anything else the person cannot change — that is both useless and, in some jurisdictions,
+          evidence of a problem.</li>
+      <li><strong>Realistic.</strong> The counterfactual must sit on the data manifold. "If your
+          income were €400,000" is technically a flip and not an explanation.</li>
+      <li><strong>Minimal and sparse.</strong> One or two changes, not eleven.</li>
+      <li><strong>Not a gaming manual.</strong> This is the genuine tension in fraud specifically: a
+          precise recourse statement tells an actual fraudster exactly which threshold to stay under.
+          Credit can be far more specific than fraud can, and the usual resolution is a vaguer
+          category-level reason for fraud declines plus a verification path.</li>
+    </ul>
+    <p><strong>What I would actually ship:</strong> a short plain-language reason from a fixed set of
+    reason codes, mapped from the top SHAP contributions; a clear next step — verify the device,
+    complete 3-D Secure, contact support; and an appeal route to a human. And separately, the full
+    attribution kept in the audit log for the analyst and the regulator, which is a different audience
+    with a different requirement.</p>
+    <p>The regulatory note that makes this concrete: in US credit this is not a design choice — adverse
+    action notices under ECOA require specific principal reasons, which is why lenders map model
+    contributions to a fixed reason-code taxonomy rather than emitting free text.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Your PDP shows income has no effect. Do you believe it?</summary>
+  <div class="a">
+    <div class="tldr">No — I would check the ICE plot first. A flat PDP is exactly what you get when a
+    feature has strong opposite effects on different subgroups, because the average cancels.</div>
+    <p>The PDP is an average over the whole dataset. If income raises the score for one segment and
+    lowers it for another, those effects cancel and the curve is flat while the feature is doing a
+    great deal of work. ICE plots one line per row, so that fan-out is immediately visible — and it is
+    the standard diagnostic for an interaction.</p>
+    <p>Other reasons a PDP can mislead here:</p>
+    <ul>
+      <li><strong>Correlated features.</strong> The PDP forces income to €200k while leaving
+          job title as "student", which is a row the model never saw. The curve reflects
+          extrapolation, not behaviour. ALE plots exist precisely to fix this by using local
+          differences within the observed distribution.</li>
+      <li><strong>Range.</strong> If the plotted range is narrow relative to where the effect actually
+          bites, it looks flat.</li>
+      <li><strong>Redundancy.</strong> The model may be reading income through a proxy that is already
+          in the feature set, so the raw feature genuinely contributes nothing extra — which is a real
+          finding, not an artefact, and permutation importance would confirm it.</li>
+    </ul>
+    <p>What I would do: ICE first, then check correlations, then an ALE plot if correlation is high,
+    then confirm with permutation importance on a held-out set. Four cheap checks that between them
+    distinguish "no effect", "cancelling effects" and "explained by a correlate".</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Is an interpretable model a trustworthy model?</summary>
+  <div class="a">
+    <div class="tldr">No. Interpretability tells you what the model is doing; it says nothing about
+    whether what it is doing is right, fair, or causal. The two are often confused, and the confusion
+    is dangerous because a plausible explanation is persuasive.</div>
+    <p>Three specific gaps:</p>
+    <ul>
+      <li><strong>Explanation is not causation.</strong> SHAP reports the model's reliance. If the
+          model learned postcode as a proxy for something it should not use, SHAP will faithfully
+          report postcode — accurately describing a model that should not be deployed. The explanation
+          is correct and the model is wrong.</li>
+      <li><strong>A plausible explanation buys unearned confidence.</strong> This is the more insidious
+          version: an explanation that matches a stakeholder's expectations gets accepted, and it can
+          match while the model is exploiting a leak that happens to correlate with the expected
+          feature. Interpretability makes a wrong model easier to believe.</li>
+      <li><strong>Post-hoc explanations can be gamed.</strong> There is published work constructing
+          models that behave in a biased way while producing innocuous LIME and SHAP explanations. So
+          an explanation from an untrusted party is not evidence of anything.</li>
+    </ul>
+    <p><strong>What trust actually requires,</strong> and this is the answer I would give: held-out and
+    temporal validation that mirrors deployment; a fairness audit across groups on the metrics that
+    matter; monitoring of both inputs and outcomes after launch; a documented failure analysis of the
+    worst errors; a rollback path; and human review on the highest-stakes decisions. Interpretability
+    is one input to that process, and it is the one that helps you <em>find</em> problems — not the one
+    that certifies their absence.</p>
+    <p>The compact version: interpretability is a debugging and communication tool. Trust comes from
+    validation and monitoring.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How would you audit a fraud model for bias?</summary>
+  <div class="a">
+    <div class="tldr">Define which fairness criterion applies, measure it across protected groups at
+    the actual operating point, check for proxies, and be explicit that several fairness definitions
+    are mathematically incompatible so a choice must be made and documented.</div>
+    <ol>
+      <li><strong>Decide what fair means here,</strong> because the definitions conflict.
+          <em>Demographic parity</em> — equal flag rates across groups. <em>Equalised odds</em> — equal
+          TPR and FPR. <em>Calibration within groups</em> — a 0.7 means the same thing for everyone.
+          It is provably impossible to satisfy calibration and equalised odds simultaneously when base
+          rates differ. So this is a stated policy decision, made with legal and product, not
+          something a metric picks for you.</li>
+      <li><strong>Measure at the operating point,</strong> per group: flag rate, precision, recall, and
+          calibration curve. Aggregate AUC hides everything that matters here.</li>
+      <li><strong>Hunt for proxies.</strong> Removing the protected attribute does not remove the
+          effect — postcode, device type, merchant category and transaction timing can all encode it.
+          I would test this directly by trying to predict the protected attribute from the feature set;
+          if that works well, proxies exist regardless of what was excluded.</li>
+      <li><strong>Check the feedback loop,</strong> which is the fraud-specific issue: if one group was
+          historically reviewed more, more of their fraud was <em>found</em>, so the labels themselves
+          are biased and the model inherits it. A model can be perfectly fair with respect to biased
+          labels and still be unfair in effect. Detecting this needs a randomly-sampled review of
+          unflagged traffic — expensive, and the only honest measurement.</li>
+      <li><strong>Consider intersections,</strong> since per-attribute parity can coexist with a
+          badly-treated intersection of two.</li>
+      <li><strong>Document and monitor.</strong> The chosen criterion, the measured gaps, the
+          mitigation, and continuous monitoring — fairness drifts along with everything else.</li>
+    </ol>
+    <p>The mitigations, briefly, by stage: pre-processing (reweight or repair the training data),
+    in-processing (a fairness constraint in the objective — which is module 14's Lagrangian again), or
+    post-processing (group-specific thresholds, which is effective and legally fraught in many
+    jurisdictions because it is explicitly using the protected attribute). I would say which one I
+    would choose and why, rather than listing them neutrally.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"We do not use protected attributes, so the model cannot be biased." This is the single most
+      common wrong answer in the area. Fairness through unawareness does not work, because proxies
+      remain — and worse, excluding the attribute means you cannot even measure the disparity you have
+      created.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The four audiences for "why", and what each one actually needs.</li>
+    <li>Global vs local, intrinsic vs post-hoc — and place SHAP, LIME and PDP in that 2×2.</li>
+    <li>SHAP's taxi analogy, plus the additivity property and why it matters.</li>
+    <li>Why LIME is unstable and when that disqualifies it.</li>
+    <li>Why a flat PDP does not mean no effect.</li>
+    <li>Three reasons an interpretable model is not automatically trustworthy.</li>
+    <li>Why "we don't use protected attributes" is not a fairness answer.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#25" target="_top"><span class="k">Back</span>← 25 · Metrics &amp; evaluation</a>
+  <a href="../index.html#30" target="_top"><span class="k">Next</span>30 · Neural networks →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

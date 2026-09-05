@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ML Interview Prep</title>
+<link rel="stylesheet" href="assets/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+
+<aside id="side">
+  <div class="brand">
+    <div class="n">ML Interview Prep</div>
+    <div class="d">maths → models → transformers → production</div>
+  </div>
+  <div class="tools">
+    <div class="toggles">
+      <button id="drillbtn" title="d — hide all answers">drill</button>
+      <button id="expandbtn" title="open/close every question">expand</button>
+    </div>
+  </div>
+  <nav id="nav"></nav>
+</aside>
+
+<div id="main">
+
+  <div id="banner" hidden>
+    <b>Reading from a file, not a server.</b>
+    Modules still work (they load in a frame), but search only matches module titles and keywords.
+    For full-text search across everything, run
+    <code>python3 -m http.server 8000</code> in this folder and open
+    <code>http://localhost:8000</code>.
+  </div>
+
+  <div id="topbar">
+    <button id="menu">☰</button>
+    <span id="ptitle" class="muted"></span>
+    <span class="sp"></span>
+    <input id="q" type="search" placeholder="Search…  ( / )" autocomplete="off">
+    <button id="themebtn" title="t — light / dark">theme</button>
+    <span id="prog"></span>
+    <button id="markbtn">mark done</button>
+    <button id="prevbtn" title="k">←</button>
+    <button id="nextbtn" title="j">→</button>
+  </div>
+
+  <div id="wrap"></div>
+  <iframe id="frame" hidden title="module"></iframe>
+
+</div>
+
+<script src="assets/viz.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

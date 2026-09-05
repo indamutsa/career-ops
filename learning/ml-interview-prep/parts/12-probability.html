@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Probability &amp; statistics — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part A · Maths · Module 12</p>
+<h1>Probability &amp; statistics
+  <span class="lede">Machine learning is not the science of getting the right answer. It is the
+  science of being <em>calibratedly unsure</em>. Every model in this course outputs a probability
+  distribution, and every loss function is a statement about likelihood.</span>
+</h1>
+
+<h2 data-n="12.1">The problem this was invented to solve</h2>
+
+<p>You cannot predict whether <em>this</em> transaction is fraud. Nobody can. The information simply
+is not there — two customers with identical features will behave differently, and you will never see
+the variable that separates them.</p>
+
+<p>So the goal changes. Instead of “is it fraud”, the question becomes “<em>out of all the
+transactions that look exactly like this one, what fraction turn out to be fraud?</em>” That number
+— 0.03, say — is something you genuinely can learn, and it is something you can act on: block above
+0.9, review between 0.3 and 0.9, allow below.</p>
+
+<p>This reframing is the whole of probability's role in ML. Uncertainty is not a defect in the model
+to be engineered away. It is the honest output.</p>
+
+<h2 data-n="12.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Random variable <span class="tag">basic</span> <span class="sym">X</span></div>
+    <p>A quantity whose value depends on an outcome you have not seen yet. Not “random” in the sense
+       of lawless — it has a definite distribution.</p>
+    <p class="an">The number on a die you are about to roll. Fixed rules, unknown result.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Distribution <span class="tag">basic</span> <span class="sym">P(X)</span></div>
+    <p>The full accounting of which values are how likely. Discrete case: a
+       <strong>PMF</strong>, actual probabilities that sum to 1. Continuous case: a
+       <strong>PDF</strong>, a <em>density</em> that integrates to 1 — a single point has
+       probability zero.</p>
+    <p class="wh">Your model's softmax output is a PMF over the vocabulary. It is the model's entire
+       answer; taking an argmax throws most of it away.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Expectation <span class="tag">basic</span> <span class="sym">E[X]</span></div>
+    <p>The long-run average: every value weighted by how likely it is.</p>
+    <p class="an">Play a game a million times; the expectation is your average score per play.</p>
+    <p class="wh">Your loss is an expectation over the data distribution — you estimate it with a
+       batch average, which is why bigger batches give a lower-variance estimate.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Variance &amp; std <span class="tag">basic</span>
+        <span class="sym">Var, σ</span></div>
+    <p>How spread out the values are. Variance is the mean squared distance from the mean; the
+       standard deviation is its square root, which puts it back in the original units.</p>
+    <p class="wh">Batch normalisation literally divides by a running σ. And the “variance” in
+       bias–variance is exactly this: how much your fitted model would jump around if you resampled
+       the training set.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Covariance &amp; correlation <span class="tag">basic</span></div>
+    <p>Covariance: do two variables move together? Correlation is covariance scaled into [−1, 1] so
+       it is unit-free and comparable.</p>
+    <p class="wh">The covariance matrix is what PCA eigendecomposes. Correlation near ±1 between two
+       features is the multicollinearity that makes linear coefficients unstable.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Joint · marginal · conditional <span class="tag">basic</span></div>
+    <p><strong>Joint</strong> P(A,B): both happen. <strong>Marginal</strong> P(A): sum the joint over
+       everything else — you “integrate out” B. <strong>Conditional</strong> P(A|B): the probability
+       of A once you already know B.</p>
+    <p class="an">Marginalising is looking at the row totals in the margin of a table. That is
+       literally where the word comes from.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Independence <span class="tag">basic</span></div>
+    <p>Knowing B tells you nothing about A: P(A|B) = P(A), equivalently P(A,B) = P(A)P(B).</p>
+    <p class="wh">Naive Bayes assumes every feature is conditionally independent given the class.
+       That is nearly always false and the classifier works anyway — see module 23.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bayes' theorem <span class="tag">basic</span></div>
+    <p>How to flip a conditional round: P(A|B) = P(B|A)·P(A) / P(B). Read it as
+       <em>posterior ∝ likelihood × prior</em>.</p>
+    <p class="an">You have a belief. Evidence arrives. Bayes is the exact arithmetic of updating the
+       belief without over- or under-reacting.</p>
+    <p class="wh">Naive Bayes, MAP estimation, Bayesian optimisation for hyperparameters, and the
+       base-rate reasoning that dominates any fraud or medical-screening discussion.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Prior · likelihood · posterior <span class="tag">mid</span></div>
+    <p><strong>Prior</strong>: what you believed before the data. <strong>Likelihood</strong>: how
+       well a parameter value explains the data you saw. <strong>Posterior</strong>: the updated
+       belief afterwards.</p>
+    <p class="wh">L2 regularisation is exactly a Gaussian prior on the weights; L1 is a Laplace
+       prior. Regularisation is a prior — that equivalence is a senior-level answer.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">MLE <span class="tag">mid</span></div>
+    <p>Maximum likelihood estimation: pick the parameters that make the data you actually observed
+       as probable as possible.</p>
+    <p class="wh"><strong>Cross-entropy loss is MLE.</strong> Minimising it is maximising the
+       log-likelihood of the training data. Same equation, opposite sign.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">MAP <span class="tag">mid</span></div>
+    <p>Maximum a posteriori: like MLE but multiply by a prior first. MLE plus a regulariser.</p>
+    <p class="wh">MAP with a Gaussian prior <em>is</em> ridge regression. Literally the same
+       objective, with λ set by the prior's variance.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">i.i.d. <span class="tag">mid</span></div>
+    <p>Independent and identically distributed: each sample is drawn separately, from the same
+       distribution.</p>
+    <p class="wh">The assumption underneath train/test splits, cross-validation, and every
+       confidence interval you will ever quote — and the one that production violates first. See the
+       trap below; it is the highest-value thing in this module.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Law of large numbers <span class="tag">basic</span></div>
+    <p>Average enough independent samples and the average converges to the true expectation.</p>
+    <p class="wh">Why a big enough test set gives a trustworthy accuracy, and why a 40-row holdout
+       does not.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Central limit theorem <span class="tag">mid</span></div>
+    <p>Sums and averages of many independent variables end up approximately Gaussian, <em>whatever
+       the original distribution was</em>.</p>
+    <p class="an">One die is flat. The total of thirty dice is a bell curve. The bell appears from
+       adding, not from the dice.</p>
+    <p class="wh">This is why A/B test statistics work on wildly non-normal metrics: you are testing
+       the <em>mean</em>, and means go Gaussian.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Stochastic <span class="tag">basic</span></div>
+    <p>Involving randomness. In SGD it refers to one specific thing: the gradient is computed on a
+       random mini-batch, so it is a <em>noisy estimate</em> of the true gradient.</p>
+    <p class="wh">That noise is not merely tolerated — it is useful. It knocks you off saddle points
+       and biases training toward flatter minima, which generalise better.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">The distributions worth knowing <span class="tag">basic</span></div>
+    <p><strong>Bernoulli</strong> — one coin flip, one probability p. <strong>Binomial</strong> — how
+       many heads in n flips. <strong>Categorical</strong> — one roll of a k-sided die; this is what
+       softmax produces. <strong>Gaussian</strong> — the bell, what sums turn into.
+       <strong>Poisson</strong> — counts of rare events in a window, e.g. fraud attempts per hour.</p>
+    <p class="wh">Binary classification = Bernoulli, so the loss is binary cross-entropy. Multiclass
+       = categorical, so it is softmax + cross-entropy. The loss follows from the distribution.</p>
+  </div>
+
+</div>
+
+<h2 data-n="12.3">Bayes, and the mistake almost everyone makes</h2>
+
+<p>A test for a disease is 99 % accurate. You test positive. What is the chance you have the
+disease?</p>
+
+<p>Nearly everyone says 99 %. The real answer, for a disease affecting 1 in 1,000 people, is about
+<strong>9 %</strong>. Play with it:</p>
+
+<div class="viz" data-viz="bayes"></div>
+
+<p>The reason is that <strong>P(positive | disease) and P(disease | positive) are different
+questions</strong>, and the thing that separates them is the base rate. Among 100,000 people, 100
+have the disease and 99 of them test positive. But 99,900 are healthy, and 1 % of those — 999 people
+— test positive anyway. So 1,098 positives, of which 99 are real. 9 %.</p>
+
+<div class="box where">
+  <span class="lbl">Why this is a fraud-detection question in disguise</span>
+  <p>Fraud is roughly 0.1 % of transactions. A model with 99 % precision <em>on the fraud class</em>
+  and 99 % recall still floods your review queue, for exactly the arithmetic above. This is why
+  accuracy is a useless metric on imbalanced problems, why you look at PR-AUC rather than ROC-AUC,
+  and why the first question in any fraud design round is “what is the base rate?”. Module 25 does
+  the metrics; the reasoning starts here.</p>
+</div>
+
+<h2 data-n="12.4">Why cross-entropy is <em>the</em> loss</h2>
+
+<p>This is worth deriving once, because it converts a memorised fact into something you can
+reconstruct under pressure.</p>
+
+<p>Ask: which parameters make the data I actually observed most probable? Assuming the examples are
+independent, the probability of the whole dataset is the product of the per-example probabilities.
+Products of thousands of small numbers underflow to zero in floating point, so take the log, which
+turns the product into a sum. Maximising a sum of logs is the same as minimising its negative. And
+the negative log-likelihood of a categorical distribution, written out, is exactly the cross-entropy
+formula.</p>
+
+<div class="eq">
+  maximise ∏ P(yᵢ | xᵢ; θ)  ⟺  maximise Σ log P(yᵢ | xᵢ; θ)  ⟺  minimise −Σ log P(yᵢ | xᵢ; θ)
+  <span class="note">The last expression is cross-entropy loss. MLE and cross-entropy are the same
+  procedure written two ways.</span>
+</div>
+
+<p>The same move explains mean squared error: assume the noise around your prediction is Gaussian,
+write down the negative log-likelihood, and everything except the squared term is a constant. So
+<strong>MSE is MLE under a Gaussian noise assumption</strong>, which immediately tells you when it
+is the wrong loss — heavy tails, outliers, or asymmetric costs, where a Gaussian is simply not the
+right noise model.</p>
+
+<h2 data-n="12.5">The assumption production breaks first</h2>
+
+<p>Everything statistical you do rests on i.i.d.: samples drawn independently from one fixed
+distribution. Production violates it constantly, and being able to name <em>which</em> part broke is
+a strong seniority signal.</p>
+
+<div class="tw">
+<table>
+<tr><th>What breaks</th><th>Looks like</th><th>What it does to you</th></tr>
+<tr><td><strong>Not independent</strong> — time</td>
+    <td>A random train/test split on time-series data puts tomorrow in train and today in test.</td>
+    <td>Leakage. Offline metrics look wonderful and production is a disaster. Split by time, always.</td></tr>
+<tr><td><strong>Not independent</strong> — groups</td>
+    <td>Multiple transactions from the same customer land on both sides of the split.</td>
+    <td>You are measuring memorisation of that customer. Use grouped splits.</td></tr>
+<tr><td><strong>Not identical</strong> — covariate shift</td>
+    <td>P(x) moves; the input mix changes. New country, new device, Christmas.</td>
+    <td>Your model is extrapolating. This is what PSI in module 54 detects.</td></tr>
+<tr><td><strong>Not identical</strong> — concept drift</td>
+    <td>P(y|x) moves; the same inputs now mean something different. Fraudsters adapt.</td>
+    <td>The model is simply wrong now, and no amount of input monitoring alone will tell you —
+        you need labels.</td></tr>
+<tr><td><strong>Feedback loops</strong></td>
+    <td>You block the transactions you predict are fraud, so you never learn their true label.</td>
+    <td>The training distribution is now shaped by your own model. The nastiest one, because it is
+        invisible in every metric.</td></tr>
+</table>
+</div>
+
+<h2 data-n="12.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain Bayes' theorem to someone non-technical.</summary>
+  <div class="a">
+    <div class="tldr">It is the arithmetic of updating a belief when evidence arrives — how strongly
+    the new evidence should move you depends on how rare the thing was to begin with.</div>
+    <p>The disease example carries it: a 99 %-accurate test, a disease affecting 1 in 1,000, a
+    positive result. Out of 100,000 people, 100 are ill and 99 of them test positive; 99,900 are
+    healthy and 1 % of <em>those</em> — 999 people — also test positive. So of 1,098 positives, only
+    99 are real. About 9 %.</p>
+    <p>The lesson is that P(positive | disease) and P(disease | positive) are different questions,
+    and the base rate is what separates them. Rare things stay fairly unlikely even after
+    suggestive evidence.</p>
+    <p>Where I use it: fraud is about 0.1 % of transactions, so exactly this arithmetic decides how
+    large a manual-review queue a given precision produces.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>“99 % accurate” is ambiguous and you should say so — sensitivity and specificity can differ
+      a lot, and the answer changes completely depending on which one is 99 %. Asking that question
+      is itself the signal.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is the difference between a PDF and a PMF?</summary>
+  <div class="a">
+    <div class="tldr">A PMF gives actual probabilities for discrete outcomes and sums to 1; a PDF
+    gives a <em>density</em> for continuous ones, integrates to 1, and any single point has
+    probability zero.</div>
+    <p>Asking “what is the probability a person is exactly 180.000… cm tall” is meaningless —
+    it is zero. Only intervals have probability, which is why you integrate. And a density can
+    legitimately exceed 1, as long as the area under it is 1: a uniform distribution on [0, 0.1] has
+    density 10 everywhere.</p>
+    <p>Where it matters: continuous likelihoods are densities, so a "likelihood" of 4.7 is not a bug.
+    And this is why continuous latent-variable models report log-densities that can be positive.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>A density above 1 is not an error. If someone says their model output a probability of 3,
+      first ask whether it is a density.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is maximum likelihood estimation, and how does it connect to the losses you use?</summary>
+  <div class="a">
+    <div class="tldr">MLE picks the parameters that make the observed data most probable — and both
+    cross-entropy and MSE are MLE in disguise.</div>
+    <p>Assume the examples are independent, so the probability of the whole dataset is the product of
+    the per-example probabilities. Take a log to avoid underflow and turn the product into a sum,
+    then negate to get a minimisation. The result for a categorical output is literally the
+    cross-entropy formula.</p>
+    <p>Do the same with a Gaussian noise assumption and everything but the squared error falls out as
+    a constant — so MSE is MLE under Gaussian noise. That immediately tells you when MSE is the wrong
+    choice: heavy-tailed targets, outliers, or asymmetric costs, where Gaussian is not the right
+    noise model. For counts you would use a Poisson likelihood and get a different loss.</p>
+    <p>The practical version I care about: <strong>choosing a loss is choosing a probabilistic model
+    of your labels.</strong> If you can say what distribution you think the noise has, the loss is
+    determined for you.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>MLE is not unbiased in general — the MLE for a Gaussian variance divides by n rather than
+      n−1 and systematically underestimates. And with few samples it overfits hard, which is exactly
+      what the prior in MAP is there to prevent.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>MLE versus MAP — what is the difference, and where have you used it?</summary>
+  <div class="a">
+    <div class="tldr">MAP is MLE multiplied by a prior — and that prior is exactly your regulariser.</div>
+    <p>MLE maximises P(data | θ). MAP maximises P(θ | data) ∝ P(data | θ)·P(θ). Take logs and the
+    prior becomes an additive penalty on the objective.</p>
+    <p>Two concrete equivalences worth knowing cold:</p>
+    <ul>
+      <li>A zero-mean <strong>Gaussian</strong> prior on the weights gives a penalty proportional to
+          Σwᵢ² — that is <strong>ridge / L2 / weight decay</strong>, with λ set by the prior's
+          variance. A tight prior means a large λ.</li>
+      <li>A zero-mean <strong>Laplace</strong> prior gives Σ|wᵢ| — that is <strong>lasso / L1</strong>,
+          and its sharp peak at zero is the probabilistic reason it produces exact zeros.</li>
+    </ul>
+    <p>Why I like framing it this way: it turns “what λ should I use?” from a grid-search question
+    into a question about belief. λ → 0 means “I have no prior opinion, let the data decide” — fine
+    with a million rows, reckless with a thousand.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>MAP is still a single point estimate, not a Bayesian posterior. It gives you the peak and
+      tells you nothing about the width, so it provides no uncertainty. That is the gap the Laplace
+      approximation in module 14 fills.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does i.i.d. mean and where does it break in production?</summary>
+  <div class="a">
+    <div class="tldr">Independent and identically distributed — and production breaks both halves
+    routinely, which is where most silent model failures come from.</div>
+    <p><strong>Independence goes first.</strong> Time series: a random split puts the future in
+    training and the past in test, and your offline metric becomes fiction. Grouped data: several
+    rows from the same customer straddle the split and you measure memorisation. Both fixes are
+    structural — split by time, split by group.</p>
+    <p><strong>Identical distribution goes second.</strong> Covariate shift means P(x) moved — a new
+    market, a new device mix, a seasonal spike. Concept drift means P(y|x) moved — the same inputs
+    now imply a different label, which is the normal state of affairs in fraud because the adversary
+    adapts. The distinction matters operationally: you can detect covariate shift from inputs alone
+    with PSI or a KS test, but concept drift is invisible without labels.</p>
+    <p><strong>And the worst one is the feedback loop.</strong> You block the transactions you score
+    as fraud, so you never observe their outcome. Your next training set is shaped by your own
+    previous decisions, and every offline metric will look fine while the model quietly narrows. The
+    mitigation is deliberate: hold out a small random control that bypasses the model, so you keep
+    seeing unbiased labels. That costs real money and it is the right call.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Cross-validation assumes i.i.d. too. Standard k-fold on temporal data leaks in exactly the
+      same way a random split does. Use forward-chaining / rolling-origin validation instead.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why is the noise in SGD useful rather than merely tolerable?</summary>
+  <div class="a">
+    <div class="tldr">Because the gradient estimated on a mini-batch is a noisy version of the true
+    one, and that noise escapes saddle points and biases the search toward flatter minima.</div>
+    <p>Three effects, in increasing order of interest:</p>
+    <ul>
+      <li><strong>Escaping saddles.</strong> Exactly at a saddle the true gradient is zero and full-batch
+          descent stops. A noisy estimate is not zero, so you get pushed off. Given how much saddles
+          dominate in high dimensions, this alone matters.</li>
+      <li><strong>Implicit regularisation.</strong> The noise acts like a temperature. Narrow, sharp
+          minima are unstable under it — you get bounced out — while wide flat basins retain you.
+          Flat minima empirically generalise better, so SGD's sloppiness is doing free regularisation.</li>
+      <li><strong>It is also just cheaper.</strong> A batch of 256 gives a gradient estimate good
+          enough to make progress at a fraction of the cost of the full dataset, so you take vastly
+          more steps per unit of compute.</li>
+    </ul>
+    <p>The consequence that shows up in practice: <strong>batch size and learning rate are
+    coupled.</strong> Larger batches mean less noise, so you need a larger learning rate to keep the
+    same amount of exploration — the linear scaling rule with warmup. Simply increasing batch size
+    while holding the learning rate fixed typically costs you generalisation, and that surprises
+    people.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The flat-minima story is a well-supported heuristic, not a theorem — sharpness is not
+      reparameterisation-invariant, and Dinh et al. showed you can rescale a network to make a
+      minimum arbitrarily sharp without changing the function. Say “empirically” and you sound like
+      you have read the literature rather than a blog post.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your fraud model reports 0.8 for a transaction. What does that number mean, and how would you check?</summary>
+  <div class="a">
+    <div class="tldr">It should mean that among all transactions the model scores 0.8, about 80 %
+    are actually fraud — and that is a testable claim called calibration, which most models fail out
+    of the box.</div>
+    <p>The score is a claim about a <em>reference class</em>, not about this transaction. Verifying it
+    is straightforward: bucket every scored transaction by predicted probability, and for each bucket
+    compare the mean prediction against the observed fraud rate. Plot it — that is a reliability
+    diagram — and summarise with expected calibration error or the Brier score.</p>
+    <p>Which models miscalibrate, and how:</p>
+    <ul>
+      <li><strong>Modern neural networks are systematically overconfident</strong> — Guo et al.
+          showed accuracy improved over the years while calibration got worse.</li>
+      <li><strong>SVMs</strong> output distances, not probabilities, and need Platt scaling before
+          the number means anything.</li>
+      <li><strong>Random forests</strong> are pulled toward the middle, because averaging many trees
+          rarely produces a unanimous 0 or 1.</li>
+      <li><strong>Any resampling</strong> — SMOTE, undersampling the negatives — deliberately
+          destroys calibration by changing the base rate. You must correct the intercept back
+          afterwards, and people routinely forget.</li>
+    </ul>
+    <p>Fixes are cheap: Platt scaling (fit a logistic on the scores) or isotonic regression (more
+    flexible, needs more data), fitted on a <em>held-out calibration set</em>, never on training
+    data.</p>
+    <p>And the reason it is not academic: if the number is calibrated I can multiply it by the
+    transaction value to get an expected loss, and set the block threshold from a cost matrix instead
+    of a guess. Uncalibrated, that arithmetic is meaningless and every downstream business decision
+    is built on sand.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Calibration and discrimination are independent. A model that outputs the base rate 0.001 for
+      every single transaction is perfectly calibrated and completely useless — AUC 0.5. You need
+      both, and you should say so before they ask.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why does the central limit theorem let you A/B test a metric that is nowhere near normal?</summary>
+  <div class="a">
+    <div class="tldr">Because you are not testing the metric — you are testing its <em>mean</em>,
+    and means of many independent samples become approximately Gaussian whatever the underlying
+    shape.</div>
+    <p>Revenue per user is a horrible distribution: a spike at zero, a long right tail, occasional
+    enormous outliers. But the sampling distribution of its <em>average</em> over tens of thousands
+    of users is close enough to normal that a t-test's assumptions hold, because those assumptions
+    are about the estimator, not the data.</p>
+    <p>The honest caveats, which is where the seniority shows:</p>
+    <ul>
+      <li><strong>Convergence rate depends on skew.</strong> "n &gt; 30" is folklore. For revenue-like
+          distributions you may need tens of thousands, and a single whale can dominate the variance.
+          Winsorising or a bootstrap is often more trustworthy than trusting the asymptotics.</li>
+      <li><strong>Independence is required.</strong> Multiple sessions per user break it — randomise
+          and analyse at the <em>user</em> level, not the session level, or your variance estimate is
+          too small and everything looks significant.</li>
+      <li><strong>Infinite variance breaks it entirely.</strong> The CLT needs finite variance;
+          genuinely heavy-tailed (Pareto-ish) metrics do not converge usefully.</li>
+    </ul>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>The CLT says nothing about individual predictions. It justifies inference about your
+      <em>average</em> metric; it does not make your per-user residuals Gaussian, and it is not a
+      licence to use MSE on a skewed target.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The disease-test calculation, with the actual numbers, in under 40 seconds.</li>
+    <li>The chain from MLE to cross-entropy: product → log → negate.</li>
+    <li>Which loss follows from a Gaussian noise assumption, and when that assumption is wrong.</li>
+    <li>The four ways production breaks i.i.d., and which two are invisible without labels.</li>
+    <li>What a probability of 0.8 claims, and how you would test the claim.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#11" target="_top"><span class="k">Back</span>← 11 · Calculus &amp; minima</a>
+  <a href="../index.html#13" target="_top"><span class="k">Next</span>13 · Information theory →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Behavioural &amp; judgment — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 66</p>
+<h1>Behavioural &amp; ML judgment
+  <span class="lede">The round people prepare least and lose most often. At senior level it is not a
+  personality test — it is a test of whether your technical judgment survives contact with deadlines,
+  disagreement, and being wrong.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>45 minutes, and this one needs a voice recorder.</strong> Behavioural answers fail by
+  rambling, and you cannot hear yourself ramble while you are doing it. Record each answer, play it back,
+  and cut it until it lands in <strong>90 seconds to two minutes</strong>.</p>
+  <p>The prompts below are deliberately not filled in. Your stories have to come from your own work —
+  a borrowed anecdote collapses on the second follow-up, and the follow-up is where the marks are.
+  Fill them from <code>interview-prep/story-bank.md</code>, and where a story cites a number, make sure you
+  know where that number came from before you say it out loud.</p>
+</div>
+
+<h2 data-n="66.1">The structure — STAR, plus the part people drop</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">S · Situation <span class="tag">15 seconds</span></div>
+    <p>Enough context to make the problem legible, and not one sentence more. The team, the system, what
+       was at stake.</p>
+    <p class="warn-inline">The most common failure in the whole round is a two-minute Situation. If the
+       interviewer still does not know what you did by the 45-second mark, you have lost them.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">T · Task <span class="tag">10 seconds</span></div>
+    <p>What <em>you specifically</em> were responsible for. Not the team's goal — yours.</p>
+    <p class="wh">This is where "we" starts creeping in. Use "we" for context and "I" for your actions,
+       deliberately, and notice when you slip.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">A · Action <span class="tag">60 seconds — the bulk</span></div>
+    <p>The decisions you made and, crucially, <strong>why you made them rather than the alternative</strong>.</p>
+    <p class="wh">Senior answers live here. A junior answer says what was built; a senior answer says what
+       was considered, what was rejected, and on what evidence. Name at least one option you did not
+       take.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">R · Result <span class="tag">20 seconds</span></div>
+    <p>What happened, quantified where you honestly can, and what happened to the thing you actually
+       cared about — the business or user outcome, not just the model metric.</p>
+    <p class="warn-inline">If you do not have a clean number, say so and give the qualitative outcome. An
+       invented metric dies on the question "how was that measured?", and that question always comes.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">R · Reflection <span class="tag">15 seconds — the differentiator</span></div>
+    <p>What you would do differently, or what the experience changed about how you work now.</p>
+    <p class="wh">This is the part almost everyone omits, and it is the cheapest way to sound senior.
+       It converts a story about a project into evidence of learning — which is the actual thing being
+       assessed.</p>
+  </div>
+
+</div>
+
+<h2 data-n="66.2">The story inventory — build this before anything else</h2>
+
+<p>You do not need twenty stories. You need <strong>six to eight strong ones</strong>, each of which can
+be angled at several questions. Write them once, properly, and then practise re-pointing them.</p>
+
+<div class="tw">
+<table>
+<tr><th>#</th><th>The story you need</th><th>Questions it covers</th></tr>
+<tr><td>1</td><td><strong>The hardest technical problem</strong> you have solved — where the difficulty
+    was genuine ambiguity, not just volume of work</td><td>Hardest problem · proudest work · how you
+    approach the unknown</td></tr>
+<tr><td>2</td><td><strong>A failure that was yours</strong>, with a real consequence and a real
+    lesson</td><td>Biggest failure · a mistake you made · what you would do differently</td></tr>
+<tr><td>3</td><td><strong>A disagreement with someone senior</strong> — including how it
+    resolved</td><td>Conflict · pushing back · influencing without authority</td></tr>
+<tr><td>4</td><td><strong>A decision under time pressure</strong> with incomplete
+    information</td><td>Trade-offs · shipping under a deadline · pragmatism versus correctness</td></tr>
+<tr><td>5</td><td><strong>Something you shipped that changed a real number</strong> for the
+    business</td><td>Impact · ownership · working with stakeholders</td></tr>
+<tr><td>6</td><td><strong>Something you learned fast</strong> because the work demanded it</td><td>Learning
+    new technology · being the least experienced person in the room</td></tr>
+<tr><td>7</td><td><strong>A time you were wrong</strong> and changed your mind on
+    evidence</td><td>Handling feedback · intellectual honesty · scientific judgment</td></tr>
+<tr><td>8</td><td><strong>Helping someone else succeed</strong> — mentoring, review, unblocking</td><td>
+    Teamwork · leadership · what a senior does beyond their own tickets</td></tr>
+</table>
+</div>
+
+<div class="box trap">
+  <span class="lbl">The provenance rule — read this before you rehearse</span>
+  <p>Stories accumulate. A figure written once to match a job description gets absorbed into the story
+  bank, then cited as fact by the next prep document, and drifts a little further each time. In an
+  interview that is not a stylistic problem — it is the thing that ends the conversation when someone asks
+  how it was measured and you cannot answer.</p>
+  <p>So before you rehearse, go through your story bank and mark every number: <strong>where did this come
+  from?</strong> If you can trace it, keep it and know the source. If you cannot, either recover the real
+  figure or drop the number and tell the story qualitatively. "It cut the batch from hours to minutes, I
+  do not have the exact figure to hand" is a completely acceptable senior answer. A precise number you
+  cannot defend is not.</p>
+</div>
+
+<h2 data-n="66.3">The ML-judgment questions</h2>
+
+<p>These are behavioural in form and technical in substance. They are the ones that actually distinguish
+candidates at this level, and they are much less rehearsed than "tell me about a conflict".</p>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Tell me about a model that did not work in production.</summary>
+  <div class="a">
+    <div class="tldr">Pick a real one, diagnose it the way you would in round 5, and land on the systemic
+    fix rather than the one-off patch. The interviewer is checking whether you have actually operated a
+    model, because everyone has trained one.</div>
+    <p><strong>What a strong answer contains:</strong></p>
+    <ul>
+      <li>A specific symptom with a number or a shape — "precision fell from X to Y in the first week",
+          not "it performed badly".</li>
+      <li>The <em>order</em> in which you investigated, and why that order. This is the same skill as the
+          incident questions, and it is what makes the story technical rather than anecdotal.</li>
+      <li>The root cause, stated plainly — including if it was your mistake. Leakage, skew, a shifted
+          population, the wrong metric, or the decision changing behaviour.</li>
+      <li>The immediate fix <em>and</em> the systemic one. "We corrected the join" is a patch; "we made
+          training read the logged serving features so the class of bug could not recur" is engineering.</li>
+      <li>What you monitor now that you did not monitor then.</li>
+    </ul>
+    <p class="warn-inline">The trap: telling a story where the model was fine and someone else broke it.
+    It reads as deflection. If the cause genuinely was upstream, own the part that was yours — you did not
+    detect it, or you had no alert that would have.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Tell me about a time you had to say a project should not ship.</summary>
+  <div class="a">
+    <div class="tldr">The point is not that you blocked something — it is that you made the cost of
+    shipping legible to people who were not going to read your evaluation, and that you offered a path
+    rather than only a veto.</div>
+    <p><strong>The shape that works:</strong> what the evidence was, who wanted it shipped and why their
+    reasons were legitimate, how you translated the risk into their terms (customers wrongly declined,
+    regulatory exposure, on-call load — not AUC), what alternative you proposed, and what actually
+    happened, including if you were overruled.</p>
+    <p><strong>Being overruled is a fine ending</strong> if you handled it well: you documented the risk,
+    you agreed on what would trigger a rollback, and you supported the decision once it was made. That
+    version of the story is often stronger than winning, because it shows you can disagree and commit.</p>
+    <p class="warn-inline">The trap: sounding like the person who blocks things. Balance it with a moment
+    where you accepted a known imperfection because the trade was right — senior engineers ship imperfect
+    systems on purpose, with the imperfection written down.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do you decide whether a problem needs machine learning at all?</summary>
+  <div class="a">
+    <div class="tldr">ML earns its cost when the rule set would be large, would change often, and the
+    inputs are noisy — and when you can measure whether it worked. Otherwise a rule is cheaper, faster,
+    explainable, and instantly modifiable, which in fraud matters enormously.</div>
+    <p><strong>What I would say I check:</strong> is there a labelled outcome, and how delayed is it? Is
+    the pattern stable enough to learn, or adversarial and abrupt? Would a handful of rules get most of the
+    value — because they very often do, and the honest baseline is a rule set, not a coin flip. What is the
+    cost of a wrong decision, and does the domain permit an unexplainable one? And who maintains this in a
+    year?</p>
+    <p><strong>The senior framing:</strong> in fraud the answer is usually <em>both</em>. Rules handle the
+    known, fast-changing, must-be-explainable cases and can be deployed in an hour; the model handles the
+    long tail and the combinations no one wrote down. Presenting it as rules-versus-ML is the junior
+    framing.</p>
+    <p class="warn-inline">Have a real example of choosing <em>not</em> to use ML. It is a strong signal
+    precisely because candidates for ML roles rarely volunteer one.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you explain a model to someone non-technical?</summary>
+  <div class="a">
+    <div class="tldr">Start from the decision they care about, not the mechanism. Say what the model is
+    optimising, what it will get wrong, and what they can do about it — then offer mechanism only if they
+    ask.</div>
+    <p><strong>A concrete structure:</strong> "It scores how likely each transaction is to be fraud, based
+    on patterns in the last two years of confirmed cases. Above a threshold we hold the payment. The
+    threshold is a business choice: raise it and we catch less fraud but annoy fewer customers; lower it
+    and the reverse. Here is the current trade at today's setting."</p>
+    <p><strong>What earns trust</strong> is being specific about failure. "It will be wrong in these two
+    ways, here is roughly how often, and here is the review path" builds far more confidence than
+    accuracy figures. Then show one worked example with its explanation — a single concrete case does more
+    than any diagram.</p>
+    <p class="warn-inline">Trap: the analogy that overpromises. Comparing a model to "how a human expert
+    thinks" invites people to expect human-like reasoning and to be shocked by machine-like failures. Keep
+    analogies to the mechanism you actually mean.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Tell me about a technical disagreement and how it ended.</summary>
+  <div class="a">
+    <div class="tldr">The best version is one where you were partly wrong, you found that out because you
+    ran something, and the resolution was evidence rather than seniority.</div>
+    <p><strong>What to include:</strong> the actual technical substance — the interviewer wants to hear
+    the argument, not just that there was one. Both positions stated fairly. What you did to resolve it:
+    an experiment, a prototype, a cost estimate, a small benchmark. And what you did once it was decided.</p>
+    <p><strong>The strongest ending</strong> is "we ran it and the data said something neither of us
+    expected". The second strongest is "I was wrong, and here is what I had missed". A story where you were
+    simply right and eventually everyone agreed is the weakest, because it demonstrates nothing about how
+    you behave under genuine uncertainty.</p>
+    <p class="warn-inline">Trap: characterising the other person badly. Even mild dismissiveness — "they
+    did not really understand the maths" — reads as a warning sign about how you would treat a colleague
+    in their team.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you keep up with the field?</summary>
+  <div class="a">
+    <div class="tldr">Be specific and honest about your actual routine, and make it concrete with one
+    thing you learned recently and what you did with it. Vague answers ("I read papers, I follow
+    Twitter") are worse than a modest but real routine.</div>
+    <p><strong>The shape:</strong> one or two sources you genuinely use, a filter for what you bother to
+    read deeply, and — the part that matters — an example of something you read and then <em>tried</em>.
+    Reading without implementing is a weak signal in a research-engineering role; implementing something
+    small and reporting what actually happened, including if it did not help, is a strong one.</p>
+    <p><strong>The reframe worth offering:</strong> most of the field is noise on any given week, so the
+    skill is not consuming more but deciding what is load-bearing. Saying that you deliberately go deep on
+    fundamentals and shallow on releases is a defensible, senior position.</p>
+  </div>
+</details>
+
+<h2 data-n="66.4">The classics, compressed</h2>
+
+<div class="tw">
+<table>
+<tr><th>Question</th><th>What is actually being tested</th><th>The failure mode</th></tr>
+<tr><td>Tell me about yourself</td><td>Can you summarise your own career with a point of view</td><td>A
+    chronological CV recital. Give three beats: where you come from, what you have converged on, why this
+    role.</td></tr>
+<tr><td>Why this company / role</td><td>Whether you did any homework</td><td>Generic praise. Name
+    something specific about their problem and connect it to work you have done.</td></tr>
+<tr><td>Biggest weakness</td><td>Self-awareness, and whether you are managing it</td><td>The humblebrag.
+    Name a real one, and say the mechanism you use to contain it.</td></tr>
+<tr><td>Biggest failure</td><td>Whether you take ownership</td><td>A failure that was someone else's, or
+    one with no consequence. It needs a real cost and a real change.</td></tr>
+<tr><td>Where do you see yourself</td><td>Whether the role is a step on your path or a
+    stopgap</td><td>Overreaching ("your job"), or having no answer at all.</td></tr>
+<tr><td>Questions for us</td><td>Seniority — your questions reveal what you think
+    matters</td><td>Asking nothing, or asking only about perks. See below.</td></tr>
+</table>
+</div>
+
+<h2 data-n="66.5">Your questions for them</h2>
+
+<p>Prepare six; you will get through three. Good questions are the ones whose answers would genuinely
+change whether you want the job — and they double as a demonstration that you know how this work goes
+wrong.</p>
+
+<ul>
+  <li>How do models get from a notebook to production here, and how long does that take end to end?</li>
+  <li>What happens when a model degrades — who notices, and how?</li>
+  <li>How much of the role is research versus productionisation, honestly, over a year?</li>
+  <li>What is the biggest piece of technical debt in the ML stack right now?</li>
+  <li>How do you decide what to work on — who sets the research agenda?</li>
+  <li>What has someone in this role tried that did not work out?</li>
+  <li>What does the feedback loop look like — how do you learn whether a shipped model actually helped?</li>
+  <li>What would you want the person in this role to have accomplished after six months?</li>
+</ul>
+
+<div class="box note">
+  <span class="lbl">Listen to the answers</span>
+  <p>These are diagnostics, not performance. If nobody can describe how a model gets to production, or the
+  answer to "what happens when it degrades" is a pause, you have learned something important about what
+  the first year would be like.</p>
+</div>
+
+<h2 data-n="66.6">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th></tr>
+<tr><td>Not yet</td><td>Stories exist but run past three minutes, the Situation dominates, and "we" does
+    most of the work.</td></tr>
+<tr><td>Solid mid</td><td>Six to eight stories, each inside two minutes with a clear Result. You can
+    re-point a story at a different question on request.</td></tr>
+<tr><td>Senior</td><td>Every story includes the alternative you rejected and why, ends with a
+    reflection, and every number in it is one you can source.</td></tr>
+<tr><td>Strong senior</td><td>The ML-judgment answers are as concrete as the technical rounds; you have a
+    story about choosing <em>not</em> to use ML, and one where you were wrong and changed your mind on
+    evidence.</td></tr>
+</table>
+</div>
+
+<div class="checkpoint">
+  <h4>Checkpoint — you can move on when you can</h4>
+  <ul>
+    <li>Tell all eight inventory stories in under two minutes each, out loud, recorded.</li>
+    <li>Point any one of them at three different questions without restarting from scratch.</li>
+    <li>Source every number you use — or tell the story cleanly without one.</li>
+    <li>Answer "a model that did not work in production" as a diagnosis with an order, not an anecdote.</li>
+    <li>Give a real example of deciding <em>not</em> to use machine learning.</li>
+    <li>Ask six questions whose answers would change your decision about the job.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#65" target="_top"><span class="k">Back</span>← 65 · Coding round (DSA)</a>
+  <a href="../index.html#70" target="_top"><span class="k">Next</span>70 · Fraud detection, end to end →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

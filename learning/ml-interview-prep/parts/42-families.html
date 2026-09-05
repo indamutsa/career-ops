@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model families — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 42</p>
+<h1>Model families
+  <span class="lede">Same block, three ways of wiring it, three training objectives. Knowing why
+  decoder-only won — and why BERT is still the right answer for some jobs — is a standard senior
+  question and a cheap way to sound like you have shipped things.</span>
+</h1>
+
+<h2 data-n="42.1">The three architectures</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Encoder-only</th><th>Decoder-only</th><th>Encoder–decoder</th></tr>
+<tr><td>Example</td><td>BERT, RoBERTa, DeBERTa</td><td>GPT, Llama, Mistral, Claude</td><td>T5, BART,
+    original transformer</td></tr>
+<tr><td>Attention</td><td>Bidirectional</td><td>Causal</td><td>Bidirectional encoder, causal decoder,
+    plus cross-attention</td></tr>
+<tr><td>Objective</td><td>Masked LM — predict 15 % hidden tokens</td><td>Next token</td><td>Span
+    corruption / denoising</td></tr>
+<tr><td>Can generate?</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Signal per sequence</td><td>~15 % of tokens</td><td>100 % of tokens</td><td>The corrupted
+    spans only</td></tr>
+<tr><td>Still used for</td><td>Classification, NER, retrieval embeddings, reranking</td><td>Everything
+    generative</td><td>Translation, some structured seq2seq</td></tr>
+</table>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p><strong>BERT</strong> is a proofreader: it sees the whole page at once, including what comes
+  after, and fills in the blanked-out words. Excellent judgement, cannot write a page.</p>
+  <p><strong>GPT</strong> is a writer: it only ever sees what it has written so far, and its whole job
+  is the next word. Weaker at reading comprehension per parameter, but it can produce.</p>
+</div>
+
+<h2 data-n="42.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Masked language modelling (MLM) <span class="tag">mid</span></div>
+    <p>Hide ~15 % of tokens and predict them from both directions. BERT's actual recipe replaced 80 %
+       of those with [MASK], 10 % with a random token, 10 % unchanged.</p>
+    <p class="warn-inline">That awkward 80/10/10 exists because [MASK] never appears at fine-tuning
+       time — a train/serve mismatch patched by construction rather than by design.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Causal language modelling <span class="tag">basic</span></div>
+    <p>Predict the next token, everywhere, from the left context only.</p>
+    <p class="wh">Every position yields a training signal from one forward pass, so a sequence of
+       length n gives n supervised examples rather than BERT's 0.15n. That efficiency compounds
+       enormously at scale.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Span corruption <span class="tag">mid</span></div>
+    <p>T5's objective: replace contiguous spans with sentinel tokens and have the decoder emit the
+       missing spans in order.</p>
+    <p class="wh">Harder than single-token masking, and it forces the model to produce variable-length
+       output — closer to real generation than MLM.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Text-to-text framing <span class="tag">mid</span></div>
+    <p>T5's other contribution: cast every task as string in, string out — classification, translation,
+       regression, all of it.</p>
+    <p class="wh">The idea that made instruction-tuned models conceivable. Prompting is this framing
+       taken to its conclusion.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">[CLS] pooling <span class="tag">mid</span></div>
+    <p>BERT prepends a [CLS] token whose final hidden state is used as the sentence representation.</p>
+    <p class="warn-inline">Raw [CLS] and raw mean-pooled BERT vectors are poor for similarity search —
+       worse than averaged GloVe on some benchmarks. SBERT exists because of this: it retrains BERT
+       with a contrastive objective so that cosine distance actually means something.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bi-encoder vs cross-encoder <span class="tag">senior</span></div>
+    <p><strong>Bi-encoder:</strong> embed query and document separately, compare with cosine — the
+       document side is precomputable, so it scales to millions. <strong>Cross-encoder:</strong> feed
+       the pair together through the model — far more accurate, and it must run once per candidate.</p>
+    <p class="wh">The standard production shape: bi-encoder retrieves the top ~100, cross-encoder
+       reranks them. Encoder models are alive and well in this role.</p>
+  </div>
+
+</div>
+
+<h2 data-n="42.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why did decoder-only models win?</summary>
+  <div class="a">
+    <div class="tldr">Better training-signal efficiency, a single objective that covers every task
+    through prompting, no fine-tuning infrastructure needed, and a simpler architecture that scales
+    cleanly. Generation was the capability that turned out to matter most.</div>
+    <p><strong>Signal efficiency.</strong> Causal LM gets a loss at every position from one forward
+    pass; MLM gets one at 15 % of positions. Roughly 6× more learning per token of data, and when the
+    binding constraint became "how much can we train on", that difference compounded.</p>
+    <p><strong>One objective, every task.</strong> BERT needed a task-specific head and a fine-tuning
+    run per task. GPT-3 showed the same weights doing translation, summarisation, classification and
+    Q&amp;A from prompts alone. That collapsed the deployment story from "a model per task" to "one
+    model, many prompts" — an operational change as much as a research one.</p>
+    <p><strong>Generation is a superset.</strong> A generative model can be asked to classify; a
+    classifier cannot be asked to write. Once quality was adequate, the generative model absorbed the
+    other family's use cases.</p>
+    <p><strong>Simplicity scales.</strong> No encoder stack, no cross-attention, no asymmetry — one
+    stack, one mask. Easier to shard, easier to optimise, fewer things to tune.</p>
+    <p><strong>The honest qualifier:</strong> the encoder-only advantage was real and is not gone.
+    Bidirectional context is genuinely better for understanding a fixed input, and for classification
+    or retrieval a 110M-parameter DeBERTa still beats prompting a 70B model on both accuracy and cost.
+    Decoder-only won the frontier, not every job.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>When would you still choose BERT over an LLM?</summary>
+  <div class="a">
+    <div class="tldr">High-volume, fixed, well-labelled classification or extraction under a latency
+    or cost budget — and embedding-based retrieval, where the whole architecture is encoder-based
+    anyway.</div>
+    <p><strong>Cost and latency.</strong> A fine-tuned DeBERTa-v3-base is ~180M parameters, runs on CPU
+    in a few milliseconds, costs effectively nothing per call, and can be deployed inside your own
+    network. Calling a frontier model for every one of ten million daily documents is orders of
+    magnitude more expensive and slower, for a task where the small model is often <em>more</em>
+    accurate because it was trained on your labels.</p>
+    <p><strong>Accuracy when labels exist.</strong> With a few thousand in-domain labels, fine-tuned
+    encoders typically beat zero- or few-shot prompting on narrow classification. Bidirectional
+    attention over a fixed input is the right inductive bias for the job.</p>
+    <p><strong>Determinism and auditability.</strong> A classifier returns a calibrated probability for
+    a fixed label set — you can threshold it, monitor its drift, and explain it. An LLM returns text
+    that must be parsed and can drift with a provider's silent model update.</p>
+    <p><strong>Retrieval.</strong> Embedding models are encoders, and reranking cross-encoders are
+    encoders. Every RAG system in production is running encoder models whether the team thinks of it
+    that way or not.</p>
+    <p><strong>The pragmatic hybrid I would propose:</strong> use the LLM to <em>label</em> — a few
+    thousand examples cheaply — then distil into a small encoder for serving. You get the LLM's quality
+    at the encoder's cost, and the distilled model is yours to monitor and version.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Does encoder–decoder still have a reason to exist?</summary>
+  <div class="a">
+    <div class="tldr">Yes, where input and output are genuinely different objects and the input is
+    fully available up front — translation, speech recognition, some structured transformation. But
+    decoder-only with a long context absorbs most of it.</div>
+    <p><strong>The architectural case for it:</strong> the encoder processes the source
+    bidirectionally, so every source token sees full context, which a decoder-only model cannot do for
+    the prompt portion. Cross-attention gives the decoder a clean, dedicated channel to the source, and
+    the source needs encoding only once regardless of how long the output is.</p>
+    <p><strong>Why it lost anyway:</strong> concatenation works. Put the source and the target in one
+    sequence and a decoder-only model does the same job with half the architecture, no cross-attention,
+    and no encoder/decoder capacity split to tune. Since it also gets the prompting and scaling
+    advantages from the previous question, the extra machinery stopped paying for itself.</p>
+    <p><strong>Where it genuinely persists:</strong> Whisper for speech, because audio and text are
+    different modalities and the asymmetry is real. Specialised translation systems. And, notably, the
+    encoder–decoder shape reappears in multimodal models — a vision encoder feeding a language decoder
+    through cross-attention is exactly this pattern under another name.</p>
+    <p><strong>The empirical data point worth citing:</strong> Google's UL2 and the T5 line found
+    encoder–decoder better at fixed compute for fine-tuned tasks, while decoder-only was better for
+    few-shot prompting. Both results are real; the industry optimised for the second because that is
+    where the product was.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why can't you just use BERT for generation?</summary>
+  <div class="a">
+    <div class="tldr">It was never trained to produce a sequence — only to fill blanks given both
+    sides. Generating left to right means every step is out of distribution, and there is no mechanism
+    for deciding how long the output should be.</div>
+    <p>Concretely: BERT's training always had right-hand context. Generation has none, so at inference
+    it is being asked a question it never saw. People have tried — masked-LM decoding by iteratively
+    unmasking — and it produces incoherent text, because each token is predicted independently given
+    the current partial fill, with no factorisation of the joint distribution. Causal LM factorises the
+    joint exactly, one conditional at a time; MLM does not factorise anything.</p>
+    <p>There is also no length mechanism. A causal model emits an end-of-sequence token when it decides
+    it is finished; BERT fills a predetermined number of [MASK] slots, so you must know the answer's
+    length before generating it.</p>
+    <p><strong>The interesting exception</strong> is diffusion language models, which do generate by
+    iterative denoising over the whole sequence at once. They are a live research direction precisely
+    because parallel generation could beat sequential decoding on latency — so the idea is not wrong,
+    it just needs a training objective built for it rather than BERT's.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The three architectures, their objectives, and what each can and cannot do.</li>
+    <li>The four reasons decoder-only won — and the honest qualifier.</li>
+    <li>Three concrete situations where a fine-tuned encoder is the better engineering choice.</li>
+    <li>Bi-encoder vs cross-encoder, and the retrieve-then-rerank shape.</li>
+    <li>Why MLM cannot generate: no factorisation, no length mechanism.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#41" target="_top"><span class="k">Back</span>← 41 · The transformer block</a>
+  <a href="../index.html#43" target="_top"><span class="k">Next</span>43 · Pretraining &amp; scaling →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

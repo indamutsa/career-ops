@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RNN, LSTM and the road to attention — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part C · Deep learning · Module 32</p>
+<h1>RNN, LSTM and the road to attention
+  <span class="lede">This module exists to make the transformer inevitable. Attention was not invented
+  in 2017 — it was invented in 2014 as a <em>patch</em> for a specific failure in sequence-to-sequence
+  models. If you can tell that story, "why transformers?" stops being a memorised answer and becomes
+  an argument.</span>
+</h1>
+
+<h2 data-n="32.1">The problem sequences pose</h2>
+
+<p>A feed-forward network takes a fixed-size input. A sentence is not fixed-size, and its meaning
+depends on order — "the dog bit the man" and "the man bit the dog" are the same bag of words and
+different events.</p>
+
+<p>The recurrent answer: process one element at a time, and carry a <strong>hidden state</strong>
+forward that summarises everything seen so far.</p>
+
+<div class="eq">h<sub>t</sub> = tanh(W<sub>h</sub> h<sub>t−1</sub> + W<sub>x</sub> x<sub>t</sub> + b)<span class="note">the same weights at every timestep — parameter sharing across time, exactly as convolution shares across space</span></div>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>Reading a novel while allowed to keep only one index card of notes. After every sentence you may
+  rewrite the card, but you can never look back at the book. By chapter 30 the card holds an
+  increasingly blurry compression of chapters 1–29, and the details of chapter 2 are simply gone.</p>
+  <p>That index card is the hidden state, and its finite size is the entire story of this module.</p>
+</div>
+
+<h2 data-n="32.2">Why plain RNNs fail: the gradient over time</h2>
+
+<p>Training uses <strong>backpropagation through time</strong> — unroll the network across timesteps
+and apply the chain rule, exactly as in module 30.5. But now the depth is the sequence length, and
+crucially <em>the same matrix</em> W<sub>h</sub> is multiplied in at every step.</p>
+
+<div class="eq">∂h<sub>t</sub>/∂h<sub>k</sub> = ∏ W<sub>h</sub><sup>⊤</sup> diag(tanh′)<span class="note">a product of t−k nearly identical terms</span></div>
+
+<p>Repeated multiplication by the same thing is exponential. If the relevant eigenvalue of
+W<sub>h</sub> is below 1, gradients decay to nothing over 20–30 steps — <strong>vanishing</strong>. If
+above 1, they explode. So a plain RNN cannot learn a dependency spanning a paragraph: the gradient
+signal linking "the answer depends on the name in sentence 1" simply never arrives.</p>
+
+<p>Exploding gradients have a cheap fix — <strong>gradient clipping</strong>, rescale the gradient
+whenever its norm exceeds a threshold. Vanishing has no such fix, which is what LSTM was designed
+for.</p>
+
+<h2 data-n="32.3">LSTM and GRU: gates as an additive path</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Cell state <span class="tag">mid</span></div>
+    <p>A second state vector that runs along the sequence and is modified by <em>addition</em>, not by
+       repeated matrix multiplication.</p>
+    <p class="an">A conveyor belt running the length of the factory. Gates drop things on and take
+       things off, but the belt itself just keeps moving.</p>
+    <p class="wh">This is the same trick as a residual connection: create a path where the gradient is
+       multiplied by roughly 1, so it survives many steps.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Forget gate <span class="tag">mid</span></div>
+    <p>A sigmoid vector that decides, per dimension, how much of the previous cell state to keep.</p>
+    <p class="wh">Initialise its bias positive (often 1.0) so it starts near "remember everything" —
+       a small, real trick that measurably helps training.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Input gate <span class="tag">mid</span></div>
+    <p>Decides how much of the new candidate value to write into the cell state.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Output gate <span class="tag">mid</span></div>
+    <p>Decides how much of the cell state to expose as this step's hidden state.</p>
+    <p class="wh">The split between what is <em>stored</em> and what is <em>shown</em> is the design's
+       cleverest part — the LSTM can hold something for later without acting on it now.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GRU <span class="tag">mid</span></div>
+    <p>A simplification: merges the cell and hidden state, and the forget and input gates, into one
+       update gate plus a reset gate.</p>
+    <p class="wh">Roughly 25 % fewer parameters, often equal accuracy. Which one wins is empirical —
+       there is no theoretical answer, and interviewers who claim otherwise are wrong.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bidirectional RNN <span class="tag">basic</span></div>
+    <p>Run one RNN forward and another backward, concatenate the states.</p>
+    <p class="warn-inline">Only valid when the whole sequence is available. Useless for generation or
+       for streaming inference — a distinction that survives into BERT vs GPT.</p>
+  </div>
+
+</div>
+
+<p>LSTMs pushed usable dependency length from tens of steps to hundreds. They did not remove the
+bottleneck; they widened it.</p>
+
+<h2 data-n="32.4">Seq2seq, and the bottleneck that broke it</h2>
+
+<p>Machine translation circa 2014: an <strong>encoder</strong> RNN reads the source sentence and its
+final hidden state — one fixed vector, say 512 numbers — is handed to a <strong>decoder</strong> RNN
+that generates the translation.</p>
+
+<div class="box trap">
+  <span class="lbl">The bottleneck</span>
+  <p>Every source sentence, whether 5 words or 50, is compressed into the same 512 numbers. The
+  measured consequence was stark: BLEU score was flat for short sentences and <em>fell off a cliff</em>
+  as sentences got longer. The model was not running out of capability; it was running out of vector.</p>
+</div>
+
+<h2 data-n="32.5">Attention as the fix</h2>
+
+<p>Bahdanau's 2014 idea, stated plainly: <strong>stop forcing everything through one vector.</strong>
+Keep every encoder hidden state, and let the decoder, at each output step, compute a weighted average
+over all of them — with weights it decides on the fly.</p>
+
+<ol>
+  <li>Score the current decoder state against every encoder state: e<sub>i</sub> = score(s, h<sub>i</sub>).</li>
+  <li>Softmax the scores into weights α that sum to 1.</li>
+  <li>Context vector c = Σ α<sub>i</sub> h<sub>i</sub> — a custom summary for this output word.</li>
+</ol>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>You are no longer allowed only the index card. The whole book stays open on the desk, and for
+  every sentence you write you glance back at the passages that matter for <em>that</em> sentence. The
+  glancing pattern is learned, not fixed.</p>
+</div>
+
+<p>Two properties made this more than a performance patch. It gave a <strong>direct path of length 1
+</strong> between any output and any input — so gradients no longer decay over distance. And the
+attention weights were <strong>inspectable</strong>: plot α as a heatmap and you see a rough word
+alignment emerge without ever having been supervised.</p>
+
+<p>Vaswani's 2017 move was the deletion, not the addition. If attention gives every position direct
+access to every other, the recurrence is doing nothing that attention does not already do — <em>and
+it is what forces sequential computation.</em> Remove it and the whole sequence can be processed in
+parallel. That is the sentence the entire transformer follows from, and it is picked up in module 40.</p>
+
+<div class="tw">
+<table>
+<tr><th></th><th>RNN / LSTM</th><th>Transformer</th></tr>
+<tr><td>Path between distant positions</td><td>O(n) steps</td><td>O(1) — one attention hop</td></tr>
+<tr><td>Training parallelism</td><td>None across time</td><td>Full — all positions at once</td></tr>
+<tr><td>Compute per layer</td><td>O(n · d²)</td><td>O(n² · d)</td></tr>
+<tr><td>Memory at inference</td><td>Constant (one state)</td><td>Grows with context (KV cache)</td></tr>
+<tr><td>Position information</td><td>Free, from the recurrence</td><td>Must be added explicitly</td></tr>
+</table>
+</div>
+
+<p>Note the last two rows: the transformer <em>lost</em> two things. Recurrence gave constant-memory
+inference and position for free. Those losses are exactly what modules 41 (positional encodings) and
+45 (KV cache) spend their time managing.</p>
+
+<h2 data-n="32.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Why does a plain RNN struggle with long sequences?</summary>
+  <div class="a">
+    <div class="tldr">Backpropagating through time multiplies by the same weight matrix once per
+    timestep, so the gradient shrinks or grows exponentially with distance. Long-range dependencies get
+    no learning signal.</div>
+    <p>Concretely: the gradient linking step t to step k contains a product of (t−k) nearly identical
+    Jacobians. Repeated multiplication by the same quantity is exponential — an effective factor of
+    0.9 per step leaves you at 0.9<sup>50</sup> ≈ 0.005 after fifty steps. The signal is not weak, it
+    is absent.</p>
+    <p>Two distinct failure modes with very different remedies: <strong>exploding</strong> gradients
+    are loud (you see NaNs) and fixed cheaply by clipping the gradient norm. <strong>Vanishing</strong>
+    gradients are silent — training proceeds, loss goes down, the model simply never learns anything
+    long-range. That silence is why it needed an architectural fix rather than a numerical one.</p>
+    <p>The connection worth making: this is exactly the vanishing-gradient argument from module 30, but
+    where a deep feed-forward network has different weights per layer, an RNN has the <em>same</em>
+    matrix every step — so the exponential is much cleaner and much worse.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How does an LSTM fix that, mechanically?</summary>
+  <div class="a">
+    <div class="tldr">It adds a cell state that is updated by addition and gated multiplication rather
+    than by a fresh matrix multiply each step, giving the gradient a near-multiply-by-1 highway through
+    time.</div>
+    <p>The update is c<sub>t</sub> = f ⊙ c<sub>t−1</sub> + i ⊙ c̃. Differentiating with respect to
+    c<sub>t−1</sub> gives the forget gate f, not a weight matrix. If the model learns f ≈ 1 for a
+    dimension it wants to preserve, the gradient passes through that dimension essentially unattenuated
+    for hundreds of steps.</p>
+    <p>The three gates divide the labour: <strong>forget</strong> chooses what to drop, <strong>input
+    </strong> what to write, <strong>output</strong> what to expose. The store/expose split matters —
+    the LSTM can carry a fact silently and use it much later.</p>
+    <p><strong>The honest limit:</strong> this mitigates, it does not solve. Gradients still decay,
+    just polynomially rather than exponentially, so LSTMs reach hundreds of steps rather than thousands.
+    And nothing here touches the second problem — encoding an entire sequence into one fixed vector.
+    Attention is what solved that.</p>
+    <p><strong>Worth adding:</strong> the same idea appears three times under three names — the LSTM
+    cell state, the residual connection, and the transformer's residual stream. All are "give the
+    gradient a path multiplied by 1." Saying that out loud shows you see the pattern rather than the
+    three diagrams.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What problem was attention originally invented to solve?</summary>
+  <div class="a">
+    <div class="tldr">The fixed-vector bottleneck in seq2seq translation: the encoder crushed a whole
+    source sentence into one vector, and translation quality collapsed as sentences got longer.
+    Attention let the decoder look back at every encoder state instead.</div>
+    <p>The evidence at the time was unambiguous — BLEU held steady for short sentences and dropped
+    sharply beyond about 30 words. Bahdanau's fix was to keep all encoder states and, at each decoding
+    step, compute a softmax-weighted average of them, with the weights produced by a small learned
+    scoring function.</p>
+    <p>Two consequences beyond the score. The gradient now has a <strong>direct path</strong> from any
+    output to any input, so distance stops attenuating learning. And the α weights are
+    <strong>interpretable</strong> — the published heatmaps showed a soft word alignment emerging with
+    no alignment supervision at all.</p>
+    <p><strong>The framing that makes this a good answer:</strong> attention was a patch bolted onto
+    recurrence. The 2017 insight was subtractive — if attention already connects everything to
+    everything, recurrence contributes nothing except the constraint that forces sequential
+    computation. Delete it and you can process the whole sequence in parallel, which is what made
+    training at today's scale possible. "Attention is all you need" is a claim about what you can
+    <em>remove</em>.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Are RNNs obsolete?</summary>
+  <div class="a">
+    <div class="tldr">For general sequence modelling at scale, effectively yes — but the constraint
+    that killed them is coming back as a feature, and the state-space models chasing that are worth
+    knowing about.</div>
+    <p><strong>Where recurrence still wins:</strong> inference memory. A transformer's KV cache grows
+    linearly with context, so a long conversation costs more per token as it goes; an RNN's state is
+    constant-size regardless of history. On a microcontroller, in a streaming audio pipeline, or under
+    a hard memory ceiling, that is decisive. Attention's O(n²) also stops being free when n is very
+    large.</p>
+    <p><strong>What is actually happening now:</strong> Mamba and the S4/S6 line of state-space models
+    are recurrent at inference — constant state, linear-time scan — but reformulated so training can be
+    parallelised, which is precisely what plain RNNs could not do. RWKV takes a similar route from the
+    other direction. They are competitive at moderate scale; at frontier scale, hybrid designs that
+    keep some attention layers do better than pure ones, apparently because exact recall from context
+    is something attention does and a compressed state does not.</p>
+    <p><strong>The framing I would give:</strong> the field traded constant-memory inference for
+    parallel training, and that trade was overwhelmingly correct while compute for training was the
+    binding constraint. As inference cost becomes the binding constraint — which for a deployed
+    long-context product it now is — the trade is worth re-examining. That is the actual research
+    question, not "are RNNs dead."</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Can you use attention weights to explain what the model is doing?</summary>
+  <div class="a">
+    <div class="tldr">Only carefully. Attention shows where information was read from, not why the
+    output came out as it did — "attention is not explanation" is a real and well-supported literature.</div>
+    <p><strong>The arguments against:</strong> Jain and Wallace showed you can often find alternative
+    attention distributions that produce the same prediction, so the observed weights are not the
+    unique cause. Attention weights are only the first step of a value-weighted sum inside one head of
+    one layer, and there are dozens of layers of mixing afterwards — a large weight on a token whose
+    value vector carries little signal explains nothing. And in a deep model, representations at layer
+    20 are already mixtures of many tokens, so "attends to token 5" no longer means "uses word 5".</p>
+    <p><strong>The counter,</strong> from Wiegreffe and Pinter: it depends what you want. Attention is
+    not a faithful explanation, but it is useful evidence, and the adversarial-distribution result does
+    not show the actual learned weights are meaningless.</p>
+    <p><strong>What I would do instead:</strong> for a faithful attribution, use gradient×input,
+    integrated gradients, or an ablation — remove the token and measure the effect on the output. Those
+    answer the causal question attention weights only gesture at. For mechanistic work, attention
+    patterns are a hypothesis-generation tool, then activation patching tests the hypothesis.</p>
+    <p>This connects straight back to module 26: the same discipline applies to SHAP. A method that
+    produces a confident-looking picture is not thereby faithful, and knowing which question a method
+    actually answers is the difference between interpretability and decoration.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The exponential-product argument for vanishing gradients, and why clipping helps only one side.</li>
+    <li>The LSTM cell-state update, and why differentiating it gives the forget gate.</li>
+    <li>The seq2seq bottleneck and the sentence-length evidence.</li>
+    <li>Bahdanau attention in three steps: score, softmax, weighted sum.</li>
+    <li>Why removing recurrence — not adding attention — is the transformer's key move.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#31" target="_top"><span class="k">Back</span>← 31 · Convolutional nets</a>
+  <a href="../index.html#33" target="_top"><span class="k">Next</span>33 · Classic NLP →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

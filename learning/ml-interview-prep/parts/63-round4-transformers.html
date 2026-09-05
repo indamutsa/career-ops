@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 4 · Transformers — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 63</p>
+<h1>Round 4 · Transformers &amp; LLMs
+  <span class="lede">The round the title is about. Expect architecture questions you must answer
+  precisely, numbers you must be able to produce on demand, and at least one question designed to see
+  whether you will overclaim.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>60 minutes.</strong> Do the arithmetic questions on paper — being able to size a model or a
+  KV cache in your head is a disproportionately strong signal, and it is pure practice. The last section
+  is the one where the correct answer is sometimes "I do not know, and here is how I would find
+  out".</p>
+</div>
+
+<h2 data-n="63.1">Rapid fire — 20 seconds each</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What are Q, K and V?</summary>
+  <div class="a"><div class="tldr">A library lookup. The query is what this token is looking for, keys
+  advertise what each token offers, values are what it actually contributes. Match query against keys,
+  turn the matches into weights, take the weighted sum of values.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why divide by √d<sub>k</sub>?</summary>
+  <div class="a"><div class="tldr">The dot product of two d-dimensional vectors with unit-variance
+  entries has variance d, so the logits grow with dimension and the softmax saturates — one weight goes
+  to 1 and the gradients vanish. Dividing by √d holds the variance at 1.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does the causal mask do, mechanically?</summary>
+  <div class="a"><div class="tldr">Sets the logits for future positions to −∞ before the softmax, so
+  their weights are exactly zero. It lets every position be trained in parallel while each one still
+  only sees its past.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why multiple heads?</summary>
+  <div class="a"><div class="tldr">One softmax can only concentrate on one thing at a time. Multiple
+  heads let the model attend to several relationships in parallel in different subspaces. The caveat:
+  pruning studies show many heads are redundant, so "each head learns a clean role" is an
+  overstatement.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does a transformer need positional information at all?</summary>
+  <div class="a"><div class="tldr">Attention is a weighted sum, which is permutation-equivariant — with
+  no position signal, "dog bites man" and "man bites dog" produce the same representations. Interesting
+  subtlety: the causal mask alone leaks some position information, which is why NoPE models
+  work.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is RoPE's key property?</summary>
+  <div class="a"><div class="tldr">It rotates queries and keys by an angle proportional to position, so
+  the resulting dot product depends only on the <em>relative</em> position m − n. Relative encoding with
+  absolute-style implementation, and it extends via interpolation.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Pre-norm or post-norm, and why?</summary>
+  <div class="a"><div class="tldr">Pre-norm: normalise before the sublayer, so the residual path stays
+  clean and gradients flow. It trains stably without warmup, which is why everything modern uses it.
+  Post-norm can reach slightly better quality but needs careful warmup.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does the FFN do?</summary>
+  <div class="a"><div class="tldr">Position-wise processing: expand to ~4× width, apply a
+  non-linearity, project back. It holds roughly two thirds of the parameters, and evidence suggests it
+  functions as key-value memory storing factual associations.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>RMSNorm versus LayerNorm?</summary>
+  <div class="a"><div class="tldr">RMSNorm drops the mean-centring and the bias, scaling only by the
+  root-mean-square. Cheaper, and empirically just as good — so it is what most recent models use.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Roughly how many parameters per transformer layer?</summary>
+  <div class="a"><div class="tldr">About 12d² — 4d² in attention (Q, K, V, O) and 8d² in a 4× FFN. So
+  the model is roughly 12·L·d² plus embeddings. GQA reduces the attention share and SwiGLU's three
+  matrices at ⅔ width keep the FFN share about the same.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Training and inference FLOPs, per token?</summary>
+  <div class="a"><div class="tldr">Training ≈ 6N per token (2 forward, 4 backward); inference ≈ 2N. So
+  training on D tokens is about 6ND.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the KV cache and how big is it?</summary>
+  <div class="a"><div class="tldr">Stored keys and values for previous tokens so decoding is O(n) rather
+  than O(n²). Size = 2 × layers × tokens × kv-dim × bytes, per sequence — which for a 13B model at 4K
+  context is around 3 GB, usually more binding than the weights.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Prefill or decode — which is compute-bound?</summary>
+  <div class="a"><div class="tldr">Prefill is compute-bound because it processes all prompt tokens in
+  parallel. Decode is memory-bandwidth-bound: one token at a time, but the whole weight matrix must be
+  read. That is why batching helps decode enormously.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Is FlashAttention an approximation?</summary>
+  <div class="a"><div class="tldr">No. It is an exact, IO-aware kernel that tiles the computation in
+  SRAM so the n×n matrix is never written to HBM. Same mathematics, far less memory traffic.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does LoRA train?</summary>
+  <div class="a"><div class="tldr">A low-rank update ΔW = BA with rank r ≪ d, while W stays frozen —
+  well under 1 % of the parameters. It can be merged into W afterwards, so inference latency is
+  unchanged.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Chinchilla's rule?</summary>
+  <div class="a"><div class="tldr">For a fixed training budget, scale parameters and tokens equally —
+  roughly 20 tokens per parameter. But if you will serve the model heavily, deliberately overtrain a
+  smaller one, because inference cost dominates over its lifetime.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What does GRPO remove, and what replaces it?</summary>
+  <div class="a"><div class="tldr">The value network. It samples a group of responses per prompt and
+  uses the group's mean reward as the baseline, which roughly halves the memory of a PPO setup and pairs
+  naturally with verifiable rewards.</div></div>
+</details>
+
+<h2 data-n="63.2">The arithmetic — do these on paper</h2>
+
+<div class="box note">
+  <span class="lbl">Three sizing questions. Two minutes each.</span>
+  <p><strong>1.</strong> A model has 32 layers and d = 4096. Roughly how many parameters?<br>
+  <strong>2.</strong> You have 10²³ FLOPs. What is the Chinchilla-optimal model size and token count?<br>
+  <strong>3.</strong> That 32-layer, d = 4096 model, MHA, fp16, 8K context. How much KV cache for one
+  sequence? How many fit alongside the weights on an 80 GB card?</p>
+</div>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Answers, with the working</summary>
+  <div class="a">
+    <div class="tldr">≈ 6.4 B · ≈ 9 B params on ≈ 180 B tokens · 4 GB per sequence, so about 13
+    concurrent sequences after 13 GB of weights.</div>
+    <p><strong>1.</strong> 12 · L · d² = 12 × 32 × 4096² = 12 × 32 × 16.8 M ≈ 6.4 B. Add embeddings
+    (vocab × d ≈ 32,000 × 4096 ≈ 0.13 B, twice if untied) and you are at roughly 6.5–6.7 B — which is
+    why models of this shape are the "7B" class.</p>
+    <p><strong>2.</strong> C = 6ND with D = 20N gives 120N² = 10²³, so N² ≈ 8.3 × 10²⁰, N ≈ 9 B and
+    D ≈ 180 B tokens.</p>
+    <p><strong>3.</strong> Per token: 2 × 32 layers × 4096 × 2 bytes = 524 KB. Times 8,192 tokens ≈ 4.3
+    GB per sequence. Weights at fp16: 6.4 B × 2 = 12.8 GB. Remaining: 80 − 12.8 ≈ 67 GB, so ≈ 15
+    sequences — and note the cache is already five times the weights at this context length, which is
+    the point of the exercise. With GQA at 8 KV heads out of 32, the cache drops 4× and you fit
+    roughly 60.</p>
+  </div>
+</details>
+
+<h2 data-n="63.3">Deep questions — 5 minutes each</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Walk me through what happens to one token from input to output.</summary>
+  <div class="a">
+    <div class="tldr">Tokenised to an id, looked up in the embedding table, positional information
+    applied, then through L identical blocks each adding attention output and FFN output into a residual
+    stream, a final norm, and a projection to vocabulary logits which softmax into a distribution.</div>
+    <p><strong>Concretely, following the word:</strong> BPE splits the text into subwords and each maps
+    to an integer id. The id indexes the embedding matrix, giving a d-dimensional vector. Position is
+    applied — as an added encoding, or in modern models as a rotation of Q and K inside each attention
+    operation.</p>
+    <p><strong>Then, per block:</strong> normalise a copy of the residual stream, project it to Q, K and
+    V, score this token's query against all previous keys, scale by √d, mask the future, softmax, take
+    the weighted sum of values, project back, and <em>add</em> to the stream. Then normalise again,
+    expand through the FFN, contract, and add again. The stream is never overwritten — each block reads
+    it and writes a correction back, which is the residual-stream view and the reason interpretability
+    can decompose a model's output into per-block contributions.</p>
+    <p><strong>At the end:</strong> a final norm, then a projection to vocabulary size — usually tied to
+    the embedding matrix — giving one logit per token. Softmax turns those into a distribution, and the
+    sampler picks from it.</p>
+    <p><strong>The two things I would emphasise:</strong> attention is the <em>only</em> place tokens
+    exchange information — everything else is position-wise — so the reach of the model is entirely
+    determined by attention. And at inference all of this happens per generated token, with previous K
+    and V read from the cache rather than recomputed, which is what makes generation linear rather than
+    quadratic.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why did transformers replace RNNs? Give the real reason.</summary>
+  <div class="a">
+    <div class="tldr">Parallel training. An RNN's sequential dependency means a sequence of length n
+    takes n steps that cannot be parallelised; a transformer processes all positions at once. Combined
+    with the constant-length gradient path, that made scale possible — and scale was the thing that
+    mattered.</div>
+    <p><strong>The mechanism:</strong> RNN training is O(n) sequential steps regardless of hardware, so
+    a GPU sits mostly idle. A transformer's attention is a matrix multiplication over all positions —
+    more total FLOPs at O(n²d) versus O(nd²), but perfectly parallel, and modern hardware is built for
+    exactly that shape. Trading serial steps for parallel FLOPs was the winning trade.</p>
+    <p><strong>The secondary reason:</strong> path length. Information between two distant tokens
+    crosses O(n) transformations in an RNN, each attenuating the gradient; in a transformer it is O(1) —
+    one attention hop. Long-range dependencies became learnable rather than merely representable.</p>
+    <p><strong>The honest qualifier I would add:</strong> RNNs were not worse at everything. Inference
+    memory is constant for an RNN and grows linearly for a transformer's KV cache, and per-token
+    inference cost is lower. That is exactly why the state-space family — S4, Mamba, RWKV — is a live
+    research direction: it attempts to recover parallel training via a scan formulation while keeping a
+    constant-size state at inference. The trade transformers made was the right one for training at
+    scale, and it is not free at serving time.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Something you believe about LLMs that you cannot fully justify?</summary>
+  <div class="a">
+    <div class="tldr">This is a calibration question, not a knowledge question. The point is whether you
+    can distinguish what you know from what you assume — answer it honestly and name the evidence that
+    would change your mind.</div>
+    <p><strong>A defensible answer:</strong> "I believe most of what post-training does is elicitation
+    rather than teaching — that the capability is already in the pretrained weights and SFT and
+    preference tuning mainly make it reliably accessible. The evidence for it is suggestive: LIMA's
+    results from a thousand examples, the fact that base models can do many tasks with the right
+    prompt, and how little post-training compute changes so much behaviour. But it is not settled — RLVR
+    on reasoning appears to produce genuinely new capability rather than only surfacing it, and I do not
+    know how to cleanly separate those two claims experimentally."</p>
+    <p><strong>Why this shape works:</strong> it states a position, gives the actual evidence, names the
+    counter-evidence, and identifies what would resolve it. That is what a research engineer is being
+    hired to do.</p>
+    <p><strong>What to avoid:</strong> a non-answer ("I try to only believe what is proven"), a
+    grandiose claim about consciousness or AGI, and — worst — an assertion delivered with more confidence
+    than the evidence supports. The question is explicitly probing for overclaiming, and the whole value
+    of the answer is in the caveat.</p>
+  </div>
+</details>
+
+<h2 data-n="63.4">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th><th>What to do</th></tr>
+<tr><td>1–2</td><td>Vocabulary present, mechanisms hazy</td><td>Modules 40–42; redo the rapid fire
+    daily</td></tr>
+<tr><td>3</td><td>Mechanisms fine, arithmetic slow or wrong</td><td>The three sizing questions every
+    day until they take 90 seconds</td></tr>
+<tr><td>4</td><td>Fluent, but stated contested claims as settled</td><td>Practise attaching the
+    qualifier — ViT/ConvNeXt, head pruning, PPO details, emergence</td></tr>
+<tr><td>5</td><td>Mechanisms, numbers and calibration all sound</td><td>Move on to round 5</td></tr>
+</table>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#62" target="_top"><span class="k">Back</span>← 62 · Round 3 · Deep learning</a>
+  <a href="../index.html#64" target="_top"><span class="k">Next</span>64 · Round 5 · MLOps →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

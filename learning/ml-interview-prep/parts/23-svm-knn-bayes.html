@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVM, kNN &amp; Naive Bayes — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 23</p>
+<h1>SVM, kNN &amp; Naive Bayes
+  <span class="lede">Three classics that are rarely the model you ship, and are asked about
+  constantly — because each one is a clean test of something deeper. The SVM is where the Lagrange
+  machinery from module 14 pays off. kNN is the ancestor of every vector database. Naive Bayes is the
+  cleanest example of a wrong assumption that works anyway.</span>
+</h1>
+
+<h2 data-n="23.1">SVM: draw the line with the most room on both sides</h2>
+
+<div class="box analogy">
+  <span class="lbl">The founding idea</span>
+  <p>Two groups of people are standing in a field and you must paint a line between them. Infinitely
+  many lines separate them. Which is best?</p>
+  <p>The one with the <strong>widest empty corridor</strong> on either side. If someone new arrives
+  and stands slightly off from their group, a line squeezed up against one side misclassifies them; a
+  line down the middle of the widest corridor still gets it right. That corridor is the
+  <strong>margin</strong>, and maximising it is the entire idea of a support vector machine.</p>
+</div>
+
+<p>Notice what that gives you: a principled reason to prefer one separating boundary over another,
+derived from robustness to new points rather than from fit to the ones you have. That is a
+<em>generalisation</em> argument built into the objective, which is why SVMs were the dominant method
+for a decade and why the idea is still worth knowing.</p>
+
+<h2 data-n="23.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Hyperplane <span class="tag">basic</span>
+        <span class="sym">w·x + b = 0</span></div>
+    <p>The flat dividing surface. A point in 1D, a line in 2D, a plane in 3D, and the same equation in
+       any dimension.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Margin <span class="tag">basic</span></div>
+    <p>The width of the empty corridor between the boundary and the nearest point of either class.
+       SVM maximises it.</p>
+    <p class="wh">Maximising the margin turns out to be minimising ‖w‖², which is why the SVM
+       objective looks like a regulariser — it is one.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Support vector <span class="tag">mid</span></div>
+    <p>A training point sitting exactly on the margin boundary (or inside it). These are the
+       <em>only</em> points that define the model.</p>
+    <p class="an">The corridor is held open by the people standing right at its edges. Everyone
+       standing further back could go home and the corridor would not move.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Hard vs soft margin <span class="tag">mid</span></div>
+    <p>Hard: no point may cross the margin — only possible if the data is perfectly separable. Soft:
+       allow violations, at a cost.</p>
+    <p class="wh">Every real SVM is soft-margin. Real data has overlap and mislabels.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Hinge loss <span class="tag">mid</span>
+        <span class="sym">max(0, 1 − y·f(x))</span></div>
+    <p>Zero once a point is correctly classified <em>with margin to spare</em>; grows linearly
+       otherwise.</p>
+    <p class="an">A teacher who gives full marks for anything comfortably right and stops caring how
+       right it was. Log loss keeps rewarding extra confidence; hinge does not.</p>
+    <p class="wh">That flat region is the source of the sparsity — points in it contribute no
+       gradient at all.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">C <span class="tag">mid</span></div>
+    <p>The penalty for margin violations. Large C: fit the training data hard, narrow margin,
+       overfit. Small C: tolerate mistakes, wide margin, underfit.</p>
+    <p class="wh">C is inversely a regularisation strength — small C is <em>more</em> regularised.
+       People get the direction backwards constantly.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Kernel trick <span class="tag">senior</span></div>
+    <p>Compute similarities <em>as if</em> you had projected the data into a huge (sometimes infinite)
+       feature space, without ever constructing the projection.</p>
+    <p class="an">You want to know whether two recipes taste similar. You could list every chemical
+       compound in each and compare — or you could just taste them. The kernel is the tasting.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RBF kernel <span class="tag">mid</span>
+        <span class="sym">exp(−γ‖x−x′‖²)</span></div>
+    <p>Similarity that decays with distance. γ sets how fast: large γ means only very close points
+       count.</p>
+    <p class="wh">The default kernel. Corresponds to an infinite-dimensional feature space, which is
+       the standard "how can that possibly work" moment — and the answer is that you never build it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">kNN <span class="tag">basic</span></div>
+    <p>To classify a point, look at its k nearest neighbours in the training set and take a vote.
+       There is no training step at all.</p>
+    <p class="an">Judging a neighbourhood by the houses immediately around it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Lazy learning <span class="tag">mid</span></div>
+    <p>All the work happens at prediction time, not training time.</p>
+    <p class="wh">The trade you are making: instant "training", expensive inference, and the whole
+       training set must be kept in memory. That is a bad trade for a classifier and an excellent one
+       for retrieval, which is why kNN survives as the core of vector search.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Naive Bayes <span class="tag">basic</span></div>
+    <p>Apply Bayes' theorem while pretending every feature is independent of the others given the
+       class.</p>
+    <p class="an">Judging a restaurant by scoring the food, the service and the price completely
+       separately, as though good food told you nothing about likely service.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Laplace / additive smoothing <span class="tag">mid</span></div>
+    <p>Add a small count to every category so nothing has probability exactly zero.</p>
+    <p class="wh">Without it, one unseen word makes the entire product zero and the class becomes
+       impossible regardless of all other evidence. A one-line fix for a catastrophic failure.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Generative vs discriminative <span class="tag">senior</span></div>
+    <p>Generative models learn P(x, y) — how the data itself is produced. Discriminative models learn
+       P(y | x) — only the boundary.</p>
+    <p class="wh">Naive Bayes is generative, logistic regression is discriminative, and they are a
+       matched pair: same functional form, different fitting criterion. An LLM is generative in
+       exactly this sense — it models the distribution of the data.</p>
+  </div>
+
+</div>
+
+<h2 data-n="23.3">The dual — where module 14 pays off</h2>
+
+<p>The SVM problem is: minimise ‖w‖² subject to every point being on the correct side by a margin of
+at least 1. That is a constrained optimisation with one inequality constraint per training point —
+exactly the setup Lagrange was built for.</p>
+
+<p>Attach a multiplier αᵢ ≥ 0 to each constraint, form the Lagrangian, and eliminate w. Two things
+fall out, and both are consequential:</p>
+
+<ol>
+  <li><strong>Complementary slackness gives you sparsity for free.</strong> The KKT condition
+      αᵢ·(constraintᵢ) = 0 says each point either sits exactly on the margin, with αᵢ &gt; 0, or lies
+      comfortably beyond it, with αᵢ = 0. Only the first group contributes. <em>That is what a support
+      vector is</em> — a point with a non-zero Lagrange multiplier. Delete every other training point
+      and refit: identical model.</li>
+  <li><strong>The data appears only inside dot products.</strong> In the dual, training and prediction
+      touch the inputs exclusively through xᵢ·xⱼ. Never individually. Which means...</li>
+</ol>
+
+<div class="box mem">
+  <span class="lbl">The kernel trick, in one move</span>
+  <p>If the data only ever appears as a dot product, <strong>replace the dot product with any
+  function that behaves like one</strong> — K(xᵢ, xⱼ). You are now implicitly working in whatever
+  feature space that kernel corresponds to, at the cost of computing K instead of a dot product. With
+  an RBF kernel that space is infinite-dimensional, and you never build a single coordinate of it.</p>
+  <p>None of this is possible in the primal, where w lives in the feature space explicitly and would
+  therefore have to be infinite. <strong>The dual is what makes the kernel trick expressible.</strong>
+  That is the connection the question is really testing.</p>
+</div>
+
+<p>The condition on K is Mercer's: it must correspond to a positive semi-definite kernel matrix,
+which is precisely the guarantee that some feature space exists for it to be a dot product in. In
+practice you pick from the standard menu — linear, polynomial, RBF — rather than inventing kernels.</p>
+
+<h2 data-n="23.4">kNN — dead as a classifier, everywhere as retrieval</h2>
+
+<p>Nobody ships kNN as a fraud classifier: inference costs a full scan of the training set, it needs
+all the data resident in memory, and the curse of dimensionality from module 20 erodes the meaning of
+"nearest" as features multiply.</p>
+
+<p>And yet the algorithm is running in essentially every AI product shipped in the last three years,
+because <strong>RAG is kNN</strong>. Embed your documents, embed the query, retrieve the k nearest
+neighbours by cosine similarity, put them in the prompt. What changed is not the algorithm but its
+two inputs:</p>
+
+<ul>
+  <li><strong>The space became learned.</strong> Distances between raw hand-built features are close
+      to meaningless in high dimensions. Distances between trained embeddings are meaningful, because
+      the training objective was precisely to make them so. The curse of dimensionality was never a
+      curse on dimensions — it was a curse on <em>uninformative</em> dimensions.</li>
+  <li><strong>The search became approximate.</strong> Exact nearest-neighbour search degenerates to a
+      linear scan in high dimensions. HNSW, IVF and product quantisation give you 95–99 % recall at a
+      fraction of the cost, and that trade is what makes billion-vector indexes practical. Module 46
+      covers the index structures.</li>
+</ul>
+
+<p>Practical points that get asked: always scale your features before any distance-based method, since
+a feature in euros dominates one in years for no good reason; use distance-weighted voting so a
+neighbour at 0.1 counts more than one at 0.9; pick k by cross-validation, keep it odd for binary
+classification to avoid ties, and remember that k = 1 has zero training error and enormous variance —
+it is the purest illustration of overfitting in all of machine learning.</p>
+
+<h2 data-n="23.5">Naive Bayes — wrong, and useful anyway</h2>
+
+<p>The assumption is plainly false. In a spam classifier it says that seeing "free" tells you nothing
+about the chance of seeing "money" — in an email you already know is spam. Obviously untrue. So why
+does it work?</p>
+
+<p><strong>Because classification only needs the argmax to be right, not the probabilities.</strong>
+The independence assumption makes the estimated probabilities badly wrong — usually pushed to near
+0 or 1, because correlated evidence is counted repeatedly as though it were independent. But it
+tends to push them wrong in a way that preserves the ordering between classes. You get the right
+answer with an absurd confidence attached to it.</p>
+
+<p>Which sets its boundary exactly: use Naive Bayes when you need a decision and a fast, tiny model
+trained on very little data. Never use its output as a probability. If a threshold from a cost
+matrix depends on that number, this is the wrong model — or it needs calibration bolted on, and at
+that point logistic regression is a better starting point.</p>
+
+<h2 data-n="23.6">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Explain an SVM without any maths.</summary>
+  <div class="a">
+    <div class="tldr">Of all the lines that separate the two groups, it picks the one with the widest
+    empty gap on either side — because that line is the one most likely to still be right about a
+    point it has not seen.</div>
+    <p>The important consequence is that only the points nearest the boundary matter. They are the
+    ones holding the gap open, so they are called support vectors. Everything far from the boundary
+    could be deleted and you would get the same model.</p>
+    <p>Two additions if there is room: real data is not cleanly separable, so we allow some points to
+    sit inside the gap and pay a penalty — that penalty is the C parameter. And when the groups
+    cannot be separated by a straight line at all, the kernel trick measures similarity in a way that
+    behaves as though we had bent the space until they could be.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is a support vector, formally — and why does the SVM only depend on a few points?</summary>
+  <div class="a">
+    <div class="tldr">A support vector is a training point whose Lagrange multiplier is non-zero. The
+    sparsity is not a design choice — it falls out of the KKT complementary slackness condition.</div>
+    <p>Setting it up: minimising ‖w‖² subject to yᵢ(w·xᵢ + b) ≥ 1 for every i gives one inequality
+    constraint per training point, so one multiplier αᵢ per point. Complementary slackness requires
+    αᵢ · [yᵢ(w·xᵢ + b) − 1] = 0 for every i. So for each point, either the bracket is zero — the point
+    sits exactly on the margin — or αᵢ = 0.</p>
+    <p>Since the solution is w = Σ αᵢ yᵢ xᵢ, every point with αᵢ = 0 contributes literally nothing to
+    w. The model is a weighted combination of a handful of boundary points, and everything else is
+    inert.</p>
+    <p><strong>Why this is worth knowing beyond SVMs:</strong> it is the cleanest example of a
+    constraint structure producing sparsity, and the same argument explains why the hinge loss is flat
+    for comfortably-correct points — the flat region is where the gradient, and hence the multiplier,
+    is zero. It is also the practical reason SVM inference cost scales with the number of support
+    vectors rather than the dataset size, which for a well-separated problem can be a very small
+    fraction of it.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>With a soft margin, points <em>inside</em> the margin and misclassified points are also
+      support vectors, with α capped at C. So a heavily overlapping dataset with a large C can end up
+      with most of the training set as support vectors — at which point you have lost the sparsity and
+      inference is slow. That is a real symptom of a badly tuned SVM.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain the kernel trick, and why the dual formulation is what makes it possible.</summary>
+  <div class="a">
+    <div class="tldr">In the dual, the training data appears only inside dot products. So you can
+    replace the dot product with any valid kernel, and you are implicitly working in that kernel's
+    feature space without ever constructing it.</div>
+    <p>The problem it solves: data that is not linearly separable in its original space usually is
+    separable if you lift it into a richer one — add squared terms, products of pairs, and so on. But
+    that space explodes. A degree-3 polynomial expansion of 1,000 features is on the order of 10⁹
+    dimensions, and an RBF's implicit space is infinite. You cannot write down a weight vector there.</p>
+    <p>The resolution: you do not need to. In the dual, both the training objective and the prediction
+    rule touch the inputs only as xᵢ·xⱼ. Swap in K(xᵢ, xⱼ) — for the polynomial kernel, (xᵢ·xⱼ + c)ᵈ,
+    which costs one dot product and one power regardless of d. You have computed a dot product in a
+    billion-dimensional space in the time it takes to do one in the original.</p>
+    <p><strong>Why the dual specifically:</strong> in the primal, w lives in the feature space and
+    would have to be infinite-dimensional to write down. In the dual, the parameters are the αᵢ — one
+    per training point, always finite, regardless of how large the implicit feature space is. The dual
+    trades a problem whose size is the dimension for one whose size is the number of samples, and that
+    is what makes the whole thing expressible.</p>
+    <p>The cost, which is the natural follow-up: the dual needs the n×n kernel matrix, so it scales
+    quadratically in memory and roughly quadratically-to-cubically in time. That is exactly why kernel
+    SVMs stopped being used above roughly 100k rows, and why linear SVMs solved in the primal took over
+    for large sparse problems like text.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"So kernels are free extra capacity?" No. RBF with a large γ can memorise the training set
+      completely — infinite capacity means infinite overfitting potential. γ and C must be tuned
+      together, and this is why kernel SVMs have a reputation for being fiddly.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What do C and γ do in an RBF SVM, and how do they interact?</summary>
+  <div class="a">
+    <div class="tldr">γ controls how far a single training point's influence reaches; C controls how
+    much you are willing to misclassify to keep a wide margin. Both increase capacity, so they must be
+    tuned jointly.</div>
+    <ul>
+      <li><strong>Large γ</strong> — influence decays fast, so each point only affects its immediate
+          neighbourhood. The boundary becomes wiggly and wraps around individual points. Overfits. In
+          the limit it approaches a 1-nearest-neighbour classifier.</li>
+      <li><strong>Small γ</strong> — influence spreads widely, the boundary smooths out, and in the
+          limit it approaches a linear model. Underfits.</li>
+      <li><strong>Large C</strong> — violations are expensive, so the model contorts to classify every
+          training point. Narrow margin, overfits.</li>
+      <li><strong>Small C</strong> — violations are cheap, wide margin, more points ignored.
+          Underfits. Note the direction: <em>small</em> C is <em>more</em> regularised, which is the
+          opposite convention to λ everywhere else and is worth saying explicitly.</li>
+    </ul>
+    <p>They interact because both add effective capacity, so the good region is a diagonal band in the
+    (C, γ) plane rather than a point — large γ with small C can behave similarly to small γ with large
+    C. The standard practice is a joint grid or random search on a logarithmic scale, roughly 10⁻³ to
+    10³ for both, and it must be a joint search rather than tuning one and then the other.</p>
+    <p>The prerequisite people forget: <strong>standardise the features first.</strong> γ multiplies a
+    squared Euclidean distance, so if one feature is in euros and another in years, the euro feature
+    dominates the kernel entirely and no value of γ fixes it.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why is Naive Bayes "naive", and why does it work anyway?</summary>
+  <div class="a">
+    <div class="tldr">Naive because it assumes all features are conditionally independent given the
+    class, which is essentially never true. It works because classification needs the argmax to be
+    right, and the assumption corrupts the probabilities while usually preserving their order.</div>
+    <p>The assumption lets you turn P(x₁, x₂, …, xₙ | y) into a simple product of per-feature terms,
+    each estimated from counts. That is what makes it trainable from tiny data in a single pass — and
+    it is exactly the step that is wrong, because in a spam email "free" and "money" are strongly
+    dependent.</p>
+    <p><strong>Why it survives the error:</strong> correlated features are effectively counted several
+    times, which drives the estimated posteriors toward 0 and 1. The magnitudes become nonsense. But
+    the <em>ranking</em> between classes usually survives, and the ranking is all a classifier needs.
+    There is a well-known analysis by Domingos and Pazzani making exactly this point.</p>
+    <p><strong>The boundary, which is the useful part of the answer:</strong> use it when I need a
+    decision quickly from very little data — a fast text baseline, a bootstrap classifier before real
+    labels exist. Never use its output as a probability. Anything requiring calibrated scores, such as
+    a cost-matrix threshold or an expected-value calculation downstream, needs a different model or a
+    calibration layer.</p>
+    <p>Two implementation details worth mentioning unprompted: Laplace smoothing is mandatory, since
+    one unseen token otherwise zeroes the entire product; and you always compute in log-space, because
+    a product of thousands of small probabilities underflows — the same argument from module 13.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Which variant?" Multinomial for word counts, Bernoulli for presence/absence, Gaussian for
+      continuous features. Choosing Gaussian NB for count data is a common and quiet mistake.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Generative versus discriminative — what is the real difference and when does it matter?</summary>
+  <div class="a">
+    <div class="tldr">Generative models learn the joint P(x, y), so they model how the data itself was
+    produced; discriminative models learn only P(y | x), the boundary. Discriminative usually wins on
+    accuracy with enough data; generative wins with little data, and can do things a boundary cannot.</div>
+    <p>Naive Bayes and logistic regression are the textbook matched pair: with the same features they
+    produce the same functional form of decision boundary, but fitting differs. NB estimates class
+    priors and per-feature likelihoods by counting; LR directly optimises conditional likelihood.</p>
+    <p><strong>The trade-off, from Ng and Jordan's analysis:</strong> the generative model has higher
+    asymptotic error — its assumptions are wrong and no amount of data fixes that — but it approaches
+    its ceiling much faster, so it wins in the small-data regime. The discriminative model has a lower
+    ceiling and needs more data to get there. The learning curves cross. Which side of the crossing
+    point you are on decides the choice.</p>
+    <p><strong>What generative buys you beyond accuracy:</strong> you can sample new data from it, you
+    get a natural handle on anomaly detection because a low P(x) means "unlike anything I was trained
+    on", and you can handle missing features by marginalising them out rather than imputing. Those are
+    real capabilities a discriminative model simply does not have.</p>
+    <p>And the modern connection worth drawing: <strong>an LLM is a generative model in exactly this
+    sense</strong> — it models P(next token | context), and generation is sampling from it. A
+    fine-tuned classifier head on top of it is discriminative. The reason pretraining works at all is
+    the generative half: learning to model the whole distribution forces representations that the
+    discriminative task can then reuse cheaply, which is the same small-data argument arriving at a
+    much larger scale.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Would you use kNN today, and how do you make it work at scale?</summary>
+  <div class="a">
+    <div class="tldr">Not as a classifier — but as retrieval it is everywhere, because RAG and every
+    vector database are kNN over learned embeddings with an approximate index.</div>
+    <p><strong>Why not as a classifier:</strong> inference requires comparing against the whole
+    training set, the whole training set has to be in memory, and in raw high-dimensional feature
+    space the distances stop discriminating. A boosted tree beats it on tabular data on every axis
+    that matters.</p>
+    <p><strong>Why it dominates retrieval:</strong> the two things that were broken got fixed. The
+    space is now learned, so distance actually encodes semantic similarity rather than an arbitrary
+    mixture of units — the curse of dimensionality was really a curse on uninformative dimensions.
+    And the search is now approximate: HNSW's navigable small-world graph, IVF's coarse partitioning
+    into cells, product quantisation to compress the vectors. You accept 95–99 % recall in exchange for
+    sublinear search, and for retrieval that trade is essentially free, because a lost result in
+    position 9 changes nothing downstream.</p>
+    <p><strong>If I were building it:</strong> normalise the embeddings so cosine and Euclidean agree,
+    pick the index by scale — flat exact search is genuinely correct below a few hundred thousand
+    vectors and people over-engineer this — tune HNSW's <code>ef_search</code> as the recall/latency
+    knob, and measure recall against an exact brute-force run on a sample, because an approximate index
+    that has silently degraded is invisible without that check.</p>
+    <p>The failure mode I would call out: with billions of vectors and a filter (tenant, language,
+    date range), naive post-filtering after ANN retrieval returns far too few results, because the
+    nearest neighbours globally may all be filtered out. Filtered ANN is a genuinely hard problem and
+    a good thing to raise in a system-design round.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>The maximum-margin idea in one sentence, and what C does.</li>
+    <li>A support vector is a point with a non-zero Lagrange multiplier — via complementary slackness.</li>
+    <li>Why the dual makes the kernel trick possible, and what it costs.</li>
+    <li>Why Naive Bayes is naive, why it still works, and where its output must not be used.</li>
+    <li>Generative vs discriminative, the learning-curve crossing, and where LLMs sit.</li>
+    <li>kNN is RAG: learned space plus approximate index.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#22" target="_top"><span class="k">Back</span>← 22 · Trees &amp; ensembles</a>
+  <a href="../index.html#24" target="_top"><span class="k">Next</span>24 · Unsupervised learning →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

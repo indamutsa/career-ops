@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trees &amp; ensembles — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part B · Classical ML · Module 22</p>
+<h1>Trees &amp; ensembles
+  <span class="lede">Gradient-boosted trees are still the best model for tabular data, which means
+  they are still the model behind most fraud, credit and churn systems in production. This module is
+  about why that is true, and about the difference between bagging and boosting — which is the most
+  reliably asked question in classical ML.</span>
+</h1>
+
+<h2 data-n="22.1">A decision tree is twenty questions with a rule for choosing the question</h2>
+
+<div class="box analogy">
+  <span class="lbl">The founding idea</span>
+  <p>You are guessing an animal. You do not ask "is it a pangolin?" first — you ask "does it have
+  fur?", because whatever the answer, it eliminates about half the possibilities.</p>
+  <p>A decision tree does exactly that, and the <em>only</em> real algorithmic content is how it
+  decides which question is the most informative one to ask next. Everything else — pruning, forests,
+  boosting — is built on top of that single greedy choice.</p>
+</div>
+
+<p>Concretely: at each node, try every feature and every threshold, score each candidate split by how
+much it reduces impurity, take the best one, recurse. That is CART. It is greedy — it never
+reconsiders an earlier split in the light of a later one — which is why a single tree is unstable
+and why the ensembles exist.</p>
+
+<h2 data-n="22.2">The terms</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">Node / split / leaf <span class="tag">basic</span></div>
+    <p>A node asks a question, a split is the question, a leaf holds the prediction — the majority
+       class, or the mean of the targets that landed there.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Gini impurity <span class="tag">basic</span>
+        <span class="sym">1 − Σp²</span></div>
+    <p>The probability that two items drawn at random from the node have different labels. 0 when the
+       node is pure.</p>
+    <p class="an">A bag of marbles: how likely are two random draws to be different colours?</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Information gain <span class="tag">mid</span></div>
+    <p>The reduction in entropy achieved by a split — the mutual information from module 13, computed
+       per candidate split.</p>
+    <p class="wh">Gini and entropy pick the same split the overwhelming majority of the time. Gini is
+       marginally cheaper because it avoids a logarithm. Do not spend interview time on the
+       difference; do know they are near-equivalent.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Pruning <span class="tag">mid</span></div>
+    <p>Cutting branches back after growing. A fully grown tree fits every training row exactly and
+       generalises terribly.</p>
+    <p class="wh">Modern practice is mostly <em>pre</em>-pruning via <code>max_depth</code>,
+       <code>min_samples_leaf</code> and <code>min_child_weight</code> — cheaper and easier to tune.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Bagging <span class="tag">mid</span></div>
+    <p>Train many models <strong>in parallel</strong> on bootstrap samples of the data, then average
+       them. Reduces <em>variance</em>.</p>
+    <p class="an">Asking a hundred people to guess the weight of an ox. Individually they are
+       scattered; the average is famously close.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Random forest <span class="tag">mid</span></div>
+    <p>Bagging plus one extra trick: at each split, consider only a random subset of features. This
+       decorrelates the trees, which is what makes the averaging work.</p>
+    <p class="wh">Without the feature subsetting, every tree finds the same dominant feature first
+       and they all look alike — and averaging near-identical models buys you nothing.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Boosting <span class="tag">mid</span></div>
+    <p>Train models <strong>sequentially</strong>, each one focused on what the previous ones got
+       wrong. Reduces <em>bias</em>.</p>
+    <p class="an">A student reviewing only the questions they missed, over and over. Bagging is a
+       committee of independent experts; boosting is one student improving.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Gradient boosting <span class="tag">mid</span></div>
+    <p>Each new tree is fitted to the <em>gradient of the loss</em> with respect to the current
+       predictions — for squared error, that is literally the residuals.</p>
+    <p class="wh">The name is exact: it is gradient descent, where each step is a whole tree added to
+       the ensemble rather than a nudge to a parameter vector.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Learning rate / shrinkage <span class="tag">mid</span></div>
+    <p>Multiply each tree's contribution by a small factor (0.01–0.1) so no single tree dominates.</p>
+    <p class="wh">Lower learning rate plus more trees almost always generalises better, at the cost
+       of training time. This is the main quality-versus-cost knob in boosting.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Weak learner <span class="tag">mid</span></div>
+    <p>A model barely better than guessing. Boosting's theoretical claim is that you can combine
+       arbitrarily many weak learners into an arbitrarily strong one.</p>
+    <p class="wh">In practice: depth-3 to depth-8 trees. Deeper "weak" learners overfit and the
+       ensemble stops improving.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Monotonic constraint <span class="tag">senior</span></div>
+    <p>Force the model's output to be non-decreasing (or non-increasing) in a chosen feature,
+       enforced at split time.</p>
+    <p class="wh"><strong>Widely used in credit and fraud.</strong> "More prior chargebacks must never
+       lower the risk score" is a business rule the model can be made to obey structurally, rather
+       than hoped for. It also makes the model easier to defend and often more robust under drift.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Out-of-bag estimate <span class="tag">mid</span></div>
+    <p>Each bootstrap sample leaves out about 37 % of rows; score each tree on its own leftovers and
+       you get a free validation estimate.</p>
+    <p class="wh">Why 37 %? (1 − 1/n)ⁿ → 1/e ≈ 0.368. That derivation is a pleasant thing to have
+       ready.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Isolation forest <span class="tag">senior</span></div>
+    <p>Trees built on random splits; anomalies get isolated in very few splits because they sit apart
+       from everything else.</p>
+    <p class="wh">Unsupervised anomaly detection for the cold-start phase of a fraud system, before
+       you have labels — module 24 covers it properly.</p>
+  </div>
+
+</div>
+
+<h2 data-n="22.3">Bagging vs boosting — the table to memorise</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>Bagging (Random Forest)</th><th>Boosting (XGBoost/LightGBM)</th></tr>
+<tr><td>Trees are trained</td><td>In parallel, independently</td><td>Sequentially, each on the last
+    one's mistakes</td></tr>
+<tr><td>Primarily reduces</td><td>Variance</td><td>Bias</td></tr>
+<tr><td>Base learner</td><td>Deep, low-bias, high-variance trees</td><td>Shallow, high-bias weak
+    trees</td></tr>
+<tr><td>Adding more trees</td><td>Never overfits — it converges</td><td><strong>Can</strong>
+    overfit; needs early stopping</td></tr>
+<tr><td>Hyperparameter sensitivity</td><td>Low — works well nearly untuned</td><td>High — learning
+    rate, depth and regularisation all matter</td></tr>
+<tr><td>Parallelism</td><td>Trivially parallel across trees</td><td>Sequential across trees;
+    parallelism is within each tree's split search</td></tr>
+<tr><td>Typical accuracy on tabular</td><td>Good</td><td>Better — usually the winner</td></tr>
+<tr><td>Reach for it when</td><td>You want a strong baseline in ten minutes, or a noisy target</td>
+    <td>You want maximum accuracy and can afford to tune</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">The one-line version</span>
+  <p><strong>Bagging averages away the noise; boosting chips away at the error.</strong> That is why
+  bagging fixes variance and boosting fixes bias — and why boosting can overfit while bagging
+  essentially cannot.</p>
+</div>
+
+<h2 data-n="22.4">Why gradient boosting still wins on tabular data</h2>
+
+<p>This question comes up constantly, and "it just does" is not an answer. The real reasons are all
+about the <em>shape</em> of tabular data:</p>
+
+<ul>
+  <li><strong>Tabular features are heterogeneous.</strong> Age, country, a currency amount, a count,
+      a boolean. Trees split on one feature at a time and are completely indifferent to scale and to
+      monotone transforms. A neural net needs every one of those normalised, embedded, and coaxed.</li>
+  <li><strong>The true functions are often piecewise-constant with sharp thresholds.</strong> "Risk
+      jumps above €500" is native to a tree and awkward for a smooth function approximator, which has
+      to spend capacity building the step out of smooth pieces.</li>
+  <li><strong>Trees are robust to irrelevant features.</strong> An uninformative column is simply
+      never chosen for a split. A dense network has to learn to zero it out, and with limited data
+      it partly fails.</li>
+  <li><strong>The inductive bias matches.</strong> This is the module-20 point: CNNs assume locality,
+      transformers assume sequence structure, and trees assume the target is well described by
+      axis-aligned regions. Tabular data usually satisfies the last assumption and rarely satisfies
+      the first two.</li>
+  <li><strong>The data is small by deep-learning standards.</strong> Tens of thousands of rows is a
+      large tabular dataset and a tiny deep-learning one.</li>
+</ul>
+
+<p>Where neural networks <em>do</em> take over: when there is a high-cardinality categorical worth
+embedding, when the tabular data must be fused with text or images, or when you want one model
+serving many related tasks. Saying that boundary out loud is what distinguishes a considered answer
+from a slogan.</p>
+
+<h2 data-n="22.5">XGBoost, LightGBM, CatBoost</h2>
+
+<div class="tw">
+<table>
+<tr><th></th><th>XGBoost</th><th>LightGBM</th><th>CatBoost</th></tr>
+<tr><td>Tree growth</td><td>Level-wise (breadth-first)</td><td><strong>Leaf-wise</strong> — always
+    split the leaf with the biggest loss reduction</td><td>Symmetric / oblivious trees — same split
+    at every node of a level</td></tr>
+<tr><td>Consequence</td><td>Balanced, conservative trees</td><td>Deeper, uneven trees. More accurate
+    per tree, and more prone to overfitting on small data — cap
+    <code>num_leaves</code></td><td>Very fast inference; the tree is effectively a lookup</td></tr>
+<tr><td>Signature feature</td><td>Explicit L1/L2 on leaf weights; the regularised objective in the
+    paper</td><td>Histogram binning + GOSS + feature bundling — the speed comes from there</td>
+    <td><strong>Ordered target statistics</strong> for categoricals, which is target encoding done
+    in a way that provably does not leak</td></tr>
+<tr><td>Pick it when</td><td>The safe default; best-documented</td><td>Large data, wide data, speed
+    matters</td><td>Many categorical features and you do not want to hand-build the encoding</td></tr>
+</table>
+</div>
+
+<p>They are far more alike than different — all three are histogram-based gradient boosting with
+regularisation, and on most datasets a well-tuned instance of any of them lands within noise of the
+others. The differentiator worth actually knowing is CatBoost's ordered target statistics, because it
+is a principled solution to the exact leakage problem from module 21: it computes each row's category
+encoding using only rows that came <em>before</em> it in a random permutation, so a row never
+contributes to its own encoding.</p>
+
+<h2 data-n="22.6">Feature importance is three different things, and two of them lie</h2>
+
+<div class="tw">
+<table>
+<tr><th>Method</th><th>What it measures</th><th>How it misleads</th></tr>
+<tr><td><strong>Gain</strong> (the library default)</td><td>Total loss reduction from splits on that
+    feature</td><td>Biased toward high-cardinality and continuous features — they simply offer more
+    candidate split points, so they win more often by chance</td></tr>
+<tr><td><strong>Split count</strong></td><td>How often the feature was used</td><td>Same bias, worse.
+    A feature used in many low-value splits outranks one used in a single decisive split</td></tr>
+<tr><td><strong>Permutation</strong></td><td>Performance drop when you shuffle that column on
+    held-out data</td><td>Correlated features hide each other — shuffle one and its twin covers for
+    it, so both look unimportant</td></tr>
+<tr><td><strong>SHAP</strong></td><td>Each feature's contribution to each individual
+    prediction</td><td>The most defensible, and it still assumes feature independence in its common
+    implementations; correlated features get contributions split in ways that can mislead</td></tr>
+</table>
+</div>
+
+<p>Practical position to take in an interview: default gain importance is fine for a quick look, is
+not fine for anything you tell a stakeholder, and permutation importance computed on the
+<em>validation</em> set is the cheapest honest upgrade. Module 26 goes into SHAP properly.</p>
+
+<h2 data-n="22.7">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>How does a decision tree decide where to split?</summary>
+  <div class="a">
+    <div class="tldr">It tries every feature and every threshold, scores each candidate by how much
+    it reduces impurity, and greedily takes the best one — then repeats inside each child.</div>
+    <p>Impurity is Gini or entropy for classification, variance for regression. The score of a split
+    is the parent's impurity minus the weighted average of the children's, so a split that separates
+    the classes cleanly scores high and a split that leaves both children as mixed as the parent
+    scores zero.</p>
+    <p>Two properties worth adding because they explain everything downstream: it is
+    <strong>greedy</strong>, so it never reconsiders an early split in light of a later one and can
+    miss a combination that only pays off two levels down; and it is <strong>unstable</strong> —
+    change a few rows and the top split can change, which cascades into an entirely different tree.
+    That instability is exactly the high variance that bagging was invented to average away.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Gini or entropy — which is better?" Neither, materially. They agree on the chosen split the
+      vast majority of the time. Gini is slightly cheaper as it avoids a log. An interviewer asking
+      this is usually checking whether you will invent a difference that is not there.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Bagging versus boosting — explain the difference and when each wins.</summary>
+  <div class="a">
+    <div class="tldr">Bagging trains many independent models in parallel and averages them to cut
+    variance. Boosting trains models in sequence, each fixing the previous ones' errors, to cut bias.</div>
+    <p><strong>Bagging.</strong> Bootstrap the data, fit a deep tree on each sample, average the
+    predictions. Each tree is individually overfitted but wrong in a different direction, and the
+    errors partially cancel. Random Forest adds per-split feature subsampling to decorrelate the
+    trees further, because averaging highly correlated models buys almost nothing.</p>
+    <p><strong>Boosting.</strong> Fit a shallow tree, look at what the ensemble still gets wrong, fit
+    the next tree to that error, add it with a small learning rate, repeat. Each tree individually
+    underfits; together they build up a precise function.</p>
+    <p>The consequence that gets asked as a follow-up: <strong>adding trees to a random forest cannot
+    overfit</strong> — the average converges — whereas adding trees to a boosted model can, because
+    each new tree is actively fitting the residual and will eventually start fitting noise. That is
+    why boosting needs early stopping on a validation set and bagging does not.</p>
+    <p>When I pick which: Random Forest for a fast strong baseline, a very noisy target, or when I
+    have no time to tune. Boosting when I want the best number and can afford to tune the learning
+    rate, depth and regularisation. On tabular problems boosting usually wins by a meaningful
+    margin.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>"Boosting reduces bias, so use deep trees for even less bias." No — deep base learners make
+      each step overfit the residual, and the ensemble stops improving. The whole method depends on
+      the learners being weak.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why is gradient boosting called <em>gradient</em> boosting?</summary>
+  <div class="a">
+    <div class="tldr">Because each tree is fitted to the negative gradient of the loss with respect
+    to the current predictions. It is gradient descent performed in function space rather than
+    parameter space.</div>
+    <p>The chain: you have a current ensemble F(x). You want to reduce a loss L(y, F(x)). Ordinary
+    gradient descent would nudge parameters; here you instead ask "in what direction should each
+    prediction move?", which is −∂L/∂F evaluated at each training point. Those numbers are your new
+    targets. Fit a tree to them, scale it by the learning rate, add it to F. Repeat.</p>
+    <p>For squared error, −∂L/∂F is exactly the residual y − F(x), which is why the original
+    presentation of boosting is "fit the next tree to the residuals" — that is the special case, not
+    the general rule. For log loss the pseudo-residual is y − p, which is the same clean expression
+    that appeared in module 21.</p>
+    <p>The value of the general framing is that it makes the loss pluggable: swap in quantile loss for
+    prediction intervals, Huber for robustness to outliers, or a ranking loss for search — same
+    algorithm, different gradient. XGBoost extends this to a second-order approximation, using both
+    gradient and Hessian to choose the leaf values, which is where its speed and stability advantage
+    comes from.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why do gradient-boosted trees still beat deep learning on tabular data?</summary>
+  <div class="a">
+    <div class="tldr">Because their inductive bias matches what tabular data actually is:
+    heterogeneous features, sharp thresholds, many irrelevant columns, and not very many rows.</div>
+    <p>Point by point:</p>
+    <ul>
+      <li><strong>Heterogeneity.</strong> Trees split one feature at a time and are invariant to
+          monotone transforms and to scale. A network needs each feature normalised and embedded, and
+          gets that wrong more often than people admit.</li>
+      <li><strong>Sharp decision boundaries.</strong> Real tabular targets often have genuine
+          thresholds. Trees represent a step with one split; a smooth network has to approximate it
+          and spends capacity doing so.</li>
+      <li><strong>Irrelevant features.</strong> A tree simply never splits on a useless column. An MLP
+          has to learn to suppress it, and with limited data it only partly does. There is published
+          work isolating exactly this as a major part of the gap.</li>
+      <li><strong>Data scale.</strong> 50k rows is a big tabular dataset and a small deep-learning
+          one. Boosting's stronger prior is worth more than a network's flexibility in that regime.</li>
+      <li><strong>Operational cost.</strong> Not an accuracy argument but a real one: boosting trains
+          in minutes on CPU, tunes reliably, and needs no accelerator to serve.</li>
+    </ul>
+    <p><strong>Where the answer flips:</strong> when the tabular data must be fused with text or
+    images; when there is a very high-cardinality categorical whose embedding is genuinely useful
+    downstream; when you want one model to serve many related tasks; or when you need a differentiable
+    end-to-end system. Also worth noting that the newer tabular transformer work has narrowed the gap
+    on some benchmarks without clearly overturning the result — I would present it as the current
+    state of an active question rather than as settled.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Your XGBoost feature importance says transaction_id is the most important feature. What do you conclude?</summary>
+  <div class="a">
+    <div class="tldr">Two things at once: gain importance is biased toward high-cardinality features,
+    <em>and</em> an ID should never have been in the feature set in the first place. Both are bugs.</div>
+    <p><strong>The bias.</strong> A continuous or high-cardinality feature offers thousands of
+    candidate split points. With that many chances, some split will separate the training data well
+    by luck alone. Default gain importance rewards that, so IDs, timestamps and long floats
+    systematically float to the top even when they carry nothing.</p>
+    <p><strong>The leak.</strong> Worse, IDs are frequently not random. If they are sequential, the ID
+    encodes time, and the model has learned "recent rows are more likely to be fraud" — which is
+    temporal leakage from module 20 arriving through the back door, and it evaporates the moment you
+    deploy.</p>
+    <p><strong>What I would do:</strong> drop the ID and any other identifier or timestamp-derived
+    surrogate; recompute importance by permutation on the validation set, which does not suffer the
+    cardinality bias; look at SHAP for the direction of the effect, not just the magnitude; and check
+    whether validation performance actually falls once the ID is gone. If it collapses, the model was
+    largely reading the leak.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>Permutation importance has its own failure mode: correlated features cover for each other,
+      so shuffling one alone under-states both. Permute correlated groups together when it matters.</p></div>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What are monotonic constraints and why would a fraud team use them?</summary>
+  <div class="a">
+    <div class="tldr">They force the model's output to move in only one direction as a feature
+    increases — enforced at split-selection time. Fraud and credit teams use them to encode business
+    rules structurally, so the model cannot contradict them on any input.</div>
+    <p>The mechanism: when evaluating a candidate split on a constrained feature, the library rejects
+    any split whose child leaf values would violate the required direction, and propagates bounds down
+    the tree. The result is a model that is provably non-decreasing in that feature everywhere, not
+    merely on the training data.</p>
+    <p><strong>Why it matters commercially:</strong></p>
+    <ul>
+      <li><strong>Defensibility.</strong> "More prior chargebacks lowered this customer's risk score"
+          is impossible to explain to a regulator or a customer. With a constraint it cannot happen.</li>
+      <li><strong>Robustness under drift.</strong> Unconstrained trees learn local wiggles from sparse
+          regions of the training data. Those wiggles are exactly what breaks first when the
+          distribution moves. A constraint removes a whole class of them.</li>
+      <li><strong>Gaming resistance.</strong> A non-monotonic score can sometimes be lowered by
+          <em>increasing</em> a risk feature. An adversary who finds that region exploits it. A
+          monotone model has no such region.</li>
+      <li><strong>Cheap prior knowledge.</strong> When you genuinely know the direction, telling the
+          model costs nothing and buys sample efficiency.</li>
+    </ul>
+    <p>The trade-off: a small accuracy cost, usually a fraction of a point of AUC, and it is worth
+    verifying rather than assuming. And it only applies where the direction is genuinely known —
+    transaction amount is <em>not</em> monotone in fraud risk, since both very small card-testing
+    transactions and very large ones are suspicious. Constraining that would actively hurt.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you tune a gradient boosting model — in what order?</summary>
+  <div class="a">
+    <div class="tldr">Fix a low learning rate and let early stopping choose the number of trees, then
+    tune tree complexity, then sampling, then regularisation. Learning rate and tree count are one
+    coupled knob, not two.</div>
+    <ol>
+      <li><strong>Set the learning rate low</strong> (0.05, or 0.01 if I can afford it) and set
+          <code>n_estimators</code> very high with <strong>early stopping</strong> on a validation
+          set. Now the tree count is chosen for me and I never tune it directly. This coupling is the
+          single most useful thing to know here: halving the learning rate roughly doubles the trees
+          needed for the same fit.</li>
+      <li><strong>Tree complexity.</strong> <code>max_depth</code> (typically 3–8) or
+          <code>num_leaves</code> for LightGBM, plus <code>min_child_weight</code>. This is where most
+          of the remaining gain is.</li>
+      <li><strong>Sampling.</strong> <code>subsample</code> and <code>colsample_bytree</code> around
+          0.6–0.9. Adds regularisation and speeds training.</li>
+      <li><strong>Explicit regularisation.</strong> <code>reg_lambda</code>, <code>reg_alpha</code>,
+          <code>gamma</code>. Usually the smallest effect, worth a pass if overfitting persists.</li>
+      <li><strong>Re-lower the learning rate</strong> at the end if the compute budget allows, and let
+          early stopping add the trees. Almost always a small free gain.</li>
+    </ol>
+    <p>Method rather than grid: random or Bayesian search over the ranges above beats an exhaustive
+    grid at equal budget, because most of these parameters matter far less than depth and learning
+    rate and a grid spends equally on all of them. And the validation split must respect the structure
+    from module 20 — for fraud that means time-based with a label-delay gap, or the early stopping is
+    itself tuned on leaked information.</p>
+    <div class="box trap"><span class="lbl">Trap</span>
+      <p>For imbalanced data, <code>scale_pos_weight</code> improves ranking but destroys calibration —
+      the predicted probabilities are no longer probabilities. If your threshold comes from a cost
+      matrix, prefer leaving it alone and setting the threshold instead, or recalibrate afterwards.</p></div>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>How a split is chosen, and why greediness makes single trees unstable.</li>
+    <li>Bagging vs boosting: parallel/sequential, variance/bias, and which one can overfit with more
+        trees.</li>
+    <li>Why it is called <em>gradient</em> boosting, and what the pseudo-residual is for log loss.</li>
+    <li>Four reasons GBDT beats deep learning on tabular data — and when it stops being true.</li>
+    <li>The three feature-importance methods and how each misleads.</li>
+    <li>Monotonic constraints: mechanism, and one feature where you would <em>not</em> use one.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#21" target="_top"><span class="k">Back</span>← 21 · Linear models</a>
+  <a href="../index.html#23" target="_top"><span class="k">Next</span>23 · SVM, kNN &amp; Naive Bayes →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

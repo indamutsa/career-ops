@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 1 · Maths — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 60</p>
+<h1>Round 1 · Maths
+  <span class="lede">Not more teaching — a rehearsal. Cover the answer, say yours out loud, then open
+  it. An answer you have only read is an answer you do not have.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>45 minutes.</strong> Rapid-fire first — 20 seconds each, out loud, no notes. Then the four
+  deep questions at 5 minutes each. Then the derivation, on paper, talking as you write. Score yourself
+  at the bottom honestly; a 2 you admit to is worth more than a 4 you award yourself.</p>
+  <p>Turn on <strong>drill mode</strong> in the sidebar to keep every answer collapsed.</p>
+</div>
+
+<h2 data-n="60.1">Rapid fire — 20 seconds each</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is a derivative?</summary>
+  <div class="a"><div class="tldr">The instantaneous rate of change — the slope of the tangent. It
+  answers "if I nudge the input a little, how much does the output move, and in which direction?"</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What is a minimum?</summary>
+  <div class="a"><div class="tldr">A point where the gradient is zero and the surface curves upward
+  around it — the second derivative is positive, or in many dimensions the Hessian is positive definite.
+  Zero gradient alone is not enough: maxima and saddle points have it too.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does gradient descent work?</summary>
+  <div class="a"><div class="tldr">The gradient points in the direction of steepest increase, so the
+  negative gradient is the steepest local decrease. Take a small step that way and the loss falls —
+  provided the step is small enough that the local linear approximation still holds.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does an eigenvector mean, intuitively?</summary>
+  <div class="a"><div class="tldr">A direction the matrix does not rotate — it only stretches it. The
+  eigenvalue is the stretch factor. They are the natural axes of the transformation, which is why PCA
+  and the Hessian's curvature analysis both live in eigenvector coordinates.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the rank of a matrix?</summary>
+  <div class="a"><div class="tldr">The number of genuinely independent directions it maps to — the
+  dimension of its output space. Low rank means information is being collapsed, which is exactly what
+  LoRA exploits and what PCA measures.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Expectation versus variance?</summary>
+  <div class="a"><div class="tldr">Expectation is the long-run average; variance is the average squared
+  distance from it. One says where, the other says how spread out.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>State Bayes' rule and say what each term is called.</summary>
+  <div class="a"><div class="tldr">P(H|E) = P(E|H)·P(H)/P(E) — posterior equals likelihood times prior
+  over evidence. In words: start from what you believed, multiply by how well the hypothesis explains
+  what you saw, normalise.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>MLE versus MAP?</summary>
+  <div class="a"><div class="tldr">MLE maximises the likelihood of the data; MAP maximises the
+  posterior, which is the likelihood times a prior. MAP with a Gaussian prior <em>is</em> L2
+  regularisation, and with a Laplace prior it is L1.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>What does "stochastic" mean in stochastic gradient descent?</summary>
+  <div class="a"><div class="tldr">The gradient is estimated from a random sample of the data rather
+  than all of it. It is a noisy but unbiased estimate — vastly cheaper per step, and the noise itself
+  helps escape saddle points.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is entropy?</summary>
+  <div class="a"><div class="tldr">The average surprise of a distribution — the expected number of bits
+  needed to encode a sample from it. Maximal when everything is equally likely, zero when one outcome
+  is certain.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why is cross-entropy the loss for classification?</summary>
+  <div class="a"><div class="tldr">Because minimising cross-entropy between the true distribution and
+  the predicted one is exactly maximum likelihood for a categorical model. It also has the convenient
+  gradient (p − y) through the softmax, which is why it trains well.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is KL divergence, and is it a distance?</summary>
+  <div class="a"><div class="tldr">The extra bits you pay for encoding data from P using a code built
+  for Q. Not a distance: it is asymmetric and violates the triangle inequality. KL(P‖Q) = H(P,Q) −
+  H(P).</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is a Lagrange multiplier, in words?</summary>
+  <div class="a"><div class="tldr">The exchange rate between the constraint and the objective — how much
+  the optimum would improve if the constraint were relaxed by one unit. At a constrained optimum the
+  objective's gradient is parallel to the constraint's, and λ is the ratio.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What are the KKT conditions for?</summary>
+  <div class="a"><div class="tldr">They generalise Lagrange multipliers to inequality constraints. The
+  key one is complementary slackness: either a constraint is tight and its multiplier can be non-zero,
+  or it is slack and its multiplier is zero. That is precisely what makes SVM support vectors
+  sparse.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Convex versus non-convex — why does it matter?</summary>
+  <div class="a"><div class="tldr">In a convex problem every local minimum is global, so optimisation
+  has a guarantee. Neural networks are non-convex, so there is no such guarantee — yet in high dimensions
+  most critical points are saddles rather than bad minima, which is why it works anyway.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the chain rule and where do you meet it?</summary>
+  <div class="a"><div class="tldr">The derivative of a composition is the product of the derivatives.
+  Backpropagation is the chain rule applied over a computation graph — and because it is a product,
+  many small factors give vanishing gradients and many large ones give explosion.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is the Hessian, and what does it tell you?</summary>
+  <div class="a"><div class="tldr">The matrix of second derivatives — the curvature. Its eigenvalues
+  classify a critical point: all positive is a minimum, all negative a maximum, mixed signs a saddle.
+  Its condition number governs how badly gradient descent zig-zags.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why do we normalise features?</summary>
+  <div class="a"><div class="tldr">Because features on wildly different scales make the loss surface an
+  elongated valley, and gradient descent oscillates across it instead of running down it. Normalising
+  conditions the problem so one learning rate suits every direction.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is the Laplace approximation?</summary>
+  <div class="a"><div class="tldr">Approximate a posterior by a Gaussian centred at its mode, with
+  covariance the inverse Hessian of the negative log posterior there. A cheap route to uncertainty
+  estimates — and the origin of the Fisher-information view used in Bayesian neural nets.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>State the central limit theorem and why you care.</summary>
+  <div class="a"><div class="tldr">The mean of many independent samples is approximately Gaussian
+  regardless of the underlying distribution. It is why confidence intervals on A/B tests work, and why
+  Gaussian assumptions are less reckless than they look.</div></div>
+</details>
+
+<h2 data-n="60.2">Deep questions — 5 minutes each</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Explain backpropagation to a smart person who does not know calculus.</summary>
+  <div class="a">
+    <div class="tldr">It is blame assignment. The network makes a prediction, we measure how wrong it
+    is, and then we work backwards through the layers asking each weight "how much of this error was
+    your fault?" — then nudge every weight down its share of the blame.</div>
+    <p>The analogy I would use: a kitchen where a dish comes out too salty. You do not blindly change
+    every ingredient. You ask the last cook what they added, then the one before, tracing the salt back
+    through the chain. Each cook's responsibility is their own contribution multiplied by how much the
+    later steps amplified it — that multiplication down the chain is the chain rule.</p>
+    <p>Two consequences worth stating unprompted: it is a <em>product</em> along the chain, so long
+    chains of small factors vanish and large ones explode — the whole motivation for residual
+    connections and normalisation. And the backward pass costs about twice the forward pass, which is
+    where the 6 in the 6ND training-compute formula comes from.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Derive why L2 regularisation equals a Gaussian prior.</summary>
+  <div class="a">
+    <div class="tldr">Maximise the posterior instead of the likelihood, take logs, and a Gaussian prior
+    on the weights contributes a −λ‖w‖² term. Maximising that posterior is minimising the loss plus
+    λ‖w‖² — which is ridge regression.</div>
+    <p><strong>The steps:</strong> MAP maximises P(w|D) ∝ P(D|w)·P(w). Take the negative log: −log
+    P(D|w) − log P(w). The first term is the ordinary loss. If P(w) = N(0, σ²I), then −log P(w) =
+    ‖w‖²/(2σ²) + const. So the objective is loss + λ‖w‖² with λ = 1/(2σ²).</p>
+    <p><strong>What the equivalence buys you.</strong> The regularisation strength is a statement about
+    prior belief: a small σ is a strong belief that weights are near zero, and that is a large λ. It
+    also tells you what L1 is — the same derivation with a Laplace prior gives ‖w‖₁, and the Laplace
+    distribution's sharp peak at zero is why L1 produces exact zeros while L2 only shrinks.</p>
+    <p><strong>And the connection back to constrained optimisation:</strong> the penalty form is the
+    Lagrangian of "minimise loss subject to ‖w‖² ≤ C", with λ as the multiplier. Three views of the same
+    object — a constraint, a penalty, and a prior — which is a good thing to be able to move between
+    on demand.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Your loss stops decreasing. Diagnose it mathematically.</summary>
+  <div class="a">
+    <div class="tldr">Look at the gradient norm first. Near zero means you are at a critical point or
+    the gradients have vanished; large and erratic means the step size is too big; small but non-zero
+    with a flat loss usually means a poorly conditioned surface or a learning rate that has decayed to
+    nothing.</div>
+    <p><strong>Gradient norm ≈ 0.</strong> Either a genuine minimum, a saddle (far more likely in high
+    dimensions), or dead units — ReLUs stuck at zero pass no gradient at all. Check the fraction of
+    activations that are exactly zero; if it is high, that is your answer, and the fix is the
+    initialisation or the activation function.</p>
+    <p><strong>Gradient norm large and oscillating.</strong> The step is overshooting the valley. The
+    loss will bounce rather than plateau. Lower the learning rate or clip.</p>
+    <p><strong>Gradient small but non-zero, loss flat.</strong> Usually conditioning: the Hessian has a
+    huge condition number, so progress along the flat directions is glacial while the steep ones are
+    already converged. Normalisation, Adam's per-parameter scaling, or a preconditioner all attack
+    this.</p>
+    <p><strong>Also check the non-mathematical causes,</strong> because they are more common than any of
+    the above: the learning-rate schedule has decayed to ~0; the data loader is serving the same batch;
+    the loss is being computed on the wrong tensor; or the model has simply converged and the remaining
+    error is irreducible — which you test by checking whether it can overfit a single batch to near-zero
+    loss. If it cannot, the bug is in the model or the data, not the optimisation.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain PCA from first principles.</summary>
+  <div class="a">
+    <div class="tldr">Find the directions along which the data varies most. Centre the data, compute the
+    covariance matrix, take its eigenvectors — those are the principal components, and their eigenvalues
+    are the variance captured along each.</div>
+    <p><strong>Two derivations that arrive at the same place,</strong> and being able to give both is
+    the senior signal. <em>Maximum variance:</em> find the unit vector w maximising Var(Xw) = wᵀΣw
+    subject to ‖w‖ = 1. Form the Lagrangian, differentiate, and you get Σw = λw — the eigenvector
+    equation, with λ the variance captured. <em>Minimum reconstruction error:</em> find the k-dimensional
+    subspace minimising the squared distance from the data to its projection. Same answer, because total
+    variance is fixed, so maximising what you keep is minimising what you lose.</p>
+    <p><strong>The relationship to SVD:</strong> PCA on centred X is the SVD of X. The right singular
+    vectors are the components and the squared singular values are proportional to the eigenvalues —
+    and in practice you compute it that way, because forming XᵀX squares the condition number and loses
+    precision.</p>
+    <p><strong>What to say about limitations,</strong> since it is usually the follow-up: PCA is linear,
+    so it cannot unfold a curved manifold; it is scale-dependent, so unstandardised features let the
+    largest-unit feature dominate; the components are orthogonal by construction, which is a
+    mathematical convenience with no reason to match reality; and maximum variance is not the same as
+    maximum usefulness — the discriminative direction can have small variance, which is precisely the
+    case where PCA before a classifier hurts.</p>
+  </div>
+</details>
+
+<h2 data-n="60.3">The whiteboard prompt</h2>
+
+<div class="box trap">
+  <span class="lbl">Do this on paper, out loud, in 10 minutes</span>
+  <p>"Derive the gradient of the logistic-regression loss, and explain what the result means."</p>
+  <p>You should reach ∇ = Xᵀ(σ(Xw) − y) and be able to say the sentence that matters: <em>the gradient
+  is the input matrix times the prediction error</em> — the same form as linear regression's, which is
+  not a coincidence but a property of the exponential family with its canonical link. Say what happens
+  when the prediction is right (the error term vanishes, no update) and when the model is confidently
+  wrong (the error saturates at 1, so the update is bounded — which is why cross-entropy trains where
+  squared error stalls).</p>
+</div>
+
+<h2 data-n="60.4">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th><th>What to do</th></tr>
+<tr><td>1–2</td><td>Recognised the terms, could not produce definitions unprompted</td><td>Back to
+    modules 10–14; re-drill tomorrow</td></tr>
+<tr><td>3</td><td>Definitions fine, derivations shaky</td><td>Do the two derivations on paper daily
+    until fluent</td></tr>
+<tr><td>4</td><td>Fluent, but stated things without their limitations</td><td>Practise adding the
+    caveat sentence to every answer</td></tr>
+<tr><td>5</td><td>Fluent, caveated, connected across topics unprompted</td><td>Move on to round 2</td></tr>
+</table>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#55" target="_top"><span class="k">Back</span>← 55 · Governance &amp; risk</a>
+  <a href="../index.html#61" target="_top"><span class="k">Next</span>61 · Round 2 · Classical ML →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

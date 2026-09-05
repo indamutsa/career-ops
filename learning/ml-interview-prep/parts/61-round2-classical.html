@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Round 2 · Classical ML — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part F · Interview rounds · Module 61</p>
+<h1>Round 2 · Classical ML
+  <span class="lede">The round most candidates under-prepare because they assume it is beneath a
+  research role. It is not — fraud, tabular data and imbalanced problems are where a lot of applied work
+  actually lives, and a shaky answer here reads as inexperience.</span>
+</h1>
+
+<div class="box note">
+  <span class="lbl">How to run this round</span>
+  <p><strong>45 minutes.</strong> Rapid-fire out loud, then the deep questions, then the case. The case
+  is the one that decides the round — treat it as a conversation, ask clarifying questions, and state
+  your assumptions before you answer.</p>
+</div>
+
+<h2 data-n="61.1">Rapid fire — 20 seconds each</h2>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Bias versus variance?</summary>
+  <div class="a"><div class="tldr">Bias is error from a model too simple to capture the pattern;
+  variance is error from a model so flexible it fits the noise. High bias underfits, high variance
+  overfits, and total error is bias² + variance + irreducible noise.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Bagging versus boosting?</summary>
+  <div class="a"><div class="tldr">Bagging trains many models in parallel on bootstrap samples and
+  averages them — it reduces variance. Boosting trains sequentially, each model fixing its predecessor's
+  errors — it reduces bias. Random forest is bagging; XGBoost is boosting.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does random forest sample features as well as rows?</summary>
+  <div class="a"><div class="tldr">Because bootstrap sampling alone leaves the trees correlated — one
+  dominant feature is chosen first by nearly every tree. Averaging correlated models barely reduces
+  variance, so restricting the features at each split decorrelates them, which is where most of the
+  gain comes from.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What does gradient boosting actually fit?</summary>
+  <div class="a"><div class="tldr">Each new tree fits the negative gradient of the loss with respect to
+  the current predictions — the pseudo-residuals. For squared error that is literally the residual; for
+  other losses it is the generalisation of one.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>L1 versus L2 regularisation?</summary>
+  <div class="a"><div class="tldr">L1 drives coefficients to exactly zero, so it selects features; L2
+  shrinks them all smoothly without eliminating any. Geometrically it is the diamond's corners versus
+  the circle's smooth edge.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is the kernel trick?</summary>
+  <div class="a"><div class="tldr">The dual SVM depends on the data only through inner products, so you
+  can replace the inner product with a kernel that computes it in a higher-dimensional space — without
+  ever constructing the coordinates in that space.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why is Naive Bayes "naive", and why does it work anyway?</summary>
+  <div class="a"><div class="tldr">It assumes the features are conditionally independent given the
+  class, which is essentially never true. It works because classification only needs the right argmax,
+  not calibrated probabilities — and the errors from the false assumption often do not change which
+  class wins.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip b">BASIC</span>Precision versus recall?</summary>
+  <div class="a"><div class="tldr">Precision: of the ones I flagged, how many were right. Recall: of the
+  ones that were real, how many did I catch. Precision is the cost of false alarms, recall the cost of
+  misses.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>ROC-AUC or PR-AUC under class imbalance?</summary>
+  <div class="a"><div class="tldr">PR-AUC. ROC's false-positive rate has the huge negative class in its
+  denominator, so thousands of false positives barely move it — the curve looks excellent while the
+  precision is unusable. PR-AUC uses precision, which has the flagged set in the denominator, so it
+  reflects what an analyst actually experiences.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is calibration, and why care?</summary>
+  <div class="a"><div class="tldr">A model is calibrated when the events it assigns 5 % to happen 5 % of
+  the time. You need it whenever the score feeds a cost calculation or a human decision — ranking
+  metrics like AUC are completely blind to it.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>How do you pick a classification threshold?</summary>
+  <div class="a"><div class="tldr">From the cost matrix, not from 0.5. Choose the threshold that
+  minimises expected cost given the cost of a false positive and a false negative — or that hits a fixed
+  operational constraint, like the number of alerts your review team can handle per day.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is data leakage? Give two examples.</summary>
+  <div class="a"><div class="tldr">Information in training that would not be available at prediction
+  time. Examples: a feature computed after the outcome (a chargeback count that includes this
+  transaction's chargeback), and scaling or imputing using statistics computed over the whole dataset
+  before splitting.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>When must cross-validation not be random?</summary>
+  <div class="a"><div class="tldr">Whenever there is structure the split must respect: time series need
+  a forward-chaining split; grouped data — multiple rows per customer — needs group-wise splitting, or
+  the same customer appears on both sides and the score is inflated.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>SMOTE — when would you use it?</summary>
+  <div class="a"><div class="tldr">Rarely, and cautiously. It synthesises minority points by
+  interpolation, which can invent implausible examples in the region between classes. Class weights or
+  threshold adjustment usually work as well with less risk, and any resampling must happen inside the
+  cross-validation fold, never before it.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>SHAP versus permutation importance?</summary>
+  <div class="a"><div class="tldr">SHAP gives per-prediction attributions with additive consistency
+  guarantees, from cooperative game theory. Permutation importance is a global measure: shuffle a
+  feature and see how much performance drops. Both are distorted by correlated features — permutation
+  by evaluating impossible input combinations, SHAP by splitting credit between correlated
+  features.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Why does k-means need k, and how do you choose it?</summary>
+  <div class="a"><div class="tldr">Because it minimises within-cluster variance, which decreases
+  monotonically with k — so the objective alone can never choose it. Use the elbow, the silhouette
+  score, or a downstream task metric; and remember k-means assumes spherical clusters of similar size,
+  so a bad fit may be the algorithm rather than the k.</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>What is an isolation forest doing?</summary>
+  <div class="a"><div class="tldr">Splitting the data at random and measuring how few splits it takes to
+  isolate a point. Anomalies are isolated quickly because they sit apart. It is unsupervised, so it
+  finds "unusual", which is not the same as "fraudulent".</div></div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Why do gradient-boosted trees still beat neural nets on tabular data?</summary>
+  <div class="a"><div class="tldr">Trees handle mixed types, missing values and irrelevant features
+  natively, are invariant to monotone transformations of the inputs, and their axis-aligned splits match
+  how tabular features actually behave. Neural nets need far more data and preprocessing to reach the
+  same place. Grinsztajn et al. showed the gap is real and not just tuning effort.</div></div>
+</details>
+
+<h2 data-n="61.2">Deep questions — 5 minutes each</h2>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>Explain the bias–variance decomposition and where it stops being the right story.</summary>
+  <div class="a">
+    <div class="tldr">Expected squared error decomposes into bias² + variance + irreducible noise, and
+    classically you trade one against the other. But the double-descent phenomenon shows the classical
+    U-curve is not the whole picture — past the interpolation threshold, test error falls again as
+    capacity grows.</div>
+    <p><strong>The decomposition:</strong> over random draws of the training set, bias is how far the
+    average prediction sits from the truth, variance is how much the prediction moves between draws, and
+    the noise floor is irreducible. More capacity lowers bias and raises variance; regularisation does
+    the reverse.</p>
+    <p><strong>Where it breaks.</strong> The classical story predicts that a model with far more
+    parameters than data points must overfit catastrophically. Modern deep networks have orders of
+    magnitude more, interpolate the training set exactly, and still generalise. Belkin et al.'s
+    double-descent curve shows test error rising to a peak at the interpolation threshold and then
+    <em>falling again</em> as capacity keeps growing.</p>
+    <p><strong>Why, as best the field understands it:</strong> among the many parameter settings that
+    fit the data exactly, gradient descent finds particular ones — an implicit regularisation toward
+    low-complexity solutions. Capacity counted in parameters is simply the wrong measure of the
+    effective complexity of what SGD actually selects.</p>
+    <p><strong>What I take from it practically:</strong> the trade-off remains the right mental model
+    for classical models and small data — it is why bagging and boosting attack different terms — but
+    "too many parameters" is not by itself an argument against a model. The empirical validation curve
+    decides, not the parameter count.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How would you handle a 0.1 % positive rate?</summary>
+  <div class="a">
+    <div class="tldr">Do not fix the imbalance — fix the evaluation and the threshold. Use PR-AUC and
+    cost-based thresholding, class weights rather than resampling, and stratify every split. The
+    imbalance is a property of the problem, not a defect in the data.</div>
+    <p><strong>Evaluation first,</strong> because everything else depends on it. Accuracy is
+    meaningless — predicting "never" scores 99.9 %. Use PR-AUC, precision at fixed recall, or recall at
+    a fixed alert budget, and stratify the folds so every fold contains positives.</p>
+    <p><strong>Then the threshold, from a cost matrix.</strong> If a missed fraud costs €200 and a false
+    decline costs €5 in goodwill and friction, the optimal threshold follows from those numbers, not
+    from 0.5. Often the real constraint is capacity: the review team handles 500 alerts a day, so the
+    threshold is whatever produces 500.</p>
+    <p><strong>On the model side:</strong> class weights or <code>scale_pos_weight</code> in the
+    gradient-boosting library — same effect as resampling without duplicating data or inventing points.
+    I would try plain weighting before SMOTE, and if I did resample, strictly inside the fold.</p>
+    <p><strong>What usually matters more than any of that:</strong> features. At a 0.1 % rate the
+    signal is in behaviour over time — velocity, deviation from the entity's own history, graph
+    relationships between cards, devices and merchants. Better features move this problem much further
+    than better classifiers do.</p>
+    <p><strong>And the framing I would end on:</strong> in the extreme, treat it as anomaly detection or
+    a hybrid — rules for known patterns, a supervised model for learned ones, unsupervised detection for
+    novel ones. Three layers with different failure modes beat one model asked to do everything, and
+    that layering is what real fraud stacks actually look like.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>A stakeholder asks why the model declined a specific customer. Answer them.</summary>
+  <div class="a">
+    <div class="tldr">Give the top contributing factors for that decision in plain language with their
+    direction and magnitude — from SHAP on that single prediction — then be explicit that these are
+    correlations the model relies on, not a causal account of that person.</div>
+    <p><strong>What I would actually say:</strong> "The score was driven mainly by three things: the
+    transaction was 12× this card's usual amount, it was the fourth attempt in ten minutes, and the
+    device had not been seen before. Together those pushed it from a baseline 0.4 % risk to 22 %, which
+    is above our decline threshold of 15 %."</p>
+    <p><strong>Why local, not global.</strong> Global feature importance answers "what does the model
+    generally use", which is not what was asked. The question is about one decision, so it needs a local
+    attribution — SHAP values for that row, which have the useful property of summing to the difference
+    between the prediction and the base rate. That additivity is what makes the sentence above
+    honest.</p>
+    <p><strong>The caveats I would state without being asked,</strong> because omitting them is how
+    explanations mislead: SHAP explains the <em>model</em>, not the world — it says what the model used,
+    not why the customer behaved that way. Correlated features share credit, so a listed factor may be
+    standing in for another. And a different explanation method can rank the factors differently, which
+    is uncomfortable but true.</p>
+    <p><strong>Then the operational half,</strong> which is usually what the stakeholder actually needs:
+    there must be a review path and an appeal route (module 55), the explanation must be stored with the
+    decision, and the wording given to the customer should be less specific than the wording given
+    internally — a precise decline reason is a probe an adversary can use to map the boundary.</p>
+  </div>
+</details>
+
+<h2 data-n="61.3">The case — 15 minutes</h2>
+
+<div class="box trap">
+  <span class="lbl">Talk through this out loud, end to end</span>
+  <p>"We have five years of card transactions, roughly 0.2 % labelled fraudulent, with labels arriving
+  as chargebacks up to 60 days later. Build me a model."</p>
+  <p><strong>The structure to hit:</strong> clarify the objective and the cost of each error type →
+  split temporally, never randomly → build features from the entity's own history with a point-in-time
+  join → start with gradient boosting as the baseline → evaluate with PR-AUC and at the operating
+  threshold, sliced by segment → pick the threshold from cost or from review capacity → deploy shadow
+  then canary → monitor with PSI and prediction drift because labels are 60 days late → retrain on a
+  schedule, with a randomised holdout to keep the feedback loop honest.</p>
+  <p><strong>Marks are lost</strong> for jumping to the model choice first, for a random train/test
+  split, for reporting accuracy or plain AUC, for treating 0.5 as the threshold, and for having no
+  answer to "how will you know it is still working next month?".</p>
+</div>
+
+<h2 data-n="61.4">Score yourself</h2>
+
+<div class="tw">
+<table>
+<tr><th>Band</th><th>What it looks like</th><th>What to do</th></tr>
+<tr><td>1–2</td><td>Named algorithms, could not say when to use which</td><td>Modules 20–26; redo the
+    rapid fire tomorrow</td></tr>
+<tr><td>3</td><td>Solid on algorithms, weak on metrics and thresholds</td><td>Module 25 until the
+    cost-matrix argument is automatic</td></tr>
+<tr><td>4</td><td>Good answers, but the case skipped evaluation or monitoring</td><td>Redo the case,
+    timing yourself, hitting all nine steps</td></tr>
+<tr><td>5</td><td>Case covered end to end with trade-offs stated</td><td>Move on to round 3</td></tr>
+</table>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#60" target="_top"><span class="k">Back</span>← 60 · Round 1 · Maths</a>
+  <a href="../index.html#62" target="_top"><span class="k">Next</span>62 · Round 3 · Deep learning →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post-training — ML Interview Prep</title>
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<p class="crumb">Part D · Transformers &amp; GPT · Module 44</p>
+<h1>Post-training
+  <span class="lede">A pretrained model is a text-continuation engine, not an assistant. Everything
+  between "predicts the next token" and "answers your question helpfully" happens here: SFT, reward
+  models, RLHF, DPO, RLVR/GRPO, and distillation. Module 34's RL vocabulary pays off in full.</span>
+</h1>
+
+<h2 data-n="44.1">Why post-training exists at all</h2>
+
+<div class="box analogy">
+  <span class="lbl">The analogy</span>
+  <p>Pretraining is reading the entire library. The model now knows how sentences continue — including
+  how a <em>bad</em> answer continues, because the library contains those too. Ask a raw base model a
+  question and a perfectly reasonable continuation is <em>five more questions</em>, because that is what
+  a page of questions looks like.</p>
+  <p>Post-training is the apprenticeship: first you are shown how the job is done (SFT), then someone
+  watches you work and tells you which of two attempts was better (RLHF/DPO), and in the subjects with
+  right answers, a marker grades you automatically (RLVR).</p>
+</div>
+
+<div class="box note">
+  <span class="lbl">The framing to use</span>
+  <p>Pretraining buys <strong>capability</strong>; post-training buys <strong>elicitation</strong>. The
+  knowledge is mostly already in the weights — post-training is largely about making the model reliably
+  produce the behaviour it was already capable of. That framing (sometimes called the superficial
+  alignment hypothesis) explains why a few thousand high-quality SFT examples can transform a model,
+  and it is the sentence that makes an answer here sound informed.</p>
+</div>
+
+<h2 data-n="44.2">The stages</h2>
+
+<div class="terms">
+
+  <div class="term">
+    <div class="t">SFT / instruction tuning <span class="tag">basic</span></div>
+    <p>Supervised fine-tuning on (prompt, good response) pairs — ordinary next-token training, with the
+       loss usually masked to the response only.</p>
+    <p class="wh">This is what turns a continuation engine into something that answers. Quality beats
+       quantity dramatically: LIMA got strong results from 1,000 carefully curated examples.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Preference data <span class="tag">mid</span></div>
+    <p>Pairs of responses to the same prompt with a human (or model) judgement of which is better.</p>
+    <p class="an">Judging two answers is far easier and more consistent than writing the ideal answer.
+       That asymmetry — <em>evaluation is cheaper than generation</em> — is the whole reason preference
+       learning works.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Reward model <span class="tag">mid</span></div>
+    <p>A model, usually the same architecture with a scalar head, trained on preference pairs with the
+       Bradley–Terry loss: −log σ(r(chosen) − r(rejected)).</p>
+    <p class="warn-inline">It learns a <em>relative</em> score. The absolute number is meaningless, and
+       it is only reliable near the distribution it was trained on — which is exactly why the policy
+       drifting away from that distribution breaks it.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RLHF <span class="tag">senior</span></div>
+    <p>Optimise the policy against the reward model with PPO, plus a KL penalty against the SFT
+       reference model.</p>
+    <div class="eq">reward = r<sub>θ</sub>(x, y) − β · KL( π ‖ π<sub>ref</sub> )<span class="note">
+       the second term is the leash: stay near the model you started from</span></div>
+  </div>
+
+  <div class="term">
+    <div class="t">DPO <span class="tag">senior</span></div>
+    <p>Direct Preference Optimization: derive the optimal policy in closed form from the RLHF
+       objective, and it turns out you can train directly on preference pairs with a simple
+       classification-style loss. No reward model, no sampling loop, no PPO.</p>
+    <p class="wh">Vastly simpler and more stable, which is why most open models use it. The cost is
+       that it learns only from a fixed offline dataset — it never sees its own new outputs.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">RLVR <span class="tag">senior</span></div>
+    <p>Reinforcement Learning with Verifiable Rewards: skip the learned reward model where the answer
+       can be <em>checked</em> — maths with a solution key, code with unit tests, formal proofs.</p>
+    <p class="wh">The reward is a program, so it cannot be gamed the way a learned reward model can.
+       This is the engine behind the reasoning models, and it is why they improved on maths and code
+       far faster than on essay quality.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">GRPO <span class="tag">senior</span></div>
+    <p>Group Relative Policy Optimization: sample a group of G responses per prompt and use the group's
+       mean reward as the baseline, instead of training a separate value network.</p>
+    <p class="wh">Drops the critic entirely — roughly halves the memory of a PPO setup. It is what
+       DeepSeek used, and it pairs naturally with RLVR because verifiable rewards make the group scores
+       trustworthy.</p>
+  </div>
+
+  <div class="term">
+    <div class="t">Distillation <span class="tag">mid</span></div>
+    <p>Train a small student on a large teacher's outputs — either its full output distribution
+       (soft labels) or just its generated text.</p>
+    <p class="wh">The most cost-effective post-training lever available to a small team: you rarely
+       need to run RL yourself if you can sample from something better.</p>
+  </div>
+
+</div>
+
+<h2 data-n="44.3">Questions</h2>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>Walk me through RLHF end to end.</summary>
+  <div class="a">
+    <div class="tldr">Three stages: supervised fine-tune on demonstrations, train a reward model on
+    human preference pairs, then optimise the policy against that reward with PPO while a KL penalty
+    keeps it close to the SFT model.</div>
+    <p><strong>1 — SFT.</strong> Collect prompts with human-written ideal responses, fine-tune the base
+    model on them with the loss masked to the response tokens. Output: a model that answers rather than
+    continues. This also becomes π<sub>ref</sub>, the reference for the KL penalty in stage 3.</p>
+    <p><strong>2 — Reward model.</strong> Sample several responses per prompt from the SFT model, have
+    humans rank them, and train a scalar-head model with the Bradley–Terry loss
+    −log σ(r(y<sub>w</sub>) − r(y<sub>l</sub>)). Ranking is used rather than absolute scoring because
+    humans are far more consistent at comparison than at assigning a 1–10.</p>
+    <p><strong>3 — RL.</strong> The policy generates a response, the reward model scores it, PPO
+    updates the policy with the clipped objective (module 34), and the objective carries
+    −β·KL(π‖π<sub>ref</sub>). Because the reward arrives only at the end of the sequence, this is a
+    genuine credit-assignment problem — which is precisely why it is RL and not supervised learning.</p>
+    <p><strong>Why the KL term is non-negotiable:</strong> the reward model is a learned approximation,
+    accurate only near the distribution it was trained on. Without the leash the policy walks off into
+    a region where the reward model is confidently wrong and exploits it — output collapses into
+    high-scoring gibberish. β trades alignment strength against staying coherent.</p>
+    <p><strong>The point I would add:</strong> the KL penalty has a second, cleaner reading. The
+    optimal solution to this objective is π*(y|x) ∝ π<sub>ref</sub>(y|x)·exp(r(x,y)/β) — the reference
+    model as a prior, the reward as a likelihood. That is what DPO exploits to eliminate the RL loop
+    entirely.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>DPO vs PPO — which would you use?</summary>
+  <div class="a">
+    <div class="tldr">DPO first, almost always: same objective, far simpler pipeline, dramatically more
+    stable. PPO when you need online exploration — the policy learning from responses it generates
+    <em>now</em> — or when the reward is a program rather than a preference dataset.</div>
+    <p><strong>What DPO does.</strong> Starting from that closed-form optimum, the reward can be
+    rewritten in terms of the policy itself: r(x,y) = β·log(π(y|x)/π<sub>ref</sub>(y|x)) + const.
+    Substitute into the Bradley–Terry loss and the reward model cancels out. You are left with a
+    supervised loss on preference pairs that raises the chosen response's relative log-probability and
+    lowers the rejected one's. No reward model, no rollouts, no value network, no clipping.</p>
+    <p><strong>The practical difference:</strong> PPO needs four models in memory (policy, reference,
+    reward, value) plus a generation loop inside training; DPO needs two and a normal training loop. On
+    the tuning burden, PPO is notoriously sensitive — Engstrom et al. showed much of PPO's reported
+    advantage came from implementation details, not the clipped objective.</p>
+    <p><strong>Where DPO genuinely falls short:</strong></p>
+    <ul>
+      <li><strong>It is offline.</strong> It only ever sees the fixed pair dataset, so it cannot
+          discover a response neither annotated answer contains. PPO explores.</li>
+      <li><strong>Distribution shift.</strong> If the pairs were generated by a different model, DPO is
+          learning preferences over text its own policy would not produce.</li>
+      <li><strong>Verifiable rewards.</strong> If reward is "do the unit tests pass", there are no
+          preference pairs to learn from — you need the online loop. RLVR is a PPO/GRPO story.</li>
+      <li><strong>The known failure mode:</strong> DPO often lowers the log-probability of <em>both</em>
+          responses while widening the gap, which is the ratio it actually optimises. Variants like
+          IPO, KTO and CPO exist largely to patch that.</li>
+    </ul>
+    <p><strong>What I would actually run:</strong> SFT → DPO → iterate by regenerating pairs from the
+    updated model and re-running DPO. That online-ish DPO loop recovers most of PPO's exploration
+    benefit at a fraction of the complexity — and I would only reach for full PPO/GRPO once I had a
+    verifiable reward worth the machinery.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>What is reward hacking, and how do you detect it?</summary>
+  <div class="a">
+    <div class="tldr">The policy maximises the measured reward without producing the intended
+    behaviour — it exploits the reward model's errors rather than satisfying the preference the reward
+    model was meant to represent. You detect it by tracking KL, holding out human evaluation, and
+    watching for the signature symptoms.</div>
+    <p><strong>Typical instances,</strong> which are worth naming concretely because they show real
+    exposure: answers becoming steadily longer because annotators mildly prefer thorough replies and
+    the reward model learned "long = good"; excessive hedging and disclaimers because those correlate
+    with "safe"; sycophancy — agreeing with the user's stated view because agreement got preferred;
+    formatting theatre, bullet lists and bold text everywhere; and in RLVR specifically, code that
+    special-cases the test inputs rather than solving the problem.</p>
+    <p><strong>Detection, in the order I would set it up:</strong></p>
+    <ul>
+      <li><strong>KL from the reference.</strong> A rising KL with a still-rising reward is the classic
+          signature: the model has left the region where the reward model was validated.</li>
+      <li><strong>Held-out human eval.</strong> The only ground truth. If reward-model score climbs and
+          human preference does not, the gap <em>is</em> the hacking.</li>
+      <li><strong>A second, independently trained reward model</strong> as a monitor, never trained
+          against. Divergence between the two is an early alarm.</li>
+      <li><strong>Cheap symptom metrics:</strong> output length, list density, agreement rate on prompts
+          where the user's stated view is wrong. Length in particular is worth plotting on every run.</li>
+    </ul>
+    <p><strong>Mitigations:</strong> the KL penalty itself; early stopping on human eval rather than on
+    reward; reward-model ensembles; retraining the reward model on fresh samples from the current policy
+    (iterated RLHF), which repairs the distribution shift at its source; and length normalisation or
+    explicit length penalties for the specific case everyone hits.</p>
+    <p><strong>The deeper point</strong> is Goodhart's law in its exact original form — the reward model
+    is a proxy for human preference, and optimising a proxy hard enough always finds the gap between
+    proxy and target. The engineering response is not a perfect reward model; it is limiting how hard
+    you optimise, and measuring the target directly on a schedule.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip a">SENIOR</span>How do reasoning models get trained?</summary>
+  <div class="a">
+    <div class="tldr">RL on verifiable rewards. Generate long chains of thought, check the final answer
+    with a program, reward the ones that are correct — and the model learns to produce longer, more
+    self-correcting reasoning on its own, without anyone labelling reasoning steps.</div>
+    <p><strong>The recipe:</strong> take a strong base model; collect problems with checkable answers
+    (maths with keys, code with tests); sample many chains of thought per problem; reward = did the
+    verifier pass, plus small format rewards; optimise with GRPO — group of G samples per prompt, reward
+    normalised within the group as the advantage, no value network.</p>
+    <p><strong>What is striking about the result:</strong> DeepSeek-R1-Zero reached strong maths
+    performance with <em>no</em> SFT stage at all — RL directly on the base model. And response length
+    grew on its own during training: the model discovered that thinking longer scored better. Behaviours
+    that look like backtracking and self-verification emerged from outcome-only reward. Nobody supervised
+    the reasoning; only the answer was ever graded.</p>
+    <p><strong>Why verifiable rewards change the game:</strong> a learned reward model can be hacked
+    because it is an approximation. A unit test cannot be argued with. That removes the dominant failure
+    mode of RLHF, which is why this approach scaled so much further — and it also explains the shape of
+    the capability gains: maths, code and formal reasoning improved far faster than open-ended writing,
+    because writing has no verifier.</p>
+    <p><strong>The honest limits:</strong> R1-Zero's raw output had readability problems and language
+    mixing, which is why the shipped R1 added a cold-start SFT stage and a final preference stage — the
+    pure-RL result is a research finding, not the production recipe. Coverage is bounded by what you can
+    verify. Reward hacking reappears in a new costume: code that games the tests. And inference cost
+    rises with the reasoning length, which pushes the problem straight into module 45.</p>
+  </div>
+</details>
+
+<details class="q">
+  <summary><span class="pip i">MID</span>You have a base model and a narrow domain task. What do you do?</summary>
+  <div class="a">
+    <div class="tldr">Escalate in cost order: prompting → few-shot → RAG → LoRA SFT → full fine-tune →
+    preference tuning. Stop as soon as the metric clears the bar, and never start at the expensive end.</div>
+    <p><strong>1 — Prompting and few-shot.</strong> Zero cost, minutes to iterate. Establishes the
+    baseline every later stage must beat, and it is remarkable how often it clears the bar.</p>
+    <p><strong>2 — RAG.</strong> If failures are <em>knowledge</em> failures — the model does not know
+    your domain's facts — retrieval fixes them and fine-tuning largely does not. This distinction is the
+    core of the question: fine-tuning teaches form and behaviour, retrieval supplies facts. Getting it
+    backwards is the standard mistake.</p>
+    <p><strong>3 — LoRA SFT.</strong> If failures are <em>format or style</em> failures — right facts,
+    wrong shape, ignores the schema, wrong register — a few thousand examples with LoRA fixes it on one
+    GPU, and the adapter is a few MB you can version and swap per customer.</p>
+    <p><strong>4 — Full fine-tuning</strong> only when LoRA plateaus and you have tens of thousands of
+    examples plus a real budget. Note it costs you the base model's generality — catastrophic forgetting
+    is real, and a domain model that has lost general instruction-following is often a downgrade.</p>
+    <p><strong>5 — Preference tuning</strong> when correctness is not binary and you can only say which
+    of two outputs is better. DPO on a few thousand pairs; only reach for RL if you have a verifier.</p>
+    <p><strong>What I would insist on before any of it:</strong> an evaluation set built from real
+    failures, fixed and held out, with a metric agreed up front. Without it you cannot tell whether step
+    3 beat step 2, and every subsequent decision is guesswork. I would also error-analyse fifty actual
+    failures by hand first — that is usually what tells you whether you are in the knowledge case or the
+    format case, and it is a couple of hours against weeks of wasted fine-tuning.</p>
+  </div>
+</details>
+
+<div class="checkpoint">
+  <h4>Checkpoint — say these out loud, no notes</h4>
+  <ul>
+    <li>Why a base model cannot be used as an assistant.</li>
+    <li>RLHF's three stages, and what the KL penalty is protecting against.</li>
+    <li>The DPO derivation in one sentence, and the three cases where PPO still wins.</li>
+    <li>Four concrete reward-hacking symptoms and how you would detect each.</li>
+    <li>Why RLVR scaled further than RLHF, and where it stops.</li>
+    <li>The fine-tuning-vs-RAG decision rule: form versus facts.</li>
+  </ul>
+</div>
+
+<div class="partnav">
+  <a href="../index.html#43" target="_top"><span class="k">Back</span>← 43 · Pretraining &amp; scaling</a>
+  <a href="../index.html#45" target="_top"><span class="k">Next</span>45 · Inference &amp; efficiency →</a>
+</div>
+
+<script src="../assets/viz.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
