@@ -166,13 +166,24 @@ There is no DSA round here — that is covered elsewhere.
 
 ## How to open it
 
+**From anywhere — it is deployed:**
+
+> **https://ml-interview-prep-taupe.vercel.app**
+
+Static Vercel site, no build step. Redeploy after any edit with `vercel deploy --prod` from the
+course folder. The URL is public — Vercel's Deployment Protection can put a password in front of it
+if you would rather it were not. Full deployment notes, including how to relink the project if
+`vercel` ever offers to create a new one, are in `learning/ml-interview-prep/README.md`.
+
+**Locally:**
+
 ```bash
 cd $HOME/PROJECT-INITIATIVE/InterviewGuide/resume/career-ops/learning/ml-interview-prep
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
-Serve it if you can — over `http://` the shell fetches each module and injects it, which gives you
+Serve it if you can — over `http(s)://` the shell fetches each module and injects it, which gives you
 **search and drill mode across all 43 modules at once**. Double-clicking `index.html` also works:
 Chrome blocks `fetch()` on `file://`, so the shell falls back to an iframe per module and tells you
 so in a one-line banner. Everything still renders; search and drill are just scoped to the open
