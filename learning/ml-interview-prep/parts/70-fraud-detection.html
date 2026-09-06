@@ -236,9 +236,9 @@ this shows you understand the limit of your own architecture.</p>
     <div class="t">Velocity <span class="tag">the workhorse</span></div>
     <p>Counts and sums over trailing windows per entity: transactions per account in 1 h / 24 h / 7 d,
        distinct merchants, distinct countries, failed attempts.</p>
-    <p class="wh">Cheap, powerful, and the single most useful family in fraud. It is also the exact data
-       structure from module 65 — a per-key deque or bucketed counter, maintained by the streaming job and
-       materialised to the online store.</p>
+    <p class="wh">Cheap, powerful, and the single most useful family in fraud. The implementation is the
+       standard sliding-window structure — a per-key deque, or a bucketed counter when the window is coarse
+       — maintained by the streaming job and materialised to the online store.</p>
   </div>
 
   <div class="term">
@@ -255,7 +255,7 @@ this shows you understand the limit of your own architecture.</p>
     <p>How many accounts share this device; component size in the account–device graph; how new the
        device is; shared IP or shipping address.</p>
     <p class="wh">Catches organised fraud that per-account features cannot see. Computed asynchronously
-       (module 65's union-find), materialised as a small number of scalars, and read like any other
+       — union-find over the shared-identifier graph — materialised as a small number of scalars, and read like any other
        feature. Treat component size as a signal, never a rule — families and public terminals look like
        rings.</p>
   </div>
@@ -339,7 +339,7 @@ idempotent and backfillable — every task takes the logical date as a parameter
     the test window until it looks good</td></tr>
 <tr><td>Calibrate</td><td>Isotonic or Platt on a held-out slice</td><td>Skipping it, then choosing a
     threshold from uncalibrated scores</td></tr>
-<tr><td>Threshold</td><td>Minimise expected cost on validation (module 65's sweep)</td><td>Choosing it on
+<tr><td>Threshold</td><td>Minimise expected cost on validation, swept over candidate cut-offs</td><td>Choosing it on
     the test set, or never revisiting it as the base rate drifts</td></tr>
 <tr><td>Evaluate</td><td>Overall and per segment: card type, geography, merchant category, customer
     tenure</td><td>Reporting one aggregate number and missing a segment that got much worse</td></tr>
@@ -455,8 +455,8 @@ issues:</p>
     <p class="wh">It costs real money in let-through fraud, and it is the only way to get an unbiased
        estimate of what the model is missing. Budget it explicitly, size it against the precision you need
        on the estimate, exclude very high-value transactions to bound the downside, and present it to the
-       business as the price of knowing whether the system works. Reservoir sampling (module 65) is how you
-       select it in one pass.</p>
+       business as the price of knowing whether the system works. Reservoir sampling is how you select it
+       in a single pass over the stream, without knowing the day's volume in advance.</p>
   </div>
 
 </div>
@@ -508,15 +508,15 @@ how a bad week becomes a bad model, and drift alone should never trigger a deplo
 <tr><td>Requirements, cost of errors</td><td>25 metrics · 55 governance</td></tr>
 <tr><td>Kafka, backpressure, delivery semantics</td><td>50 lifecycle &amp; data</td></tr>
 <tr><td>Sync vs async, latency budget</td><td>50 · 53 deployment</td></tr>
-<tr><td>Velocity and deviation features</td><td>12 probability · 51 feature store · 65 DSA</td></tr>
-<tr><td>Graph features and rings</td><td>24 unsupervised · 65 DSA</td></tr>
+<tr><td>Velocity and deviation features</td><td>12 probability · 51 feature store</td></tr>
+<tr><td>Graph features and rings</td><td>24 unsupervised</td></tr>
 <tr><td>Sequence features</td><td>32 RNN &amp; attention · 40 attention</td></tr>
 <tr><td>Point-in-time correctness</td><td>51 feature store · 20 leakage</td></tr>
 <tr><td>Class imbalance, PR-AUC, calibration</td><td>25 metrics</td></tr>
 <tr><td>GBDT choice</td><td>22 trees &amp; ensembles</td></tr>
 <tr><td>Anomaly detection component</td><td>24 unsupervised</td></tr>
 <tr><td>Regularisation, constrained fitting</td><td>14 optimisation · 21 linear models</td></tr>
-<tr><td>Threshold from a cost matrix</td><td>25 metrics · 65 DSA</td></tr>
+<tr><td>Threshold from a cost matrix</td><td>25 metrics</td></tr>
 <tr><td>MLflow, lineage, reproducibility</td><td>52 tracking &amp; orchestration</td></tr>
 <tr><td>Shadow, canary, blue-green, rollback</td><td>53 deployment</td></tr>
 <tr><td>PSI, KS, drift shape</td><td>13 information theory · 54 monitoring</td></tr>

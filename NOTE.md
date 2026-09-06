@@ -10,7 +10,7 @@ stranger.
 | Folder | What it is | Who does the work |
 |--------|------------|-------------------|
 | `learning/llm-from-scratch/` | The **build track**. Eleven lessons, empty file → a small reasoning LLM you trained. | **You write every line of code.** I write the lessons and review what you produce. |
-| `learning/ml-interview-prep/` | The **recall track**. A 44-module HTML course: maths → classical ML → deep learning → transformers → MLOps → mock rounds → six system-design walkthroughs. | Read it, then close it and say the answers out loud. |
+| `learning/ml-interview-prep/` | The **recall track**. A 43-module HTML course: maths → classical ML → deep learning → transformers → MLOps → mock rounds → six system-design walkthroughs. | Read it, then close it and say the answers out loud. |
 
 Read this note in that order — build track first, course second — because that is the order of
 priority. The build track produces the artifacts and the numbers you will be asked about. The
@@ -161,8 +161,8 @@ expected to explain without hesitation.
 
 This course is the ladder underneath and the production layer above. It has no code in the teaching
 modules by design: analogies, algorithms and formulas only, because you are being trained to *say*
-these things, not to type them. The two exceptions are the DSA round, which is a coding round by
-definition, and the config fragments in the walkthroughs.
+these things, not to type them. The one exception is the config fragments in the walkthroughs.
+There is no DSA round here — that is covered elsewhere.
 
 ## How to open it
 
@@ -173,7 +173,7 @@ python3 -m http.server 8000
 ```
 
 Serve it if you can — over `http://` the shell fetches each module and injects it, which gives you
-**search and drill mode across all 44 modules at once**. Double-clicking `index.html` also works:
+**search and drill mode across all 43 modules at once**. Double-clicking `index.html` also works:
 Chrome blocks `fetch()` on `file://`, so the shell falls back to an iframe per module and tells you
 so in a one-line banner. Everything still renders; search and drill are just scoped to the open
 module instead of all of them.
@@ -222,7 +222,7 @@ have committed to an answer.
 | **C — Deep learning** | `30–34` | Neural nets and backprop as the chain rule · CNNs · RNN → the fixed-vector bottleneck → attention as its fix · classical NLP and embeddings · RL, which walks straight into RLHF |
 | **D — Transformers & GPT** | `40–46` | Attention and why √d · the block, RoPE, RMSNorm, counting parameters by hand · model families and why decoder-only won · pretraining and Chinchilla · post-training, DPO, GRPO · inference: KV cache, GQA, quantisation, LoRA, speculative decoding · RAG, agents, evaluation |
 | **E — MLOps & production** | `50–55` | Kafka, backpressure, sync vs async, delivery semantics · Feast and point-in-time correctness · MLflow and Kubeflow · canary, blue-green, shadow, bandits · drift, PSI, KS, delayed labels, SLOs · governance, fairness, cost |
-| **F — Mock rounds** | `60–66` | Five subject rounds, a DSA round with worked solutions, and a behavioural round mapped to the STAR bank |
+| **F — Mock rounds** | `60–64`, `66` | Five subject rounds and a behavioural round mapped to the STAR bank |
 | **G — Walkthroughs** | `70–75` | Six end-to-end system designs (below) |
 
 ## The six walkthroughs — the highest-value hours in the course
@@ -244,7 +244,7 @@ If you only have one evening for the course, spend it on `70` and `73`. If you h
 
 ## Honest status
 
-The course is complete and verified: 44 modules, 294 question accordions, 23 embedded
+The course is complete and verified: 43 modules, 284 question accordions, 23 embedded
 visualisations. Every module was loaded in a browser this session — no 404s, no blank panes, one
 navigation footer each, no console errors, no horizontal overflow at desktop or at 430 px, and
 search resolves correctly across all modules.
