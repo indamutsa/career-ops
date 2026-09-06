@@ -1,0 +1,7 @@
+# The DSA round was removed from the course (covered elsewhere). The file is still
+# on disk but unreferenced by the nav — keep it out of the deployment.
+parts/65-dsa.html
+
+# Repo-only files, not part of the served site.
+README.md
+src

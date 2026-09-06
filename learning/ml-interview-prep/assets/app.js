@@ -89,8 +89,6 @@
       k: 'interview round mock transformer llm gpt' },
     { g: 'F · Rounds',  id: '64', f: '64-round5-mlops.html',       t: 'Round 5 — MLOps',
       k: 'interview round mock mlops production' },
-    { g: 'F · Rounds',  id: '65', f: '65-dsa.html',                t: 'Coding round (DSA)',
-      k: 'dsa algorithm coding leetcode array hash map two pointer heap graph dynamic programming numpy' },
     { g: 'F · Rounds',  id: '66', f: '66-behavioral.html',         t: 'Behavioural & judgment',
       k: 'behavioural star story judgment tradeoff disagreement failure' },
 
