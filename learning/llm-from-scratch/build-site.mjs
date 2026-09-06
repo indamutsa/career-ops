@@ -287,6 +287,7 @@ ${doc.body}
 ${nav.join('\n')}
 </div>
 
+<script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
 <script src="../assets/app.js"></script>
 </body>
@@ -323,8 +324,8 @@ function keywords(doc) {
 /** The sidebar is narrow; long lesson titles are trimmed at a word boundary. */
 function navTitle(src) {
   const t = label(src);
-  if (t.length <= 44) return t;
-  const cut = t.slice(0, 44);
+  if (t.length <= 52) return t;
+  const cut = t.slice(0, 52);
   return cut.slice(0, cut.lastIndexOf(' ')).replace(/[,;:—–-]$/, '') + '…';
 }
 
