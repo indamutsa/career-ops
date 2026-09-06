@@ -43,6 +43,20 @@ open START-HERE.md
 `START-HERE.md` is the entry point — not `README.md`. It walks you through the environment check,
 then hands you to `modules/build/00-foundations.md`.
 
+**Reading it away from the laptop:** the same markdown is published as HTML at
+**https://ml-interview-prep-taupe.vercel.app**, in the sidebar groups `H · LLM track` through
+`K · Reference`. It is generated, not hand-written — `learning/llm-from-scratch/build-site.mjs`
+converts the markdown and writes the pages into the course folder, so the markdown stays the single
+source of truth and nothing has to be edited twice. Regenerate and publish in one step:
+
+```bash
+cd $HOME/PROJECT-INITIATIVE/InterviewGuide/resume/career-ops/learning/llm-from-scratch
+node build-site.mjs --deploy
+```
+
+`notes/`, `code/`, `data/` and `checkpoints/` are excluded from the build on purpose: the URL is
+public and those are your own measurements.
+
 ## What is in the folder
 
 ```
@@ -170,10 +184,16 @@ There is no DSA round here — that is covered elsewhere.
 
 > **https://ml-interview-prep-taupe.vercel.app**
 
-Static Vercel site, no build step. Redeploy after any edit with `vercel deploy --prod` from the
-course folder. The URL is public — Vercel's Deployment Protection can put a password in front of it
-if you would rather it were not. Full deployment notes, including how to relink the project if
-`vercel` ever offers to create a new one, are in `learning/ml-interview-prep/README.md`.
+One site, both tracks: 43 hand-written course modules (groups `Start` to `G`) plus the 44 generated
+pages of the build track (groups `H` to `K`), behind one nav and one search box. Searching
+*attention* returns the course module, the build lab and the reference module together.
+
+Redeploy with `node build-site.mjs --deploy` from `learning/llm-from-scratch/` — that regenerates
+the build track first, which `vercel deploy --prod` on its own would not. If you only touched the
+hand-written course files, `vercel deploy --prod` from the course folder is enough. The URL is
+public — Vercel's Deployment Protection can put a password in front of it if you would rather it
+were not. Full deployment notes, including how to relink the project if `vercel` ever offers to
+create a new one, are in `learning/ml-interview-prep/README.md`.
 
 **Locally:**
 
@@ -184,7 +204,7 @@ python3 -m http.server 8000
 ```
 
 Serve it if you can — over `http(s)://` the shell fetches each module and injects it, which gives you
-**search and drill mode across all 43 modules at once**. Double-clicking `index.html` also works:
+**search and drill mode across all 87 modules at once**. Double-clicking `index.html` also works:
 Chrome blocks `fetch()` on `file://`, so the shell falls back to an iframe per module and tells you
 so in a one-line banner. Everything still renders; search and drill are just scoped to the open
 module instead of all of them.
