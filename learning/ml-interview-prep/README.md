@@ -11,6 +11,17 @@
 Both share one nav and one search box, so searching *attention* returns the recall module, the
 build lab, and the reference module together.
 
+## Reading it
+
+| | |
+|---|---|
+| **Track tabs** | Top of the sidebar. The tabs pick which track the nav lists; a search deliberately escapes them and matches across both, and says so. |
+| **One answer open at a time** | Opening any accordion closes the others, page-wide, so the page never grows a wall of open text under you. `expand` still opens or closes every one at once. |
+| **Code blocks** | Language tag and a copy button on every fenced block, with highlighting for python, bash, json, yaml and sql. Hand-written, no CDN — the course still works offline. |
+| **The floating ✓** | Bottom right, follows the scroll. It asks before it changes anything, since progress is the one thing a reader cannot undo by scrolling back. Ticks the sidebar and counts toward the track total. |
+| **Reading measure** | Prose is capped near 78 characters a line at 17px; tables, code, figures and card grids break out to a wider lane on the same centre axis. |
+| **Keys** | `/` search · `j` / `k` next and previous module · `d` drill mode · `t` light / dark · `Esc` closes the confirm sheet |
+
 ## Three ways to read it
 
 **1. Live, from anywhere** — deployed as a static Vercel site:

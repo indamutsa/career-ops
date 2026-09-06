@@ -108,9 +108,17 @@
 
   /* The llm-from-scratch track is generated, not hand-written: its nav entries
      live in assets/build-modules.js, written by that track's build-site.mjs.
-     Absent (a part page, or a build that was never run) it is simply skipped. */
-  if (window.MLIP_BUILD && window.MLIP_BUILD.length)
-    MODULES = MODULES.concat(window.MLIP_BUILD);
+     Absent (a part page, or a build that was never run) it is simply skipped.
+     Every module carries `tr`, the track it belongs to, which drives the tabs. */
+  var BUILT = window.MLIP_BUILD || [];
+  MODULES.forEach(function (m) { m.tr = 'course'; });
+  BUILT.forEach(function (m) { m.tr = 'llm'; });
+  if (BUILT.length) MODULES = MODULES.concat(BUILT);
+
+  var TRACKS = [
+    { k: 'course', label: 'Recall',    hint: 'maths → production, no code to write' },
+    { k: 'llm',    label: 'Build LLM', hint: 'the from-scratch track, you write the code' }
+  ];
 
   var LS = {
     get: function (k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; }
@@ -121,7 +129,20 @@
   /* ---------------------------------------------------------------
      THEME — applied on every page, shell or part.
      --------------------------------------------------------------- */
-  function applyTheme(t) { document.documentElement.setAttribute('data-theme', t); }
+  /* The button shows where the click *goes*, not where you are: on a dark
+     board it offers the sun. A word in a bar of icons reads as a label. */
+  var THEME_ICON = {
+    dark:  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/>' +
+           '<path d="M12 2.6v2.3M12 19.1v2.3M4.3 4.3l1.6 1.6M18.1 18.1l1.6 1.6' +
+           'M2.6 12h2.3M19.1 12h2.3M4.3 19.7l1.6-1.6M18.1 5.9l1.6-1.6"/></svg>',
+    light: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+           '<path d="M20.3 14.4A8.5 8.5 0 0 1 9.6 3.7 8.5 8.5 0 1 0 20.3 14.4z"/></svg>'
+  };
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    var b = document.getElementById('themebtn');
+    if (b) b.innerHTML = THEME_ICON[t] || '';
+  }
   var theme = LS.get('mlip.theme', 'dark');
   applyTheme(theme);
 
@@ -149,8 +170,33 @@
     }
   }
 
+  /* ---------------------------------------------------------------
+     ACCORDIONS — one open at a time, page-wide.
+
+     Reading two answers side by side is how you end up recognising an
+     answer instead of recalling it, which is the opposite of what this
+     is for. `toggle` does not bubble, so listen in the capture phase.
+     The expand-all button sets `bulk` to opt out for one pass.
+     --------------------------------------------------------------- */
+  var bulk = false;
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (bulk || !d || d.tagName !== 'DETAILS' || !d.open) return;
+    var all = document.querySelectorAll('details');
+    for (var i = 0; i < all.length; i++)
+      if (all[i] !== d && all[i].open && !all[i].contains(d)) all[i].open = false;
+  }, true);
+
+  /** Open or close many at once without the one-at-a-time rule firing. */
+  function setAll(nodes, open) {
+    bulk = true;
+    for (var i = 0; i < nodes.length; i++) nodes[i].open = open;
+    setTimeout(function () { bulk = false; }, 0);
+  }
+
   function initPage(root) {
     initTabs(root);
+    if (window.MLIPCode) window.MLIPCode.init(root);
     if (window.MLIPViz) window.MLIPViz.init(root);
   }
 
@@ -170,10 +216,7 @@
       var d = e.data || {};
       if (d.mlip === 'theme') applyTheme(d.value);
       if (d.mlip === 'drill') document.body.classList.toggle('drill', !!d.value);
-      if (d.mlip === 'expand') {
-        var qs = document.querySelectorAll('details.q');
-        for (var i = 0; i < qs.length; i++) qs[i].open = !!d.value;
-      }
+      if (d.mlip === 'expand') setAll(document.querySelectorAll('details.q'), !!d.value);
     });
     return;
   }
@@ -211,6 +254,46 @@
     navLinks[m.id] = a;
   });
 
+  /* ---------- track tabs ---------- */
+  var tbar     = document.getElementById('tracks');
+  var hintEl   = document.getElementById('trackhint');
+  var trackBtn = {};
+  var track    = LS.get('mlip.track', 'course');
+  if (!BUILT.length) track = 'course';
+
+  if (tbar && BUILT.length) {
+    TRACKS.forEach(function (t) {
+      var n = MODULES.filter(function (m) { return m.tr === t.k; }).length;
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'tab');
+      b.title = t.hint;
+      b.innerHTML = '<span class="tl"></span><span class="tn">' + n + '</span>';
+      b.querySelector('.tl').textContent = t.label;
+      b.addEventListener('click', function () { setTrack(t.k, true); });
+      tbar.appendChild(b);
+      trackBtn[t.k] = b;
+    });
+  } else if (tbar) {
+    tbar.hidden = true;
+  }
+
+  /* `jump` means the click came from the tab bar: land on that track's first
+     module. Following a cross-track link switches the tab without jumping. */
+  function setTrack(k, jump) {
+    track = k;
+    LS.set('mlip.track', k);
+    for (var t in trackBtn)
+      trackBtn[t].setAttribute('aria-selected', t === k ? 'true' : 'false');
+    filterNav(qbox ? qbox.value : '');
+    paintProgress();
+    if (!jump) return;
+    var cur = byId(current);
+    if (cur && cur.tr === k) return;
+    var first = MODULES.filter(function (m) { return m.tr === k; })[0];
+    if (first) location.hash = '#' + first.id;
+  }
+
   /* ---------- progress ---------- */
   function doneSet() {
     try { return new Set(JSON.parse(LS.get('mlip.done', '[]'))); } catch (e) { return new Set(); }
@@ -219,12 +302,15 @@
   function paintProgress() {
     var s = doneSet();
     MODULES.forEach(function (m) { navLinks[m.id].classList.toggle('done', s.has(m.id)); });
-    if (progEl) progEl.textContent = s.size + '/' + MODULES.length + ' done';
-    var btn = document.getElementById('markbtn');
-    if (btn) {
-      var cur = (location.hash || '#00').slice(1);
-      btn.classList.toggle('on', s.has(cur));
-      btn.textContent = s.has(cur) ? '✓ done' : 'mark done';
+    var mine = MODULES.filter(function (m) { return m.tr === track; });
+    var n = mine.filter(function (m) { return s.has(m.id); }).length;
+    if (progEl) progEl.textContent = n + '/' + mine.length + ' done';
+    var fab = document.getElementById('fabdone');
+    if (fab) {
+      var cur = (location.hash || '#00').slice(1), on = s.has(cur);
+      fab.classList.toggle('on', on);
+      fab.setAttribute('aria-pressed', on ? 'true' : 'false');
+      fab.title = on ? 'Done \u2014 click to clear' : 'Mark this module done';
     }
   }
 
@@ -241,6 +327,7 @@
     var m = byId(id);
     if (!m) { m = MODULES[0]; id = m.id; }
     current = id;
+    if (m.tr !== track) setTrack(m.tr, false);
     for (var k in navLinks) navLinks[k].classList.toggle('on', k === id);
     if (titleEl) titleEl.textContent = m.g + '  •  ' + m.t;
     document.title = m.t + ' — ML Interview Prep';
@@ -263,6 +350,7 @@
         initPage(wrap);
         applyDrillLocal();
         document.getElementById('main').scrollTop = 0;
+        paintScroll();
       }).catch(function (e) {
         wrap.innerHTML = '<h1>Not written yet</h1><p class="lead">' +
           '<code>parts/' + m.f + '</code> could not be loaded.</p>' +
@@ -291,10 +379,8 @@
     applyDrillLocal();
     var b = document.getElementById('drillbtn');
     if (b) { b.classList.toggle('on', v); }
-    if (v) {  // collapse everything so nothing is pre-revealed
-      var qs = (IFRAME_MODE ? [] : wrap.querySelectorAll('details.q'));
-      for (var i = 0; i < qs.length; i++) qs[i].open = false;
-    }
+    if (v)    // collapse everything so nothing is pre-revealed
+      setAll(IFRAME_MODE ? [] : wrap.querySelectorAll('details.q'), false);
     pushToFrame();
   }
 
@@ -313,19 +399,25 @@
     }));
   }
 
+  /* A search deliberately escapes the active tab: cross-track hits are the
+     whole point of one search box over both tracks. The group headers still
+     say which track each hit came from. */
   function filterNav(term) {
-    var t = term.trim().toLowerCase();
+    var t = (term || '').trim().toLowerCase();
     var shownGroups = {};
     MODULES.forEach(function (m) {
       var a = navLinks[m.id];
-      var hit = !t || a.dataset.k.indexOf(t) >= 0 ||
-                (textCache[m.id] || '').toLowerCase().indexOf(t) >= 0;
+      var hit = (t || m.tr === track) &&
+                (!t || a.dataset.k.indexOf(t) >= 0 ||
+                 (textCache[m.id] || '').toLowerCase().indexOf(t) >= 0);
       a.classList.toggle('hidden', !hit);
       if (hit) shownGroups[m.g] = 1;
     });
     var hs = nav.querySelectorAll('.grp');
     for (var i = 0; i < hs.length; i++)
-      hs[i].classList.toggle('hidden', !!t && !shownGroups[hs[i].dataset.grp]);
+      hs[i].classList.toggle('hidden', !shownGroups[hs[i].dataset.grp]);
+    if (hintEl) hintEl.hidden = !(t && BUILT.length);
+    for (var k in trackBtn) trackBtn[k].classList.toggle('muted', !!t);
   }
 
   if (qbox) {
@@ -348,11 +440,56 @@
     LS.set('mlip.theme', theme); applyTheme(theme); pushToFrame();
   });
   bind('drillbtn', function () { setDrill(!drill); });
-  bind('markbtn', function () {
+  /* ---------- confirm sheet ----------
+     Progress is the one piece of state the reader cannot undo by scrolling,
+     and the button now sits under the thumb where it is easy to brush. So it
+     asks once, in the reader's own words, before it changes anything. */
+  var modal = document.getElementById('modal');
+  var onYes = null;
+
+  function ask(title, body, label, fn) {
+    if (!modal) { fn(); return; }
+    document.getElementById('mtitle').textContent = title;
+    document.getElementById('mbody').textContent = body;
+    document.getElementById('myes').textContent = label;
+    onYes = fn;
+    modal.hidden = false;
+    document.getElementById('myes').focus();
+  }
+  function closeAsk() { if (modal) modal.hidden = true; onYes = null; }
+
+  bind('mno', closeAsk);
+  bind('myes', function () { var f = onYes; closeAsk(); if (f) f(); });
+  if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeAsk(); });
+
+  function setDone(id, v) {
     var s = doneSet();
-    if (s.has(current)) s.delete(current); else s.add(current);
+    if (v) s.add(id); else s.delete(id);
     saveDone(s); paintProgress();
+  }
+
+  bind('fabdone', function () {
+    var m = byId(current), name = m ? '\u201c' + m.t + '\u201d' : 'this module';
+    var id = current;
+    if (doneSet().has(id))
+      ask('Clear this one?',
+          name + ' is marked done. Clearing it removes the tick and drops it from the count.',
+          'Clear it', function () { setDone(id, false); });
+    else
+      ask('Mark it done?',
+          name + ' gets a tick in the sidebar and counts toward the track total. You can undo it any time.',
+          'Mark done', function () { setDone(id, true); });
   });
+
+  /* ---------- reading progress ---------- */
+  var rbar = document.querySelector('#rprog i');
+  var mainEl = document.getElementById('main');
+  function paintScroll() {
+    if (!rbar || !mainEl) return;
+    var h = mainEl.scrollHeight - mainEl.clientHeight;
+    rbar.style.width = (h > 40 ? Math.min(100, (mainEl.scrollTop / h) * 100) : 0) + '%';
+  }
+  if (mainEl) mainEl.addEventListener('scroll', paintScroll, { passive: true });
   bind('expandbtn', function () {
     if (IFRAME_MODE) {
       try { frame.contentWindow.postMessage({ mlip: 'expand', value: true }, '*'); } catch (e) {}
@@ -361,17 +498,18 @@
     var qs = wrap.querySelectorAll('details.q');
     var anyClosed = false;
     for (var i = 0; i < qs.length; i++) if (!qs[i].open) anyClosed = true;
-    for (var j = 0; j < qs.length; j++) qs[j].open = anyClosed;
+    setAll(qs, anyClosed);
   });
   bind('menu', function () { document.body.classList.toggle('navopen'); });
   bind('prevbtn', function () { step(-1); });
   bind('nextbtn', function () { step(1); });
 
   function step(d) {
+    var list = MODULES.filter(function (m) { return m.tr === track; });
     var i = 0;
-    for (var j = 0; j < MODULES.length; j++) if (MODULES[j].id === current) i = j;
-    var n = Math.min(MODULES.length - 1, Math.max(0, i + d));
-    location.hash = '#' + MODULES[n].id;
+    for (var j = 0; j < list.length; j++) if (list[j].id === current) i = j;
+    var n = Math.min(list.length - 1, Math.max(0, i + d));
+    if (list[n]) location.hash = '#' + list[n].id;
   }
 
   /* ---------- keyboard ---------- */
@@ -381,6 +519,7 @@
       if (e.key === 'Escape') { e.target.value = ''; filterNav(''); e.target.blur(); }
       return;
     }
+    if (e.key === 'Escape' && modal && !modal.hidden) { closeAsk(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === '/') { e.preventDefault(); if (qbox) qbox.focus(); }
     else if (e.key === 'j') step(1);
@@ -393,6 +532,7 @@
   window.addEventListener('hashchange', function () { show((location.hash || '#00').slice(1)); });
   applyDrillLocal();
   var b0 = document.getElementById('drillbtn'); if (b0) b0.classList.toggle('on', drill);
+  setTrack(track, false);
   show((location.hash || '#00').slice(1));
   paintProgress();
 })();

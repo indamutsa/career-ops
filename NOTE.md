@@ -212,6 +212,20 @@ module instead of all of them.
 No build step, no bundler, no CDN. The only network call in the whole thing is a Google Fonts
 `@import` — kill your wifi and it still works, with substituted fonts.
 
+### Reading controls
+
+- **Track tabs** at the top of the sidebar switch which track the nav lists. A search escapes them
+  on purpose and matches across both, and the tabs dim to say so.
+- **One answer open at a time**, page-wide — opening any accordion closes the rest, so a long module
+  never becomes a wall of open text. `expand` still opens or closes all of them together.
+- **Every code block** carries its language and a copy button, and is highlighted for python, bash,
+  json, yaml and sql — hand-written, so the offline promise holds.
+- **The floating ✓ at the bottom right** marks the module done. It follows the scroll and asks
+  before it changes anything; progress is the one piece of state you cannot undo by scrolling back.
+- **Prose is capped near 78 characters a line** at 17px, down from 117. Tables, code, figures and
+  card grids break out to a wider lane on the same centre axis rather than being squeezed into it.
+- Keys: `/` search · `j` / `k` next and previous · `d` drill · `t` light / dark · `Esc` closes the sheet.
+
 ## The shape of every module
 
 Once you have read two modules you know the shape of all 44, which is the point:

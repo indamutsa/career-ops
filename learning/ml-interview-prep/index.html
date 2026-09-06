@@ -12,8 +12,11 @@
 <aside id="side">
   <div class="brand">
     <div class="n">ML Interview Prep</div>
-    <div class="d">maths → models → transformers → production<br>+ the build-an-LLM track</div>
+    <div class="d">two tracks · recall + build</div>
   </div>
+  <div id="tracks" role="tablist" aria-label="Track"></div>
+  <div id="trackhint" hidden>searching both tracks</div>
+
   <div class="tools">
     <div class="toggles">
       <button id="drillbtn" title="d — hide all answers">drill</button>
@@ -38,18 +41,38 @@
     <span id="ptitle" class="muted"></span>
     <span class="sp"></span>
     <input id="q" type="search" placeholder="Search…  ( / )" autocomplete="off">
-    <button id="themebtn" title="t — light / dark">theme</button>
+    <button id="themebtn" class="ico" title="t — light / dark" aria-label="Toggle light / dark"></button>
     <span id="prog"></span>
-    <button id="markbtn">mark done</button>
-    <button id="prevbtn" title="k">←</button>
-    <button id="nextbtn" title="j">→</button>
+    <button id="prevbtn" class="ico" title="k — previous module" aria-label="Previous module">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button id="nextbtn" class="ico" title="j — next module" aria-label="Next module">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <div id="rprog"><i></i></div>
   </div>
 
   <div id="wrap"></div>
   <iframe id="frame" hidden title="module"></iframe>
 
+  <!-- Always within reach: the one action a reader takes per module.
+       It follows the scroll instead of living in a bar you scroll away from. -->
+  <button id="fabdone" type="button" aria-label="Mark this module done">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.8 12.4l4.6 4.6L19.2 7.2"/></svg>
+  </button>
+
 </div>
 
+<div id="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mtitle">
+    <h3 id="mtitle">Mark as done?</h3>
+    <p id="mbody" class="muted"></p>
+    <div class="row">
+      <button id="mno" type="button">Cancel</button>
+      <button id="myes" type="button" class="primary">Mark done</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/code.js"></script>
 <script src="assets/viz.js"></script>
 <script src="assets/build-modules.js"></script>
 <script src="assets/app.js"></script>
