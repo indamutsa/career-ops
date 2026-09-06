@@ -1,8 +1,15 @@
 # ML Interview Prep
 
-43 modules: maths from zero -> classical ML -> deep learning -> transformers/GPT ->
-MLOps & production -> 6 mock interview rounds -> six end-to-end system-design walkthroughs.
-284 question accordions, 23 embedded visualisations, no build step, works offline.
+**87 modules across two tracks, one site.**
+
+- **The recall track (43 modules, hand-written HTML)** — maths from zero -> classical ML -> deep
+  learning -> transformers/GPT -> MLOps & production -> 6 mock interview rounds -> six end-to-end
+  system-design walkthroughs. 284 question accordions, 23 embedded visualisations.
+- **The build track (44 pages, generated)** — `learning/llm-from-scratch/` rendered to HTML by that
+  folder's `build-site.mjs`. Nav groups `H` to `K`.
+
+Both share one nav and one search box, so searching *attention* returns the recall module, the
+build lab, and the reference module together.
 
 ## Three ways to read it
 
@@ -29,12 +36,36 @@ server, and it is why the Vercel deployment needs no changes to the HTML.
 
 ## Deploying
 
-Static files, no framework, no build step. Vercel serves the folder as-is.
+Static files, no framework, nothing for Vercel to build — it serves the folder as-is.
+
+**The one ordering rule: regenerate the build track before deploying, or the site ships the
+previous version of those 44 pages.**
 
 ```bash
-cd learning/ml-interview-prep
-vercel deploy --prod          # redeploy after any edit
+cd learning/llm-from-scratch
+node build-site.mjs --deploy       # generate, then vercel deploy --prod
 ```
+
+`--deploy` exists so the order cannot be forgotten. The two halves separately, if you need them:
+
+```bash
+node learning/llm-from-scratch/build-site.mjs   # regenerate parts/llm-*.html + assets/build-modules.js
+cd learning/ml-interview-prep && vercel deploy --prod
+```
+
+Editing only hand-written parts (`parts/[0-9]*.html`, `assets/app.*`)? `vercel deploy --prod` on its
+own is enough — the generator is idempotent, so re-running it changes nothing.
+
+### The build track is generated — do not edit it here
+
+`parts/llm-*.html` and `assets/build-modules.js` are output. The source is the markdown in
+`learning/llm-from-scratch/`; edit that and re-run the generator. The generator writes only into
+this folder and never deletes: rename a markdown file and it prints the now-stale HTML page it left
+behind, for you to remove by hand if you want it gone.
+
+`index.html` loads `assets/build-modules.js` before `app.js`, and `app.js` appends
+`window.MLIP_BUILD` to its own `MODULES` table. If the file is missing, the shell simply shows the
+43 hand-written modules.
 
 | | |
 |---|---|

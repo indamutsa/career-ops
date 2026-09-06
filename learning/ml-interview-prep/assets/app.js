@@ -106,6 +106,12 @@
       k: 'system design agent tool use function calling error compounding sandbox permissions trace evaluation cost latency human in the loop' }
   ];
 
+  /* The llm-from-scratch track is generated, not hand-written: its nav entries
+     live in assets/build-modules.js, written by that track's build-site.mjs.
+     Absent (a part page, or a build that was never run) it is simply skipped. */
+  if (window.MLIP_BUILD && window.MLIP_BUILD.length)
+    MODULES = MODULES.concat(window.MLIP_BUILD);
+
   var LS = {
     get: function (k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; }
                            catch (e) { return d; } },
