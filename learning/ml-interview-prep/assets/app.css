@@ -905,25 +905,63 @@ html[data-theme="light"] #modal { background: rgba(36, 48, 42, .38); }
 /* ---------- glossary chips --------------------------------------- */
 /* Any term the course uses before it teaches it gets one of these,
    inserted automatically by glossary.js. Click it and the definition
-   opens where it stands — no popover to clip on a narrow screen. */
+   opens in one floating panel anchored to the chip — chips sit inside
+   table cells and list items, where expanding in place would push the
+   row apart. Nothing under the panel moves. */
 .gl { border-bottom: 1px dashed var(--gold-dim); cursor: help;
       color: inherit; }
 .gl:hover { border-bottom-color: var(--gold); color: var(--gold); }
 .gl:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 2px;
                     border-radius: 2px; }
+.gl.open { color: var(--gold); border-bottom-style: solid;
+           border-bottom-color: var(--gold); }
+/* the definition still lives in the chip: it is the source the panel
+   copies, the fallback when print flattens the page, and all a reader
+   with no JavaScript ever gets. */
 .gl > i { display: none; }
-.gl.open { border-bottom-color: transparent; }
-.gl.open > i {
-  display: block; font-style: normal; margin: 10px 0 12px;
-  padding: 12px 14px; border-left: 3px solid var(--gold-dim);
-  background: var(--board-alt); border-radius: 0 var(--radius) var(--radius) 0;
-  font-size: 15px; line-height: 1.68; color: var(--tx-soft);
-}
-.gl.open > i b { color: var(--gold); font-weight: 600; }
-.gl.open > i .at { display: block; margin-top: 7px; font-size: 13.4px;
-                   color: var(--tx-faint); font-family: var(--mono); }
 
-@media print { .gl > i { display: block !important; } }
+#glpop[hidden] { display: none !important; }
+#glpop {
+  position: fixed; z-index: 80; box-sizing: border-box;
+  padding: 13px 34px 13px 15px;
+  background: var(--panel-2); color: var(--tx-soft);
+  border: 1px solid var(--border-2); border-left: 3px solid var(--gold-dim);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px -20px rgba(0,0,0,.7);
+  font-size: 15px; line-height: 1.62; font-style: normal;
+  animation: rise .16s ease both;
+}
+#glpop b { color: var(--gold); font-weight: 600; }
+#glpop .at { display: block; margin-top: 7px; font-size: 13.4px;
+             color: var(--tx-faint); font-family: var(--mono); }
+.glpop-x {
+  position: absolute; top: 6px; right: 8px; width: 22px; height: 22px;
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--tx-faint); font-size: 18px; line-height: 1;
+  border-radius: 4px;
+}
+.glpop-x:hover { color: var(--gold); background: var(--board); }
+/* a rotated square peeking out from under the panel, so the definition
+   visibly belongs to the word that opened it */
+.glpop-caret {
+  position: absolute; top: -5px; width: 9px; height: 9px;
+  margin-left: -5px; transform: rotate(45deg);
+  background: var(--panel-2);
+  border-left: 1px solid var(--border-2); border-top: 1px solid var(--border-2);
+}
+#glpop.up .glpop-caret {
+  top: auto; bottom: -5px;
+  border: 0; border-right: 1px solid var(--border-2);
+  border-bottom: 1px solid var(--border-2);
+}
+/* too narrow to point at anything precisely: dock it to the bottom */
+#glpop.dock {
+  left: 10px; right: 10px; bottom: 10px; top: auto; width: auto;
+  border-left-width: 1px; border-top: 3px solid var(--gold-dim);
+}
+#glpop.dock .glpop-caret { display: none; }
+
+@media print { .gl > i { display: block !important; } #glpop { display: none; } }
 
 /* a figure living inside a term card: it is already on a panel, so it
    drops the outer frame and tightens up rather than nesting two boxes */
