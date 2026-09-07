@@ -163,6 +163,8 @@ window.MLIPGloss = (function () {
     s.className = 'gl';
     s.setAttribute('role', 'button');
     s.setAttribute('tabindex', '0');
+    s.setAttribute('aria-haspopup', 'dialog');
+    s.setAttribute('aria-expanded', 'false');
     s.appendChild(document.createTextNode(word));
     var i = document.createElement('i');
     i.innerHTML = '<b>' + word + '</b> — ' + e[0] +
@@ -215,19 +217,143 @@ window.MLIPGloss = (function () {
   return { init: init, terms: G };
 })();
 
-/* one delegated listener: a chip opens where it stands, no popovers,
-   nothing to clip at the edge of a narrow screen. */
-document.addEventListener('click', function (e) {
-  var g = e.target.closest ? e.target.closest('.gl') : null;
-  if (!g) return;
-  if (e.target.tagName === 'I' || e.target.closest('i')) return;
-  g.classList.toggle('open');
-});
-document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Enter' && e.key !== ' ') return;
-  var g = document.activeElement;
-  if (g && g.classList && g.classList.contains('gl')) {
-    e.preventDefault();
-    g.classList.toggle('open');
+/* ===================================================================
+   The definition panel.
+
+   A chip's definition lives in its own hidden <i> — that is what print
+   and a scriptless page fall back to. Opening a chip copies that markup
+   into ONE shared panel attached to <body> and anchors it to the chip.
+
+   Body-level and fixed, deliberately: chips land inside table cells and
+   list items, and expanding in place there pushes the row apart and
+   reflows the paragraph around it. A fixed panel changes no layout at
+   all, so the page underneath does not move.
+   =================================================================== */
+(function () {
+  'use strict';
+
+  var GAP = 10;          /* chip-to-panel breathing room */
+  var EDGE = 12;         /* closest the panel may come to a viewport edge */
+  var WIDE = 380;        /* panel width on a roomy screen */
+  var NARROW = 560;      /* at or below this, dock it to the bottom instead */
+
+  var pop = null, anchor = null, queued = false;
+
+  function panel() {
+    if (pop) return pop;
+    pop = document.createElement('div');
+    pop.id = 'glpop';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', 'Definition');
+    pop.hidden = true;
+    pop.innerHTML = '<div class="glpop-body"></div>' +
+                    '<button type="button" class="glpop-x" aria-label="Close">\u00d7</button>' +
+                    '<span class="glpop-caret" aria-hidden="true"></span>';
+    document.body.appendChild(pop);
+    return pop;
   }
-});
+
+  /* Anchor the panel to the chip: below it by default, flipped above when
+     that would run off the bottom, and always clamped inside the viewport
+     so a chip near an edge cannot push it off-screen. */
+  function place() {
+    if (!anchor || !pop || pop.hidden) return;
+
+    var r = anchor.getBoundingClientRect();
+    var vw = document.documentElement.clientWidth;
+    var vh = document.documentElement.clientHeight;
+
+    /* the chip scrolled out of view — nothing left to point at */
+    if (r.bottom < 0 || r.top > vh) { close(); return; }
+
+    if (vw <= NARROW) {                     /* phone: a sheet, no arithmetic */
+      pop.classList.add('dock');
+      pop.classList.remove('up');
+      pop.style.left = pop.style.top = pop.style.width = '';
+      return;
+    }
+    pop.classList.remove('dock');
+
+    var w = Math.min(WIDE, vw - 2 * EDGE);
+    pop.style.width = w + 'px';             /* set width before reading height */
+
+    var left = Math.round(r.left + r.width / 2 - w / 2);
+    left = Math.max(EDGE, Math.min(left, vw - EDGE - w));
+
+    var h = pop.offsetHeight;
+    var below = r.bottom + GAP;
+    var above = r.top - GAP - h;
+    var up = (below + h > vh - EDGE) && above >= EDGE;
+
+    pop.style.left = left + 'px';
+    pop.style.top = (up ? above : below) + 'px';
+    pop.classList.toggle('up', up);
+
+    /* The caret tracks the chip but stays within the panel's own corners.
+       It is offset from the panel's PADDING box, so the accent border on
+       the left has to come out of the sum or the arrow sits beside the
+       word rather than under it. */
+    var cx = Math.max(left + 16, Math.min(r.left + r.width / 2, left + w - 16));
+    pop.querySelector('.glpop-caret').style.left =
+      (cx - left - pop.clientLeft) + 'px';
+  }
+
+  function reflow() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function () { queued = false; place(); });
+  }
+
+  function open(chip) {
+    var src = chip.querySelector('i');
+    if (!src) return;
+    var p = panel();
+    p.querySelector('.glpop-body').innerHTML = src.innerHTML;
+    if (anchor && anchor !== chip) anchor.setAttribute('aria-expanded', 'false');
+    anchor = chip;
+    chip.setAttribute('aria-expanded', 'true');
+    chip.classList.add('open');
+    p.hidden = false;                       /* visible before measuring */
+    place();
+  }
+
+  function close(refocus) {
+    if (!pop || pop.hidden) return;
+    pop.hidden = true;
+    if (anchor) {
+      anchor.setAttribute('aria-expanded', 'false');
+      anchor.classList.remove('open');
+      if (refocus) anchor.focus();
+    }
+    anchor = null;
+  }
+
+  function isOpen(chip) { return chip === anchor && pop && !pop.hidden; }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    if (pop && !pop.hidden && t.closest('#glpop')) {
+      if (t.closest('.glpop-x')) close(true);
+      return;                               /* clicks inside the panel stay */
+    }
+    var g = t.closest('.gl');
+    if (!g) { close(false); return; }       /* click anywhere else dismisses */
+    if (isOpen(g)) close(false); else open(g);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { close(true); return; }
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var g = document.activeElement;
+    if (g && g.classList && g.classList.contains('gl')) {
+      e.preventDefault();
+      if (isOpen(g)) close(false); else open(g);
+    }
+  });
+
+  /* #main is the scroll container, not the window, so listen in the capture
+     phase and catch scrolls from whichever element actually moved. */
+  document.addEventListener('scroll', reflow, true);
+  window.addEventListener('resize', reflow);
+})();
