@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Linear algebra — ML Interview Prep</title>
-<link rel="stylesheet" href="../assets/app.css?v=20260907-legend-11">
+<link rel="stylesheet" href="../assets/app.css?v=20260907-transpose-02">
 </head>
 <body>
 
@@ -148,13 +148,16 @@ house had to become a vector in the first place.</p>
 <div class="math-work" aria-label="Worked dot product for your house">
   <div class="step"><i>x</i> = <span class="matrix vector"><span data-house="area">120</span><span data-house="beds">3</span><span data-house="age">41</span><span data-house="km">4.2</span></span>
     <i>w</i> = <span class="matrix vector"><span>3</span><span>8</span><span>−0.4</span><span>−12</span></span></div>
+  <div class="step"><i>x</i>ᵀ = <span class="matrix four"><span data-house="area">120</span><span data-house="beds">3</span><span data-house="age">41</span><span data-house="km">4.2</span></span></div>
+  <div class="meaning">The ᵀ is transpose — here and everywhere on this page. Same four numbers, rows and columns swapped: the column above, laid on its side. It is there for the shapes, (1×4)(4×1) = 1×1, one number out.</div>
   <div class="step"><i>x</i>ᵀ<i>w</i> = <span data-house="terms">120(3) + 3(8) + 41(−0.4) + 4.2(−12)</span></div>
   <div class="step">= <span data-house="products">360 + 24 − 16.4 − 50.4</span> = <strong><span data-house="price">317.2</span> k€</strong></div>
   <div class="meaning">Each position keeps its meaning: area × area-price, bedrooms × bedroom-price, age × age-price, distance × distance-price.</div>
   <div class="legend"><span class="lt">what each symbol is</span>
     <span><b><i>x</i></b><span>your house — four numbers, always in the order area, bedrooms, age, km</span></span>
     <span><b><i>w</i></b><span>the price list — what one unit of each feature is worth</span></span>
-    <span><b><i>x</i>ᵀ<i>w</i></b><span>the dot product: multiply the matching slots, then add the four results</span></span>
+    <span><b>ᵀ</b><span>transpose — rows become columns. <i>x</i> is a column of four; <i>x</i>ᵀ is the same four as a row</span></span>
+    <span><b><i>x</i>ᵀ<i>w</i></b><span>a row times a column: multiply the matching slots, add the four results, one number out. That number is the dot product</span></span>
     <span><b>k€</b><span>thousands of euros — the unit every price on this page is in</span></span>
   </div>
 </div>
@@ -169,6 +172,25 @@ house had to become a vector in the first place.</p>
 place four prices beside those facts, multiply matching positions, then add. The four-number house
 has become one predicted price. Section 10.6 will repeat exactly this calculation for every house
 in the table at once.</p>
+
+<p>The ᵀ is not decoration. Both <span class="m">x</span> and <span class="m">w</span> are columns,
+and a product is only legal when the inner two numbers match. Move the ᵀ and you get a different
+object — or nothing at all:</p>
+
+<div class="box mem">
+  <span class="lbl">The same two vectors, four ways</span>
+  <div class="tw"><table>
+    <thead><tr><th>written</th><th>shapes</th><th>result</th><th>what comes out</th></tr></thead>
+    <tbody>
+      <tr><td><span class="m">xᵀw</span></td><td><span class="m">(1×4)&nbsp;(4×1)</span></td><td><span class="m">1×1</span></td><td>one number — <span data-house="price">317.2</span> k€, the price</td></tr>
+      <tr><td><span class="m">wᵀx</span></td><td><span class="m">(1×4)&nbsp;(4×1)</span></td><td><span class="m">1×1</span></td><td>the same number — order does not matter here</td></tr>
+      <tr><td><span class="m">xw</span></td><td><span class="m">(4×1)&nbsp;(4×1)</span></td><td>—</td><td>illegal: the inner 1 and 4 disagree</td></tr>
+      <tr><td><span class="m">xwᵀ</span></td><td><span class="m">(4×1)&nbsp;(1×4)</span></td><td><span class="m">4×4</span></td><td>a 16-number table, not a price</td></tr>
+    </tbody>
+  </table></div>
+  <p>Reading the shapes left to right is the whole rule: the inner pair must match and cancel, and
+  the outer pair is what you are left holding.</p>
+</div>
   </div>
 </details>
 
@@ -856,9 +878,9 @@ than a chosen limit, it rescales that vector without changing its direction.</p>
   <a href="../index.html#11" target="_top"><span class="k">Next</span>11 · Calculus &amp; minima →</a>
 </div>
 
-<script src="../assets/code.js?v=20260907-legend-11"></script>
-<script src="../assets/viz.js?v=20260907-legend-11"></script>
-<script src="../assets/glossary.js?v=20260907-legend-11"></script>
-<script src="../assets/app.js?v=20260907-legend-11"></script>
+<script src="../assets/code.js?v=20260907-transpose-02"></script>
+<script src="../assets/viz.js?v=20260907-transpose-02"></script>
+<script src="../assets/glossary.js?v=20260907-transpose-02"></script>
+<script src="../assets/app.js?v=20260907-transpose-02"></script>
 </body>
 </html>
