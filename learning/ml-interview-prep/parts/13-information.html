@@ -34,7 +34,7 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
 
 <h2 data-n="13.2">The terms</h2>
 
-<div class="terms">
+<div class="terms math-terms">
 
   <div class="term">
     <div class="t">Surprise / self-information <span class="tag">basic</span>
@@ -43,6 +43,7 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        event (p → 0) → surprise → ∞.</p>
     <p class="an">Being told the coin landed heads: mildly interesting. Being told it landed on its
        edge: a story you retell for years.</p>
+    <div class="viz" data-viz="surprise"></div>
   </div>
 
   <div class="term">
@@ -51,6 +52,7 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        ln gives <strong>nats</strong>. 1 nat ≈ 1.443 bits.</p>
     <p class="wh">Your training loss is in nats, because frameworks use natural log. Language-model
        papers often quote bits-per-character instead. Divide by ln 2 to convert.</p>
+    <div class="viz" data-viz="p13-bits"></div>
   </div>
 
   <div class="term">
@@ -60,8 +62,10 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        when everything is equally likely, zero when one outcome is certain.</p>
     <p class="an">The average number of yes/no questions a perfect player needs in twenty questions.
        Eight equally likely answers → exactly 3 questions → 3 bits.</p>
-    <p class="wh">The theoretical floor on your loss. If the true next-token distribution has entropy
-       2.1 nats, no model on Earth gets below 2.1.</p>
+    <p class="wh">The theoretical floor on average prediction loss for this distribution. If the true
+       next-token distribution has entropy 2.1 nats, no model gets below 2.1 in expectation;
+       a finite sample's measured loss can fluctuate.</p>
+    <div class="viz" data-viz="p13-entropy"></div>
   </div>
 
   <div class="term">
@@ -71,7 +75,8 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        least H(P), equal only when Q = P.</p>
     <p class="an">You packed for the weather forecast Q. The weather was P. Cross-entropy is how
        uncomfortable you were on average.</p>
-    <p class="wh">This <em>is</em> your loss function. Every classifier, every language model.</p>
+    <div class="viz" data-viz="crossentropy"></div>
+    <p class="wh">This is a common loss function for classifiers and next-token language models.</p>
   </div>
 
   <div class="term">
@@ -82,8 +87,10 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        not a distance.</p>
     <p class="an">The wasted part of your discomfort — the part that was your forecast's fault
        rather than the weather's inherent unpredictability.</p>
-    <p class="wh">The RLHF/PPO penalty that stops a policy drifting from the reference model. The
-       KL term in a VAE. And one of the standard production drift statistics.</p>
+    <div class="viz" data-viz="p13-kl"></div>
+    <p class="wh">One use is to discourage a newly trained model from changing its answer
+       probabilities too far from an earlier model. KL measures that change; adding a multiple
+       of it to the training loss makes large changes more costly.</p>
   </div>
 
   <div class="term">
@@ -95,14 +102,18 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
        random from 20 words.</p>
     <p class="wh">The standard language-model number. Only comparable between models that share a
        tokenizer — see the trap.</p>
+    <div class="viz" data-viz="p13-perplexity"></div>
   </div>
 
   <div class="term">
     <div class="t">Conditional entropy <span class="tag">mid</span>
         <span class="sym">H(Y|X)</span></div>
-    <p>The uncertainty left in Y once you already know X.</p>
-    <p class="wh">A language model's loss is exactly this: the entropy of the next token given
-       everything before it.</p>
+    <p>The uncertainty left in Y once you already know X, averaged over the possible values of X.
+       The vertical bar means “given”: H(Y|X) reads “entropy of Y given X”.</p>
+    <div class="viz" data-viz="p13-conditional"></div>
+    <p class="wh">For a language model, X is the preceding text and Y is the next token.
+       Conditional entropy is the lowest achievable average next-token loss. A model's actual
+       loss is conditional <em>cross-entropy</em> and can be higher when its predictions are wrong.</p>
   </div>
 
   <div class="term">
@@ -110,17 +121,22 @@ bits. That is not a metaphor. The equivalence is exact, and it is why your loss 
         <span class="sym">I(X;Y) = H(Y) − H(Y|X)</span></div>
     <p>How much knowing X reduces your uncertainty about Y. Symmetric, zero exactly when they are
        independent, and it catches <em>non-linear</em> dependence that correlation misses entirely.</p>
+    <div class="viz" data-viz="p13-mutual"></div>
     <p class="wh">Feature selection that survives non-linearity. And under its other name —
        <strong>information gain</strong> — it is the split criterion in a decision tree.</p>
   </div>
 
   <div class="term">
     <div class="t">Jensen–Shannon divergence <span class="tag">senior</span></div>
-    <p>The symmetric, bounded repair of KL: average both directions against the midpoint
-       distribution M = (P+Q)/2. Finite even when the supports do not overlap.</p>
-    <p class="wh">The original GAN objective is JS divergence — and the fact that it saturates when
-       the distributions do not overlap is precisely the vanishing-gradient problem that Wasserstein
-       GANs were built to fix.</p>
+    <p>Compare each distribution with their average M = (P+Q)/2, then average the two KL values.
+       Swapping P and Q gives the same answer. The result is between 0 and 1 bit, even when
+       P and Q allow completely different outcomes.</p>
+    <div class="viz" data-viz="p13-js"></div>
+    <p class="wh">This appears in the theory of generative adversarial networks (GANs): a generator
+       makes samples while a discriminator learns to distinguish them from real samples.
+       With an ideal discriminator, the original minimax objective is a constant plus twice JS.
+       If real and generated outcomes never overlap, JS reaches its maximum; that flat score
+       can give the generator little guidance about how to improve.</p>
   </div>
 
 </div>
@@ -389,6 +405,7 @@ comes from this single choice of direction.</p>
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

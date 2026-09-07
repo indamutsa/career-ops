@@ -18,6 +18,11 @@
 
 <p>By the end of this lesson you will have trained a working language model on real text and generated samples from it. The model will be bad — that is deliberate. It establishes the baseline every later model must beat, and it builds the training loop skeleton you will reuse unchanged for the next eight lessons.</p>
 
+<p><strong>You write</strong> <code>code/b1_bigram.py</code> · <strong>you record in</strong> <code>notes/b1-first-model.md</code> · <strong>reference companion</strong> <a href="../index.html#M02" target="_top">M02 — Embeddings and the residual stream</a></p>
+
+<pre><code class="lang-bash">cp notes/_template.md notes/b1-first-model.md
+touch code/b1_bigram.py</code></pre>
+
 <hr>
 
 <h2 data-n="B1.1">Terms</h2>
@@ -408,6 +413,7 @@ print("trigram optimum:", -torch.log(p3[data[:-2], data[1:-1], data[2:]]).mean()
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

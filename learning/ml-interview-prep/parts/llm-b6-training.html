@@ -20,7 +20,10 @@
 
 <p>Target: <strong>val loss ≈ 1.5–1.8 bits/token on TinyStories, coherent multi-sentence output, ~45 minutes on your M3 Pro.</strong></p>
 
-<p>Reference companions: <a href="../index.html#M06" target="_top">Module 06</a>, <a href="../index.html#M17" target="_top">Module 17</a>.</p>
+<p><strong>You write</strong> <code>code/b6_train.py</code> · <strong>you record in</strong> <code>notes/b6-training.md</code> · <strong>reference companion</strong> <a href="../index.html#M06" target="_top">M06 — Pretraining</a> · <a href="../index.html#M17" target="_top">M17 — Distributed training</a></p>
+
+<pre><code class="lang-bash">cp notes/_template.md notes/b6-training.md
+touch code/b6_train.py</code></pre>
 
 <hr>
 
@@ -365,6 +368,7 @@ print(f"{flops_per_token * 50 * tok_per_step / dt / 1e12:.3f} TFLOP/s")</code></
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

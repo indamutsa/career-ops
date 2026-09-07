@@ -73,5 +73,6 @@ print()
 if ok:
     print("Ready. Open modules/build/00-foundations.md and start.\n")
 else:
-    print("Fix the FAIL lines above, then run this again.\n")
+    print("Fix the FAIL lines above, then run this again.")
+    print("To install everything at once:  pip install -r requirements.txt\n")
 sys.exit(0 if ok else 1)

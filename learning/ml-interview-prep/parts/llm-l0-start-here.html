@@ -20,7 +20,50 @@
 
 <hr>
 
-<h2 data-n="L0.1">The one rule</h2>
+<h2 data-n="L0.1">How this is organised</h2>
+
+<p>The same content is two things: a folder of markdown in this repository, and a website with a sidebar. On the website every page carries a short id — <code>L0</code>, <code>B4</code>, <code>M15</code>, <code>LG</code>. Those ids are the map, so here is what they mean.</p>
+
+<p>There are <strong>two tracks</strong>, shown as tabs at the top of the sidebar:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Track</th><th>Ids</th><th>Pages</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><strong>Recall</strong></td><td><code>00</code>, <code>A</code>–<code>G</code></td><td>43</td><td>Maths → classical ML → deep learning → transformers → MLOps → mock rounds. Reading and recall, no code to write. A separate course; not part of this one.</td></tr>
+<tr><td><strong>Build LLM</strong></td><td><code>L</code>, <code>B</code>, <code>M</code>, <code>LG</code></td><td>44</td><td><strong>This track.</strong> You write the code.</td></tr>
+</tbody></table></div>
+
+<p>Within the Build LLM track, the first letter tells you what kind of page you are looking at:</p>
+
+<div class="tw"><table>
+<thead><tr><th>Prefix</th><th>Sidebar group</th><th>What it is</th><th>In the repo</th></tr></thead>
+<tbody>
+<tr><td><strong>L</strong></td><td><code>H · LLM track</code></td><td>Orientation. Four documents that tell you what to do and when.</td><td>the four files at the track root</td></tr>
+<tr><td><strong>B</strong></td><td><code>I · Build labs</code></td><td>The eleven build lessons, <code>B0</code> → <code>B10</code>. <strong>This is the curriculum.</strong></td><td><code>modules/build/</code></td></tr>
+<tr><td><strong>M</strong></td><td><code>J · LLM concepts</code></td><td>28 reference modules, <code>M00</code> → <code>M25</code>. Read alongside the labs, never instead of them.</td><td><code>modules/</code></td></tr>
+<tr><td><strong>LG</strong></td><td><code>K · Reference</code></td><td>The glossary — 175 terms.</td><td><code>GLOSSARY.md</code></td></tr>
+</tbody></table></div>
+
+<p>The <code>H</code>–<code>K</code> group letters just continue the Recall track's <code>A</code>–<code>G</code> so the two tabs share one ordering. They carry no other meaning.</p>
+
+<h3>The four <code>L</code> pages</h3>
+
+<p><code>L</code> is a reading order, not a sequence of work. You are reading <code>L0</code> now.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Id</th><th>File</th><th>The question it answers</th><th>When to read it</th></tr></thead>
+<tbody>
+<tr><td><strong>L0</strong></td><td><a href="../index.html#L0" target="_top"><code>START-HERE.md</code></a></td><td>What am I doing, in what order, and where do the files go?</td><td>Now, once.</td></tr>
+<tr><td><strong>L1</strong></td><td><a href="../index.html#L1" target="_top"><code>PLAN.md</code></a></td><td>Which lesson on which day, and what must be true at the end of each week?</td><td>After this file, then every Monday.</td></tr>
+<tr><td><strong>L2</strong></td><td><a href="../index.html#L2" target="_top"><code>SYLLABUS.md</code></a></td><td>What is in the 28 reference modules?</td><td>Step 5 — <strong>not before.</strong></td></tr>
+<tr><td><strong>L3</strong></td><td><a href="../index.html#L3" target="_top"><code>modules/build/README.md</code></a></td><td>Why build rather than read? What exactly are we building, and will this laptop take it?</td><td>After B0, when you want the whole shape at once.</td></tr>
+</tbody></table></div>
+
+<p>Everything else you will meet is a <code>B</code> lesson. Start at <code>B0</code> and go in order.</p>
+
+<hr>
+
+<h2 data-n="L0.2">The one rule</h2>
 
 <p><strong>The lessons are written. You write the code.</strong></p>
 
@@ -30,32 +73,56 @@
 
 <hr>
 
-<h2 data-n="L0.2">Step 1 — Check the machine (2 minutes)</h2>
+<h2 data-n="L0.3">Step 1 — Make the workspace (1 minute)</h2>
+
+<p>Run this once. It creates the four folders every lesson writes into, so nothing later fails on a missing directory:</p>
 
 <pre><code class="lang-bash">cd learning/llm-from-scratch
-python3 code/check_env.py</code></pre>
+mkdir -p code notes data checkpoints
+ls</code></pre>
 
-<p>As of the last run on this machine: <strong>Python 3.13.13, torch 2.13.0, MPS available, bf16 autocast working.</strong> Two packages were missing:</p>
+<p>You should see <code>code  checkpoints  data  modules  notes</code> alongside the markdown files. What each one is for:</p>
 
-<pre><code class="lang-bash">pip install matplotlib datasets</code></pre>
+<div class="tw"><table>
+<thead><tr><th>Folder</th><th>Holds</th><th>In git?</th></tr></thead>
+<tbody>
+<tr><td><code>code/</code></td><td><strong>Your code.</strong> One file per lesson — <code>b0_autograd.py</code>, <code>b1_bigram.py</code>, …</td><td>Yes — it is the work.</td></tr>
+<tr><td><code>notes/</code></td><td><strong>Your numbers.</strong> One file per lesson: losses, timings, what broke.</td><td>Yes — it is the proof.</td></tr>
+<tr><td><code>data/</code></td><td>Corpora and <code>.bin</code> token files. Hundreds of MB.</td><td>No — ignored.</td></tr>
+<tr><td><code>checkpoints/</code></td><td><code>ckpt_best.pt</code>, <code>ckpt_instruct.pt</code>, the tiny/base/wide ladder.</td><td>No — ignored.</td></tr>
+</tbody></table></div>
+
+<p><code>.gitignore</code> already excludes <code>data/</code> and <code>checkpoints/</code> — they are large and regenerable. It does <strong>not</strong> exclude <code>code/</code> or <code>notes/</code>, and that is deliberate: those two folders are the artifact you show someone.</p>
+
+<hr>
+
+<h2 data-n="L0.4">Step 2 — Check the machine (2 minutes)</h2>
+
+<pre><code class="lang-bash">python3 code/check_env.py</code></pre>
+
+<p>It prints a PASS or FAIL line per requirement and exits non-zero if anything is missing. Install whatever it names:</p>
+
+<pre><code class="lang-bash">pip install -r requirements.txt</code></pre>
 
 <p>Then re-run <code>python3 code/check_env.py</code> until every line says PASS.</p>
 
-<div class="box note"><p>If you prefer an isolated environment: <code>python3 -m venv .venv &amp;&amp; source .venv/bin/activate</code> then <code>pip install torch numpy matplotlib datasets regex</code>. The curriculum has no other dependencies — no HuggingFace <code>transformers</code> until B5 Lab 6, no <code>trl</code>, no <code>peft</code>, nothing.</p></div>
+<p>As of the last run on this machine: <strong>Python 3.13.13, torch 2.13.0, MPS available, bf16 autocast working.</strong></p>
+
+<div class="box note"><p><strong>Prefer an isolated environment?</strong> <code>python3 -m venv .venv &amp;&amp; source .venv/bin/activate</code> then <code>pip install -r requirements.txt</code>. <code>.venv/</code> is gitignored. The curriculum has no dependencies beyond that file — no HuggingFace <code>transformers</code> until B5 Lab 6, no <code>trl</code>, no <code>peft</code>, nothing.</p></div>
 
 <hr>
 
-<h2 data-n="L0.3">Step 2 — Open the first lesson</h2>
+<h2 data-n="L0.5">Step 3 — Open the first lesson</h2>
 
-<pre><code>modules/build/00-foundations.md</code></pre>
+<pre><code class="lang-bash">open modules/build/00-foundations.md      # or read B0 on the site</code></pre>
 
 <p>Read it top to bottom, then do the labs in it. That is the whole instruction.</p>
 
-<p><strong>Do not start with <code>SYLLABUS.md</code>.</strong> It is a reference index of 28 deep-dive modules, and reading it first is how people spend an evening feeling productive without writing a line of code. Come back to it in Step 4.</p>
+<p><strong>Do not start with <code>SYLLABUS.md</code> (L2).</strong> It is a reference index of 28 deep-dive modules, and reading it first is how people spend an evening feeling productive without writing a line of code. Come back to it in Step 5.</p>
 
 <hr>
 
-<h2 data-n="L0.4">Step 3 — Work the Build Track, B0 → B10</h2>
+<h2 data-n="L0.6">Step 4 — Work the Build Track, B0 → B10</h2>
 
 <p>Eleven lessons. Each one leaves you something that runs.</p>
 
@@ -74,6 +141,33 @@ python3 code/check_env.py</code></pre>
 <tr><td><strong>B9</strong></td><td><a href="../index.html#B9" target="_top">Instruction tuning</a></td><td>3 h</td><td>A base model <strong>and</strong> an instruct model, both yours</td></tr>
 <tr><td><strong>B10</strong></td><td><a href="../index.html#B10" target="_top">Teaching it to reason</a></td><td>4–5 h</td><td>CoT + GRPO against a verifier you wrote</td></tr>
 </tbody></table></div>
+
+<h3>The two files each lesson creates</h3>
+
+<p>Every lesson opens with the same two lines: the code file you are writing, and the notes file you record into. Create them at the start of the lesson, not the end.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Lesson</th><th>Create in your editor</th><th>Record your numbers in</th><th>Also produces</th></tr></thead>
+<tbody>
+<tr><td><strong>B0</strong></td><td><code>code/b0_autograd.py</code></td><td><code>notes/b0-foundations.md</code></td><td>—</td></tr>
+<tr><td><strong>B1</strong></td><td><code>code/b1_bigram.py</code></td><td><code>notes/b1-first-model.md</code></td><td>—</td></tr>
+<tr><td><strong>B2</strong></td><td><code>code/b2_tokenizer.py</code></td><td><code>notes/b2-tokenizer.md</code></td><td><code>data/tokenizer.json</code></td></tr>
+<tr><td><strong>B3</strong></td><td><code>code/b3_data.py</code></td><td><code>notes/b3-data.md</code></td><td><code>data/train.bin</code>, <code>data/val.bin</code></td></tr>
+<tr><td><strong>B4</strong></td><td><code>code/b4_attention.py</code></td><td><code>notes/b4-attention.md</code></td><td>—</td></tr>
+<tr><td><strong>B5</strong></td><td><code>code/b5_model.py</code></td><td><code>notes/b5-transformer.md</code></td><td>—</td></tr>
+<tr><td><strong>B6</strong></td><td><code>code/b6_train.py</code></td><td><code>notes/b6-training.md</code></td><td><code>checkpoints/ckpt_best.pt</code></td></tr>
+<tr><td><strong>B7</strong></td><td><code>code/b7_sample.py</code></td><td><code>notes/b7-sampling.md</code></td><td>—</td></tr>
+<tr><td><strong>B8</strong></td><td><code>code/b8_scaling.py</code></td><td><code>notes/b8-scaling.md</code></td><td><code>checkpoints/ckpt_{tiny,base,wide}.pt</code></td></tr>
+<tr><td><strong>B9</strong></td><td><code>code/b9_instruct.py</code></td><td><code>notes/b9-instruct.md</code></td><td><code>checkpoints/ckpt_instruct.pt</code></td></tr>
+<tr><td><strong>B10</strong></td><td><code>code/b10_reasoning.py</code></td><td><code>notes/b10-reasoning.md</code></td><td><code>checkpoints/ckpt_reason.pt</code></td></tr>
+</tbody></table></div>
+
+<p>Starting B0, then, is exactly this:</p>
+
+<pre><code class="lang-bash">touch code/b0_autograd.py notes/b0-foundations.md
+open modules/build/00-foundations.md</code></pre>
+
+<p>The names are a convention, not an import contract — no lesson imports another lesson's file, so nothing breaks if you rename one. Keep them anyway: <code>notes/</code> is read back in B8 and B9, and a consistent tree is the difference between a repository someone reads and one they close.</p>
 
 <p><strong>The shape of the whole thing</strong> — the same three stages as every frontier model, four orders of magnitude smaller:</p>
 
@@ -95,7 +189,7 @@ python3 code/check_env.py</code></pre>
 
 <p>Interview: <strong>Wednesday 30 September 2026.</strong> 25 days, four full weekends — enough for the full track with no cutting.</p>
 
-<p><strong>→ <a href="../index.html#L1" target="_top"><code>PLAN.md</code></a></strong> has the dated breakdown: four sprints, a hard gate at the end of each, which reference modules to read alongside, and the five things you should be able to say on the day.</p>
+<p><strong>→ <a href="../index.html#L1" target="_top"><code>PLAN.md</code></a> (L1)</strong> has the dated breakdown: four sprints, a hard gate at the end of each, which reference modules to read alongside, and the five things you should be able to say on the day.</p>
 
 <p>Short version:</p>
 
@@ -112,30 +206,64 @@ python3 code/check_env.py</code></pre>
 
 <hr>
 
-<h2 data-n="L0.5">Step 4 — Read the reference modules alongside</h2>
+<h2 data-n="L0.7">Step 5 — Read the reference modules alongside</h2>
 
-<p><code>SYLLABUS.md</code> indexes 28 deep-dive modules (00–25, plus <code>05a</code> encoder-decoder and <code>15a</code> DeepSeek-R1). Each has the same shape: <strong>Terms · Concepts · Where it's used · Labs · Failure modes · Interview Q&amp;A · Checkpoint.</strong></p>
+<p><a href="../index.html#L2" target="_top"><code>SYLLABUS.md</code></a> (L2) indexes 28 deep-dive modules — <code>M00</code>–<code>M25</code>, plus <code>M05a</code> encoder-decoder and <code>M15a</code> DeepSeek-R1. Each has the same shape: <strong>Terms · Concepts · Where it's used · Labs · Failure modes · Interview Q&amp;A · Checkpoint.</strong></p>
 
-<p>Read them <strong>in parallel with the Build Track, not before it.</strong> Each build lesson names its reference companion at the top — read that one after finishing the build lesson, while the code is still in your head.</p>
+<p>Read them <strong>in parallel with the Build Track, not before it.</strong> Each build lesson names its reference companion in its header block — read that module after finishing the lesson, while the code is still in your head:</p>
 
-<p><code>GLOSSARY.md</code> — 175 terms, each with what it is <em>and</em> where you'd meet it in production. Read it end to end the night before the interview. Any term you can't place is a gap; go to its module.</p>
+<div class="tw"><table>
+<thead><tr><th>Lesson</th><th>Reference companion</th></tr></thead>
+<tbody>
+<tr><td>B0</td><td>— B0 derives its own maths from nothing</td></tr>
+<tr><td>B1</td><td><a href="../index.html#M02" target="_top">M02 Embeddings and the residual stream</a></td></tr>
+<tr><td>B2</td><td><a href="../index.html#M01" target="_top">M01 Tokenization</a></td></tr>
+<tr><td>B3</td><td><a href="../index.html#M13" target="_top">M13 Fine-tuning dataset construction</a> · <a href="../index.html#M06" target="_top">M06 Pretraining</a></td></tr>
+<tr><td>B4</td><td><a href="../index.html#M03" target="_top">M03 Attention</a></td></tr>
+<tr><td>B5</td><td><a href="../index.html#M02" target="_top">M02 Embeddings</a> · <a href="../index.html#M04" target="_top">M04 Positional encoding</a> · <a href="../index.html#M05" target="_top">M05 The transformer block</a></td></tr>
+<tr><td>B6</td><td><a href="../index.html#M06" target="_top">M06 Pretraining</a> · <a href="../index.html#M17" target="_top">M17 Distributed training</a></td></tr>
+<tr><td>B7</td><td><a href="../index.html#M08" target="_top">M08 Decoding and sampling</a></td></tr>
+<tr><td>B8</td><td><a href="../index.html#M06" target="_top">M06 Pretraining</a> — the scaling-law half</td></tr>
+<tr><td>B9</td><td><a href="../index.html#M11" target="_top">M11 Supervised fine-tuning</a> · <a href="../index.html#M12" target="_top">M12 Parameter-efficient fine-tuning</a></td></tr>
+<tr><td>B10</td><td><a href="../index.html#M15" target="_top">M15 RL with verifiable rewards</a> · <a href="../index.html#M15a" target="_top">M15a DeepSeek-R1</a> · <a href="../index.html#M14" target="_top">M14 Preference optimisation</a></td></tr>
+</tbody></table></div>
+
+<p><a href="../index.html#LG" target="_top"><code>GLOSSARY.md</code></a> (LG) — 175 terms, each with what it is <em>and</em> where you'd meet it in production. Read it end to end the night before the interview. Any term you can't place is a gap; go to its module.</p>
 
 <hr>
 
-<h2 data-n="L0.6">Where things go</h2>
+<h2 data-n="L0.8">Where things go</h2>
+
+<p>This is the tree after Step 1, with a couple of lessons done:</p>
 
 <pre><code>learning/llm-from-scratch/
-  START-HERE.md          this file
-  SYLLABUS.md            index of the 28 reference modules
-  GLOSSARY.md            175 terms
+  START-HERE.md          L0 — this file
+  PLAN.md                L1 — the dated schedule
+  SYLLABUS.md            L2 — index of the 28 reference modules
+  GLOSSARY.md            LG — 175 terms
+  README.md              the repository front door
+  requirements.txt       every dependency the curriculum has
+  .gitignore             excludes data/, checkpoints/, .venv/
+
   modules/
-    build/               ← the Build Track, B0-B10. Start at 00-foundations.md
-    00-25 + 05a, 15a     the reference modules
-  code/                  ← YOUR code. One file per lesson: b0_autograd.py, b1_bigram.py, ...
-    check_env.py         the only file I wrote here
-  data/                  corpora and .bin token files (large; keep out of git)
-  checkpoints/           ckpt_best.pt, ckpt_instruct.pt, the tiny/base/wide ladder
-  notes/                 ← your numbers. One file per lesson.</code></pre>
+    build/               B0-B10 — the Build Track. Start at 00-foundations.md
+      README.md          L3 — why build rather than read
+    00-25 + 05a, 15a     M00-M25 — the reference modules
+
+  code/                  ← YOUR code. One file per lesson.
+    README.md            the naming convention
+    check_env.py         the only lab file I wrote
+    b0_autograd.py       yours, from here down
+    b1_bigram.py
+  notes/                 ← YOUR numbers. One file per lesson.
+    README.md            what a good note contains
+    _template.md         copy this at the start of each lesson
+    b0-foundations.md
+    b1-first-model.md
+  data/                  corpora, tokenizer.json, .bin token files   (gitignored)
+  checkpoints/           ckpt_best.pt, ckpt_instruct.pt, the ladder  (gitignored)
+
+  build-site.mjs         regenerates the website from this markdown</code></pre>
 
 <p><strong><code>notes/</code> is not optional.</strong> Every lesson's checkpoint asks for measurements, and three later lessons consume earlier ones directly: B8 fits a scaling law to the three loss curves from B6, and B9's before/after comparison needs the exact base-model output you recorded in B6 Lab 8. If you don't write them down, you re-run the training.</p>
 
@@ -143,7 +271,7 @@ python3 code/check_env.py</code></pre>
 
 <hr>
 
-<h2 data-n="L0.7">Working with me on this</h2>
+<h2 data-n="L0.9">Working with me on this</h2>
 
 <p>I write lessons and review your code. I do not write your lab code — that was the deal, and it is the reason this works.</p>
 
@@ -159,7 +287,7 @@ python3 code/check_env.py</code></pre>
 
 <hr>
 
-<h2 data-n="L0.8">Ground rules</h2>
+<h2 data-n="L0.10">Ground rules</h2>
 
 <ul>
   <li><strong>Type the code.</strong> Not copy — type.</li>
@@ -172,11 +300,13 @@ python3 code/check_env.py</code></pre>
 
 <hr>
 
-<h2 data-n="L0.9">Right now</h2>
+<h2 data-n="L0.11">Right now</h2>
 
 <pre><code class="lang-bash">cd learning/llm-from-scratch
-pip install matplotlib datasets
+mkdir -p code notes data checkpoints
+pip install -r requirements.txt
 python3 code/check_env.py
+touch code/b0_autograd.py notes/b0-foundations.md
 open modules/build/00-foundations.md</code></pre>
 
 <p>B0 starts at <em>"what is a probability distribution over sequences"</em> and assumes nothing after that.</p>
@@ -187,6 +317,7 @@ open modules/build/00-foundations.md</code></pre>
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

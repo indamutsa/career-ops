@@ -30,13 +30,14 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
 
 <h2 data-n="11.2">The terms</h2>
 
-<div class="terms">
+<div class="terms math-terms">
 
   <div class="term">
     <div class="t">Function <span class="tag">basic</span> <span class="sym">f(x)</span></div>
     <p>A machine: put a number in, get a number out. In ML the machine is
        <em>“given these parameter values, how wrong am I?”</em></p>
     <p class="wh">Your loss function. Input = every weight in the model. Output = one number.</p>
+    <div class="viz" data-viz="fn-machine"></div>
   </div>
 
   <div class="term">
@@ -44,6 +45,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
     <p>Rise over run: how much the output changes per unit of input change. Positive = going up as
        you move right. Negative = going down.</p>
     <p class="an">On a road sign, “12 % gradient” is a slope of 0.12.</p>
+    <div class="viz" data-viz="slope"></div>
   </div>
 
   <div class="term">
@@ -53,7 +55,9 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        then shrinking the gap to nothing.</p>
     <p class="an">Your speedometer. Average speed over an hour is rise/run; your speed <em>right
        now</em> is the derivative of distance with respect to time.</p>
-    <p class="wh">Every number in <code>.grad</code> after <code>loss.backward()</code>.</p>
+    <p class="wh">Every number in <code>.grad</code> after <code>loss.backward()</code>.
+       Section 11.3 has the interactive version of the shrinking gap.</p>
+    <div class="viz" data-viz="deriv-mini"></div>
   </div>
 
   <div class="term">
@@ -62,6 +66,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
     <p>The slope in one direction while every other input is held frozen. “If I nudge <em>only</em>
        this knob, what happens?”</p>
     <p class="wh">One weight's gradient. Seven billion of them per step.</p>
+    <div class="viz" data-viz="partial-mini"></div>
   </div>
 
   <div class="term">
@@ -70,6 +75,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        <strong>steepest ascent</strong>, and its length says how steep.</p>
     <p class="an">Standing on the hill, the gradient is the compass bearing straight <em>up</em> the
        slope, with the needle length telling you how brutal the climb is.</p>
+    <div class="viz" data-viz="partial"></div>
     <p class="wh">This is why the update is <span class="m">w ← w − lr·∇L</span>. The minus sign is
        the entire reason: the gradient points uphill and we want down.</p>
   </div>
@@ -80,6 +86,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        or a plateau. Zero gradient alone does not tell you which.</p>
     <p class="wh">Training “converging” means the gradient got small. It does not by itself mean
        you arrived anywhere good.</p>
+    <div class="viz" data-viz="stationary"></div>
   </div>
 
   <div class="term">
@@ -89,6 +96,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        <strong>Global</strong>: the lowest point anywhere.</p>
     <p class="an">A puddle on a hillside is a local minimum. The lake at the bottom is the global one.
        Water in the puddle has no local reason to move.</p>
+    <div class="viz" data-viz="minimum"></div>
   </div>
 
   <div class="term">
@@ -97,6 +105,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        gradient, but not a minimum.</p>
     <p class="an">A horse's saddle, or a mountain pass: downhill to the two valleys, uphill to the
        two peaks.</p>
+    <div class="viz" data-viz="saddle"></div>
     <p class="wh">In high dimensions saddles vastly outnumber local minima, and they are the real
        reason training stalls — this is the key insight below.</p>
   </div>
@@ -108,6 +117,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        Negative = dome-shaped (maximum-like). Zero = flat or an inflection.</p>
     <p class="an">Your speedometer is the first derivative; your <em>accelerator pedal</em> is the
        second.</p>
+    <div class="viz" data-viz="second-deriv"></div>
   </div>
 
   <div class="term">
@@ -117,6 +127,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        mixed signs ⇒ saddle.</p>
     <p class="wh">Its condition number (largest eigenvalue over smallest) is what makes a loss
        surface a “ravine”, and is precisely what momentum and Adam exist to compensate for.</p>
+    <div class="viz" data-viz="hessian"></div>
   </div>
 
   <div class="term">
@@ -125,6 +136,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        returns many outputs. Row <em>i</em> is the gradient of output <em>i</em>.</p>
     <p class="wh">Backprop never builds a Jacobian. It computes vector–Jacobian products, which is
        why it costs about the same as a forward pass rather than N times more.</p>
+    <div class="viz" data-viz="jacobian"></div>
   </div>
 
   <div class="term">
@@ -135,6 +147,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        per turn of the dial? Multiply the three ratios.</p>
     <p class="wh"><strong>Backpropagation is the chain rule.</strong> Not “uses”, not “is like” —
        it <em>is</em> the chain rule, applied right to left so the shared work is done once.</p>
+    <div class="viz" data-viz="chain-mini"></div>
   </div>
 
   <div class="term">
@@ -146,6 +159,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
     <p class="wh">Linear regression, logistic regression, and SVMs are convex — one answer, always
        reachable. Neural networks are wildly non-convex. That difference explains why the classical
        models have closed-form or guaranteed solutions and deep ones need seeds, schedules and luck.</p>
+    <div class="viz" data-viz="convex"></div>
   </div>
 
   <div class="term">
@@ -156,6 +170,7 @@ Everything else is bookkeeping for when there are many knobs instead of one.</p>
        subgradient (usually 0) and the probability of landing precisely on the kink is nil. But it
        is why you cannot backprop through <code>argmax</code> — and why Gumbel-softmax and
        straight-through estimators exist.</p>
+    <div class="viz" data-viz="diffable"></div>
   </div>
 
 </div>
@@ -222,6 +237,11 @@ layer 2's output's sensitivity to layer 1's output, by layer 1's output's sensit
   <span class="note">Backprop computes this right to left, so the shared prefix is computed once for
   every weight in the layer instead of once per weight.</span>
 </div>
+
+<p>Written like that it looks like an incantation. It is not — it is one multiplication,
+repeated. Two functions in a row, real numbers, nothing hidden:</p>
+
+<div class="viz" data-viz="chain-rule"></div>
 
 <p>Two consequences fall straight out of that product, and both are interview answers:</p>
 
@@ -462,6 +482,7 @@ last decade and it is a one-line consequence of the chain rule.</p>
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

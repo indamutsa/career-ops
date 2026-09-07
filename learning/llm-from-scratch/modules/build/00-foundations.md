@@ -7,6 +7,14 @@ agrees with PyTorch to machine precision.
 If you already know this material, do Lab 3 anyway. Writing `backward()` yourself is the difference
 between believing backpropagation and knowing it.
 
+**You write** `code/b0_autograd.py` · **you record in** `notes/b0-foundations.md` ·
+**reference companion** none — B0 derives its own maths from nothing
+
+```bash
+cp notes/_template.md notes/b0-foundations.md
+touch code/b0_autograd.py
+```
+
 ---
 
 ## Terms

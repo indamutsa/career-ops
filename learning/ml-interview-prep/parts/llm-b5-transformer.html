@@ -18,7 +18,10 @@
 
 <p>The model you build here is architecturally the same as Llama and Qwen. Not "similar to" — the same design, at 1/2000th the size. When you read <code>modeling_qwen3.py</code> after this, you will recognise every line.</p>
 
-<p>Reference companions: <a href="../index.html#M02" target="_top">Module 02</a>, <a href="../index.html#M04" target="_top">Module 04</a>, <a href="../index.html#M05" target="_top">Module 05</a>.</p>
+<p><strong>You write</strong> <code>code/b5_model.py</code> · <strong>you record in</strong> <code>notes/b5-transformer.md</code> · <strong>reference companion</strong> <a href="../index.html#M02" target="_top">M02 — Embeddings and the residual stream</a> · <a href="../index.html#M04" target="_top">M04 — Positional encoding</a> · <a href="../index.html#M05" target="_top">M05 — The transformer block</a></p>
+
+<pre><code class="lang-bash">cp notes/_template.md notes/b5-transformer.md
+touch code/b5_model.py</code></pre>
 
 <hr>
 
@@ -497,6 +500,7 @@ for k, v in sorted(groups.items(), key=lambda kv: -kv[1]):
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

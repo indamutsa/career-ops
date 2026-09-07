@@ -9,8 +9,15 @@ The model you build here is architecturally the same as Llama and Qwen. Not "sim
 design, at 1/2000th the size. When you read `modeling_qwen3.py` after this, you will recognise every
 line.
 
-Reference companions: [Module 02](../02-embeddings.md), [Module 04](../04-positional.md),
-[Module 05](../05-transformer-block.md).
+**You write** `code/b5_model.py` · **you record in** `notes/b5-transformer.md` ·
+**reference companion** [M02 — Embeddings and the residual stream](../02-embeddings.md) ·
+[M04 — Positional encoding](../04-positional.md) ·
+[M05 — The transformer block](../05-transformer-block.md)
+
+```bash
+cp notes/_template.md notes/b5-transformer.md
+touch code/b5_model.py
+```
 
 ---
 

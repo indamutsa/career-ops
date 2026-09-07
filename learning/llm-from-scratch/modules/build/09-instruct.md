@@ -12,7 +12,14 @@ believes it is sampling from.
 That is the single most important thing to understand about post-training, and you are about to
 observe it directly on a model you built.
 
-Reference companions: [Module 11](../11-sft.md), [Module 12](../12-peft.md).
+**You write** `code/b9_instruct.py` · **you record in** `notes/b9-instruct.md` ·
+**reference companion** [M11 — Supervised fine-tuning](../11-sft.md) ·
+[M12 — Parameter-efficient fine-tuning](../12-peft.md)
+
+```bash
+cp notes/_template.md notes/b9-instruct.md
+touch code/b9_instruct.py
+```
 
 ---
 

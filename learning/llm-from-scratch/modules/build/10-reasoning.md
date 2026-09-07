@@ -12,8 +12,14 @@ The capability ceiling here is low — synthetic transitivity puzzles and small 
 mathematics. But the *machinery* is complete and identical, and you will observe the response-length
 growth that made R1-Zero famous, on your own model.
 
-Reference companions: [Module 15](../15-rlvr-grpo.md), [Module 15a](../15a-deepseek-r1.md),
-[Module 14](../14-preference.md).
+**You write** `code/b10_reasoning.py` · **you record in** `notes/b10-reasoning.md` ·
+**reference companion** [M15 — RL with verifiable rewards](../15-rlvr-grpo.md) ·
+[M15a — DeepSeek-R1](../15a-deepseek-r1.md) · [M14 — Preference optimisation](../14-preference.md)
+
+```bash
+cp notes/_template.md notes/b10-reasoning.md
+touch code/b10_reasoning.py
+```
 
 ---
 

@@ -33,12 +33,13 @@ parameter. Each named optimiser is an answer to one of those three.</p>
 
 <h2 data-n="14.2">The terms</h2>
 
-<div class="terms">
+<div class="terms math-terms">
 
   <div class="term">
     <div class="t">Objective / loss / cost <span class="tag">basic</span></div>
     <p>The single number you are trying to make small. Loss is usually per-example, cost is the
        average over the batch, objective is the whole thing including regularisation.</p>
+    <div class="viz" data-viz="p14-loss"></div>
     <p class="wh">If you cannot write your objective down, you do not have a machine-learning
        problem yet — you have a wish.</p>
   </div>
@@ -49,21 +50,23 @@ parameter. Each named optimiser is an answer to one of those three.</p>
     <p>Step in the direction of steepest <em>descent</em>, which is the negative gradient. η is the
        learning rate.</p>
     <p class="an">Walking downhill in fog, one careful step at a time.</p>
+    <div class="viz" data-viz="gd-step"></div>
   </div>
 
   <div class="term">
     <div class="t">Batch / mini-batch / stochastic <span class="tag">basic</span></div>
     <p>How many examples you look at before each step. All of them (batch), a handful (mini-batch,
        what everyone actually does), or one (stochastic).</p>
-    <p class="an">Polling the entire country before every decision, polling a thousand people, or
-       asking one person on the street. The thousand-person poll is nearly as accurate and
-       enormously cheaper.</p>
+    <p class="an">Polling the entire country before every decision, surveying a sample, or
+       asking one person on the street. Smaller samples cost less, but their answers vary more.</p>
+    <div class="viz" data-viz="p14-batch"></div>
   </div>
 
   <div class="term">
     <div class="t">Epoch vs step <span class="tag">basic</span></div>
     <p>A <strong>step</strong> is one parameter update. An <strong>epoch</strong> is one full pass
        over the training data.</p>
+    <div class="viz" data-viz="p14-epoch"></div>
     <p class="wh">LLM pretraining is usually reported in tokens and steps, not epochs, because you
        often see the data barely once.</p>
   </div>
@@ -71,7 +74,9 @@ parameter. Each named optimiser is an answer to one of those three.</p>
   <div class="term">
     <div class="t">Learning rate <span class="tag">basic</span></div>
     <p>Step size. Too small: training crawls or gets stuck. Too large: you overshoot the valley,
-       bounce, and diverge to NaN.</p>
+       bounce, and may diverge. If numerical calculations overflow, they can eventually produce
+       <code>NaN</code> — “not a number”.</p>
+    <div class="viz" data-viz="p14-rate"></div>
     <p class="wh"><strong>The single most important hyperparameter.</strong> If you tune exactly one
        thing, tune this.</p>
   </div>
@@ -81,6 +86,7 @@ parameter. Each named optimiser is an answer to one of those three.</p>
     <p>Changing the learning rate over training — usually a short linear <em>warmup</em> from near
        zero, then a <em>cosine</em> decay down to a small final value.</p>
     <p class="an">Warming up a car engine before flooring it, then easing off as you arrive.</p>
+    <div class="viz" data-viz="p14-schedule"></div>
   </div>
 
   <div class="term">
@@ -90,20 +96,28 @@ parameter. Each named optimiser is an answer to one of those three.</p>
     <p class="an">A heavy ball rolling downhill instead of a cautious walker. It powers through
        small bumps and ignores side-to-side jitter, because the oscillating components cancel in the
        average while the consistent downhill component accumulates.</p>
+    <div class="viz" data-viz="momentum"></div>
   </div>
 
   <div class="term">
     <div class="t">RMSProp / Adam / AdamW <span class="tag">mid</span></div>
-    <p>Give <em>each parameter its own</em> learning rate, scaled down for parameters whose gradients
-       have been large and up for those whose gradients have been tiny.</p>
+    <p>Rescale each parameter's update using its recent gradients. RMSProp remembers their
+       squared sizes. Adam also remembers their signed direction. AdamW adds a separate
+       shrinkage step to keep weights small.</p>
     <p class="an">A thermostat per room instead of one for the whole house.</p>
-    <p class="wh">AdamW is the default for transformers. Adam without the W has a subtly wrong
-       weight decay — see the questions.</p>
+    <div class="viz" data-viz="p14-adaptive"></div>
+    <p class="wh">AdamW separates weight decay from the rescaled gradient update. Adding an L2
+       penalty to Adam's loss generally gives a different update; see the worked comparison below.</p>
   </div>
 
   <div class="term">
     <div class="t">Gradient clipping <span class="tag">mid</span></div>
-    <p>If the gradient's norm exceeds a threshold, rescale it down before stepping.</p>
+    <p>The gradient is a vector, so it has a length — its L2 norm, the ordinary straight-line
+       length from section 10.6. Clipping puts a ceiling on that length. Measure it; if it is over
+       the threshold (1.0 is the usual choice), shrink the whole vector until it is exactly the
+       threshold. <strong>The direction never changes</strong> — only how far you travel along it.</p>
+    <p class="an">A speed limiter, not a steering correction.</p>
+    <div class="viz" data-viz="clipping"></div>
     <p class="wh">Standard in LLM and RNN training. It is the difference between one bad batch
        causing a loss spike and one bad batch destroying the run.</p>
   </div>
@@ -112,44 +126,53 @@ parameter. Each named optimiser is an answer to one of those three.</p>
     <div class="t">Constrained optimisation <span class="tag">senior</span></div>
     <p>Minimise something <em>subject to a rule</em> — "as small as possible, but the weights must
        not exceed this size" or "but the new policy must stay close to the old one".</p>
-    <p class="wh">Ridge and lasso, SVMs, PPO's trust region, fairness constraints, latency budgets.
-       Most real production objectives are constrained; people just do not phrase them that way.</p>
+    <div class="viz" data-viz="p14-constrained"></div>
+    <p class="wh">Examples include a maximum prediction time or a limit on model size.
+       Constraints rule choices out; penalties merely make some choices more expensive.</p>
   </div>
 
   <div class="term">
     <div class="t">Lagrange multiplier <span class="tag">senior</span>
         <span class="sym">λ</span></div>
-    <p>The trick that turns a constrained problem into an unconstrained one: add λ times the
-       constraint to the objective, then solve normally. λ is the <em>price</em> of the constraint.</p>
-    <p class="an">"You may spend as much as you like, but every euro costs you λ units of happiness."
-       Set λ correctly and you will never want to overspend — the budget enforces itself.</p>
+    <p>Attach a multiplier λ to a constraint and add that term to the objective. The result is
+       called the <strong>Lagrangian</strong>, written ℒ. We must choose the multiplier and the
+       solution together; an arbitrary λ does not enforce the rule.</p>
+    <p class="an">λ is the price of scarce budget: how much the best result would improve if
+       you could loosen the limit a little.</p>
+    <div class="viz" data-viz="p14-multiplier"></div>
   </div>
 
   <div class="term">
     <div class="t">Dual problem <span class="tag">senior</span></div>
-    <p>Every minimisation has a shadow maximisation over the multipliers. Solving the dual solves the
-       original when the problem is well-behaved (strong duality).</p>
-    <p class="wh">The SVM is always solved in its dual, which is what makes the kernel trick
-       possible at all.</p>
+    <p>The Lagrangian gives lower bounds on the best constrained cost. The dual problem chooses
+       multipliers to make that bound as high as possible. <strong>Strong duality</strong> means
+       the best bound equals the original minimum.</p>
+    <div class="viz" data-viz="p14-dual"></div>
+    <p class="wh">A matching lower bound proves you cannot do better. A remaining gap means the
+       bound alone does not certify the answer.</p>
   </div>
 
   <div class="term">
     <div class="t">KKT conditions <span class="tag">senior</span></div>
-    <p>The generalisation of "∇ = 0" to problems with inequality constraints. Four conditions;
-       the memorable one is <strong>complementary slackness</strong>: either the constraint is tight,
-       or its multiplier is zero. Never both non-zero.</p>
+    <p>The Karush–Kuhn–Tucker conditions extend “slope = 0” to constrained problems.
+       <strong>Complementary slackness</strong> says the multiplier times the constraint's
+       signed gap is zero: unused budget must have zero price.</p>
     <p class="an">You only feel the wall if you are pressed against it.</p>
+    <div class="viz" data-viz="p14-kkt"></div>
   </div>
 
   <div class="term">
     <div class="t">Laplace approximation <span class="tag">senior</span></div>
-    <p>Fit a Gaussian to a distribution at its peak: centre it on the mode, and get the width from
-       the curvature (the Hessian) there.</p>
+    <p>Approximate a probability distribution near a peak with a Gaussian bell curve. Centre it
+       at the mode (the peak's position). Its width comes from the curvature of the
+       <em>negative log-density</em> there — not directly from the height curve.</p>
     <p class="an">You cannot map the whole mountain, so you stand on the summit and measure how
        steeply it falls away in each direction. Steep in every direction → a narrow peak → you are
        confident. Gentle → a broad peak → you are not.</p>
-    <p class="wh">Cheap post-hoc uncertainty on an already-trained network, and the theoretical
-       backbone of BIC and of Bayesian model comparison.</p>
+    <div class="viz" data-viz="p14-laplace"></div>
+    <p class="wh">A local way to estimate uncertainty around fitted parameters. A narrow peak
+       means concentrated probability under the model's assumptions; it does not guarantee that
+       those assumptions describe reality.</p>
   </div>
 
 </div>
@@ -512,6 +535,7 @@ generous.</p>
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

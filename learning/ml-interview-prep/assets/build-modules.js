@@ -5,7 +5,7 @@
    =================================================================== */
 window.MLIP_BUILD = [
   { g: "H · LLM track", id: "L0", f: "llm-l0-start-here.html",
-    t: "START HERE", k: "start here rule step check machine minutes open first lesson work build track b10 schedule read reference modules alongside things working ground rules right now" },
+    t: "START HERE", k: "start here organised four pages rule step make workspace minute check machine minutes open first lesson work build track b10 files creates schedule read reference modules alongside things working ground rules right now" },
   { g: "H · LLM track", id: "L1", f: "llm-l1-plan.html",
     t: "Plan — 25 days to 30 September 2026", k: "plan days september 2026 four sprints sprint sat sun mon wed five things should able say 30th checking" },
   { g: "H · LLM track", id: "L2", f: "llm-l2-syllabus.html",

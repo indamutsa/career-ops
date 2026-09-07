@@ -11,8 +11,8 @@
 <p class="crumb">Part A · Maths · Module 12</p>
 <h1>Probability &amp; statistics
   <span class="lede">Machine learning is not the science of getting the right answer. It is the
-  science of being <em>calibratedly unsure</em>. Every model in this course outputs a probability
-  distribution, and every loss function is a statement about likelihood.</span>
+  science of reasoning with incomplete information. A probability model describes how likely
+  different outcomes are; a well-calibrated prediction of 30% should come true about 30% of the time.</span>
 </h1>
 
 <h2 data-n="12.1">The problem this was invented to solve</h2>
@@ -31,29 +31,33 @@ to be engineered away. It is the honest output.</p>
 
 <h2 data-n="12.2">The terms</h2>
 
-<div class="terms">
+<div class="terms math-terms">
 
   <div class="term">
     <div class="t">Random variable <span class="tag">basic</span> <span class="sym">X</span></div>
     <p>A quantity whose value depends on an outcome you have not seen yet. Not “random” in the sense
-       of lawless — it has a definite distribution.</p>
+       of lawless — it has a distribution: a description of how likely its possible values are.</p>
     <p class="an">The number on a die you are about to roll. Fixed rules, unknown result.</p>
+    <div class="viz" data-viz="p12-random"></div>
   </div>
 
   <div class="term">
     <div class="t">Distribution <span class="tag">basic</span> <span class="sym">P(X)</span></div>
     <p>The full accounting of which values are how likely. Discrete case: a
-       <strong>PMF</strong>, actual probabilities that sum to 1. Continuous case: a
-       <strong>PDF</strong>, a <em>density</em> that integrates to 1 — a single point has
-       probability zero.</p>
-    <p class="wh">Your model's softmax output is a PMF over the vocabulary. It is the model's entire
-       answer; taking an argmax throws most of it away.</p>
+       <strong>probability mass function (PMF)</strong>, actual probabilities that sum to 1.
+       Continuous case: a <strong>probability density function (PDF)</strong>, a curve whose total
+       area is 1 — an interval gets probability from its area under the curve, while a single point
+       has probability zero for a continuous distribution.</p>
+    <p class="wh">For a language model, softmax converts word scores into probabilities that sum to 1.
+       Choosing only the most likely word (the argmax) throws the other probabilities away.</p>
+    <div class="viz" data-viz="p12-distribution"></div>
   </div>
 
   <div class="term">
     <div class="t">Expectation <span class="tag">basic</span> <span class="sym">E[X]</span></div>
     <p>The long-run average: every value weighted by how likely it is.</p>
     <p class="an">Play a game a million times; the expectation is your average score per play.</p>
+    <div class="viz" data-viz="expectation"></div>
     <p class="wh">Your loss is an expectation over the data distribution — you estimate it with a
        batch average, which is why bigger batches give a lower-variance estimate.</p>
   </div>
@@ -63,17 +67,20 @@ to be engineered away. It is the honest output.</p>
         <span class="sym">Var, σ</span></div>
     <p>How spread out the values are. Variance is the mean squared distance from the mean; the
        standard deviation is its square root, which puts it back in the original units.</p>
-    <p class="wh">Batch normalisation literally divides by a running σ. And the “variance” in
-       bias–variance is exactly this: how much your fitted model would jump around if you resampled
-       the training set.</p>
+    <p class="wh">Batch normalisation centres activations and divides by an estimate of their spread
+       (with a small stabilising addition). In the bias–variance discussion, variance describes how
+       much predictions change when you train the same procedure on different datasets.</p>
+    <div class="viz" data-viz="p12-variance"></div>
   </div>
 
   <div class="term">
     <div class="t">Covariance &amp; correlation <span class="tag">basic</span></div>
     <p>Covariance: do two variables move together? Correlation is covariance scaled into [−1, 1] so
        it is unit-free and comparable.</p>
-    <p class="wh">The covariance matrix is what PCA eigendecomposes. Correlation near ±1 between two
-       features is the multicollinearity that makes linear coefficients unstable.</p>
+    <p class="wh">A table of pairwise covariances is a covariance matrix. Principal component analysis
+       (PCA) uses its eigenvectors — directions preserved by the matrix, introduced in module 10 —
+       to find directions in which the data spreads most.</p>
+    <div class="viz" data-viz="p12-covariance"></div>
   </div>
 
   <div class="term">
@@ -83,6 +90,7 @@ to be engineered away. It is the honest output.</p>
        of A once you already know B.</p>
     <p class="an">Marginalising is looking at the row totals in the margin of a table. That is
        literally where the word comes from.</p>
+    <div class="viz" data-viz="p12-joint"></div>
   </div>
 
   <div class="term">
@@ -90,16 +98,18 @@ to be engineered away. It is the honest output.</p>
     <p>Knowing B tells you nothing about A: P(A|B) = P(A), equivalently P(A,B) = P(A)P(B).</p>
     <p class="wh">Naive Bayes assumes every feature is conditionally independent given the class.
        That is nearly always false and the classifier works anyway — see module 23.</p>
+    <div class="viz" data-viz="p12-independence"></div>
   </div>
 
   <div class="term">
     <div class="t">Bayes' theorem <span class="tag">basic</span></div>
-    <p>How to flip a conditional round: P(A|B) = P(B|A)·P(A) / P(B). Read it as
-       <em>posterior ∝ likelihood × prior</em>.</p>
+    <p>How to reverse the question “how likely is B when A is true?” into “how likely is A
+       after seeing B?” The calculation is P(A|B) = P(B|A)·P(A) / P(B), provided P(B) is not zero.</p>
     <p class="an">You have a belief. Evidence arrives. Bayes is the exact arithmetic of updating the
        belief without over- or under-reacting.</p>
     <p class="wh">Naive Bayes, MAP estimation, Bayesian optimisation for hyperparameters, and the
        base-rate reasoning that dominates any fraud or medical-screening discussion.</p>
+    <div class="viz" data-viz="p12-bayes"></div>
   </div>
 
   <div class="term">
@@ -107,8 +117,10 @@ to be engineered away. It is the honest output.</p>
     <p><strong>Prior</strong>: what you believed before the data. <strong>Likelihood</strong>: how
        well a parameter value explains the data you saw. <strong>Posterior</strong>: the updated
        belief afterwards.</p>
-    <p class="wh">L2 regularisation is exactly a Gaussian prior on the weights; L1 is a Laplace
-       prior. Regularisation is a prior — that equivalence is a senior-level answer.</p>
+    <p class="wh">A penalty that discourages large weights can also express a prior preference for
+       smaller weights. A squared L2 penalty corresponds to a Gaussian prior when fitting by MAP,
+       introduced below. This is a connection to revisit after the worked coin example.</p>
+    <div class="viz" data-viz="p12-beliefs"></div>
   </div>
 
   <div class="term">
@@ -117,37 +129,45 @@ to be engineered away. It is the honest output.</p>
        as probable as possible.</p>
     <p class="wh"><strong>Cross-entropy loss is MLE.</strong> Minimising it is maximising the
        log-likelihood of the training data. Same equation, opposite sign.</p>
+    <div class="viz" data-viz="p12-mle"></div>
   </div>
 
   <div class="term">
     <div class="t">MAP <span class="tag">mid</span></div>
-    <p>Maximum a posteriori: like MLE but multiply by a prior first. MLE plus a regulariser.</p>
+    <p>Maximum a posteriori: choose the parameter with the highest updated probability
+       (or density). Like MLE, but multiply the likelihood by a prior preference first.</p>
     <p class="wh">MAP with a Gaussian prior <em>is</em> ridge regression. Literally the same
        objective, with λ set by the prior's variance.</p>
+    <div class="viz" data-viz="p12-map"></div>
   </div>
 
   <div class="term">
     <div class="t">i.i.d. <span class="tag">mid</span></div>
     <p>Independent and identically distributed: each sample is drawn separately, from the same
        distribution.</p>
-    <p class="wh">The assumption underneath train/test splits, cross-validation, and every
-       confidence interval you will ever quote — and the one that production violates first. See the
-       trap below; it is the highest-value thing in this module.</p>
+    <p class="wh">Simple random train/test splits and many basic uncertainty calculations rely on this
+       assumption. Time-ordered or grouped data may violate it and need different methods; see the
+       trap below.</p>
+    <div class="viz" data-viz="p12-iid"></div>
   </div>
 
   <div class="term">
     <div class="t">Law of large numbers <span class="tag">basic</span></div>
-    <p>Average enough independent samples and the average converges to the true expectation.</p>
+    <p>For independent samples from the same distribution with a finite mean, the sample
+       average converges to that mean as the sample count grows.</p>
     <p class="wh">Why a big enough test set gives a trustworthy accuracy, and why a 40-row holdout
        does not.</p>
+    <div class="viz" data-viz="p12-lln"></div>
   </div>
 
   <div class="term">
     <div class="t">Central limit theorem <span class="tag">mid</span></div>
-    <p>Sums and averages of many independent variables end up approximately Gaussian, <em>whatever
-       the original distribution was</em>.</p>
+    <p>For independent samples from the same distribution with finite, nonzero variance,
+       the centred average, scaled by its shrinking standard deviation, approaches a Gaussian
+       (bell-shaped) distribution. The original distribution need not be bell-shaped.</p>
     <p class="an">One die is flat. The total of thirty dice is a bell curve. The bell appears from
        adding, not from the dice.</p>
+    <div class="viz" data-viz="clt"></div>
     <p class="wh">This is why A/B test statistics work on wildly non-normal metrics: you are testing
        the <em>mean</em>, and means go Gaussian.</p>
   </div>
@@ -156,8 +176,10 @@ to be engineered away. It is the honest output.</p>
     <div class="t">Stochastic <span class="tag">basic</span></div>
     <p>Involving randomness. In SGD it refers to one specific thing: the gradient is computed on a
        random mini-batch, so it is a <em>noisy estimate</em> of the true gradient.</p>
-    <p class="wh">That noise is not merely tolerated — it is useful. It knocks you off saddle points
-       and biases training toward flatter minima, which generalise better.</p>
+    <p class="wh">A mini-batch is a small subset of training examples. It makes each update cheaper.
+       Its randomness may help exploration, but does not guarantee escaping a saddle point or
+       finding a model that works better on new data.</p>
+    <div class="viz" data-viz="p12-stochastic"></div>
   </div>
 
   <div class="term">
@@ -168,13 +190,14 @@ to be engineered away. It is the honest output.</p>
        <strong>Poisson</strong> — counts of rare events in a window, e.g. fraud attempts per hour.</p>
     <p class="wh">Binary classification = Bernoulli, so the loss is binary cross-entropy. Multiclass
        = categorical, so it is softmax + cross-entropy. The loss follows from the distribution.</p>
+    <div class="viz" data-viz="p12-common"></div>
   </div>
 
 </div>
 
 <h2 data-n="12.3">Bayes, and the mistake almost everyone makes</h2>
 
-<p>A test for a disease is 99 % accurate. You test positive. What is the chance you have the
+<p>An illustrative screening test detects 99 % of cases and correctly clears 99 % of non-cases. You test positive. What is the chance you have the
 disease?</p>
 
 <p>Nearly everyone says 99 %. The real answer, for a disease affecting 1 in 1,000 people, is about
@@ -189,8 +212,9 @@ have the disease and 99 of them test positive. But 99,900 are healthy, and 1 % o
 
 <div class="box where">
   <span class="lbl">Why this is a fraud-detection question in disguise</span>
-  <p>Fraud is roughly 0.1 % of transactions. A model with 99 % precision <em>on the fraud class</em>
-  and 99 % recall still floods your review queue, for exactly the arithmetic above. This is why
+  <p>Fraud is roughly 0.1 % of transactions. A model with a 1 % false-positive rate
+  (healthy transactions incorrectly flagged) and 99 % recall (fraud cases caught) can still fill
+  your review queue with false alarms, for exactly the arithmetic above. This is why
   accuracy is a useless metric on imbalanced problems, why you look at PR-AUC rather than ROC-AUC,
   and why the first question in any fraud design round is “what is the base rate?”. Module 25 does
   the metrics; the reasoning starts here.</p>
@@ -474,6 +498,7 @@ a strong seniority signal.</p>
 
 <script src="../assets/code.js"></script>
 <script src="../assets/viz.js"></script>
+<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>
