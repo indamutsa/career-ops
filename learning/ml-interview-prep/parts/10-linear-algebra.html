@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Linear algebra — ML Interview Prep</title>
-<link rel="stylesheet" href="../assets/app.css?v=20260907-linear-density-12">
+<link rel="stylesheet" href="../assets/app.css?v=20260907-legend-11">
 </head>
 <body>
 
@@ -23,14 +23,18 @@
 
 <h2 data-n="10.1">The problem this was invented to solve</h2>
 
-<p>Suppose you want to describe a house. You write down: 120 (square metres), 3 (bedrooms), 1985
-(year built), 4.2 (kilometres from the centre). You now have <code>[120, 3, 1985, 4.2]</code>.
-That list <em>is</em> the recorded house, as far as any model is concerned.</p>
+<p>Suppose you want to describe a house. You write down: <span data-house="area">120</span> (square
+metres), <span data-house="beds">3</span> (bedrooms), <span data-house="year">1985</span>
+(year built), <span data-house="km">4.2</span> (kilometres from the centre). You now have
+<code data-house="vec-raw">[120, 3, 1985, 4.2]</code>. That list <em>is</em> the recorded house, as
+far as any model is concerned.</p>
 
-<p>The price rule cares about age rather than the calendar number 1985, so it performs one visible
-conversion: <span class="m">age = 2026 − year built = 2026 − 1985 = 41</span>. From section 10.2
-onward, the model-ready house is therefore <code>[120, 3, 41, 4.2]</code>. Nothing was replaced by
-an unexplained number: 41 came directly from the 1985 you wrote down.</p>
+<p>The price rule cares about age rather than the calendar number <span data-house="year">1985</span>,
+so it performs one visible conversion: <span class="m" data-house="age-calc">age = 2026 − year built
+= 2026 − 1985 = 41</span>. From section 10.2 onward, the model-ready house is therefore
+<code data-house="vec-model">[120, 3, 41, 4.2]</code>. Nothing was replaced by an unexplained
+number: <span data-house="age">41</span> came directly from the
+<span data-house="year">1985</span> you wrote down.</p>
 
 <p>So the two questions linear algebra answers are: <strong>how do I compare two lists?</strong> and
 <strong>how do I transform a list into a different list?</strong> That is the whole subject. Compare
@@ -39,9 +43,12 @@ an unexplained number: 41 came directly from the 1985 you wrote down.</p>
 <div class="box analogy">
   <span class="lbl">The one example for this module</span>
   <p>Everything on this page is <strong>these four houses</strong>. There are no side examples,
-  abstract matrices or numbers that arrive from nowhere. Each new idea shows up as a question about this
-  table, and every figure below is wired to the same live house, so a value you meet in 10.3 is
-  literally the same value in the last figure on the page.</p>
+  abstract matrices or numbers that arrive from nowhere. Each new idea shows up as a question about
+  this table. The house you are pricing lives in the controller below: drag it and the text of 10.1,
+  every figure through 10.6, and the eigenvector figure in 10.9 all recompute from the same four
+  numbers, so a value you meet in 10.3 is literally the same value later on. From 10.7 the page turns
+  to the four sold houses in this table, which stay fixed — recovering the price list from them is
+  the whole point of those sections.</p>
   <div class="tw"><table>
     <thead><tr><th>house</th><th>area m²</th><th>bedrooms</th><th>year built</th>
                <th>km to centre</th><th>price k€</th></tr></thead>
@@ -138,12 +145,18 @@ house had to become a vector in the first place.</p>
   </div>
 </details>
 
-<div class="math-work" aria-label="Worked dot product for house A">
-  <div class="step"><i>x</i> = <span class="matrix vector"><span>120</span><span>3</span><span>41</span><span>4.2</span></span>
+<div class="math-work" aria-label="Worked dot product for your house">
+  <div class="step"><i>x</i> = <span class="matrix vector"><span data-house="area">120</span><span data-house="beds">3</span><span data-house="age">41</span><span data-house="km">4.2</span></span>
     <i>w</i> = <span class="matrix vector"><span>3</span><span>8</span><span>−0.4</span><span>−12</span></span></div>
-  <div class="step"><i>x</i>ᵀ<i>w</i> = 120(3) + 3(8) + 41(−0.4) + 4.2(−12)</div>
-  <div class="step">= 360 + 24 − 16.4 − 50.4 = <strong>317.2 k€</strong></div>
+  <div class="step"><i>x</i>ᵀ<i>w</i> = <span data-house="terms">120(3) + 3(8) + 41(−0.4) + 4.2(−12)</span></div>
+  <div class="step">= <span data-house="products">360 + 24 − 16.4 − 50.4</span> = <strong><span data-house="price">317.2</span> k€</strong></div>
   <div class="meaning">Each position keeps its meaning: area × area-price, bedrooms × bedroom-price, age × age-price, distance × distance-price.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>x</i></b><span>your house — four numbers, always in the order area, bedrooms, age, km</span></span>
+    <span><b><i>w</i></b><span>the price list — what one unit of each feature is worth</span></span>
+    <span><b><i>x</i>ᵀ<i>w</i></b><span>the dot product: multiply the matching slots, then add the four results</span></span>
+    <span><b>k€</b><span>thousands of euros — the unit every price on this page is in</span></span>
+  </div>
 </div>
 
 <div class="viz math-terms" data-viz="house-price"></div>
@@ -262,6 +275,12 @@ the same multiply-then-add you did in 10.3, run once per row.</p>
   <div class="step"><i>Xw</i> = <span class="matrix vector"><span>120(3)+3(8)+41(−0.4)+4.2(−12)</span><span>60(3)+2(8)+51(−0.4)+6(−12)</span></span></div>
   <div class="step">= <span class="matrix vector"><span>317.2</span><span>103.6</span></span> k€</div>
   <div class="meaning">A 2×4 house table times four feature weights produces two prices. The shared 4 is consumed by each dot product.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>X</i></b><span>the house table — one row per house, one column per feature</span></span>
+    <span><b><i>w</i></b><span>the same price list as above, unchanged</span></span>
+    <span><b><i>Xw</i></b><span>one dot product per row, so one price comes out per house</span></span>
+    <span><b>2×4</b><span>the shape: two houses down, four features across</span></span>
+  </div>
 </div>
 
 <div class="viz math-terms" data-viz="house-table"></div>
@@ -298,6 +317,17 @@ square matrix with one row and one column per feature, no matter how many houses
   <div class="step"><i>X</i>ᵀ<i>X</i>ŵ = <i>X</i>ᵀ<i>p</i></div>
   <div class="step">ŵ = (<i>X</i>ᵀ<i>X</i>)⁻¹<i>X</i>ᵀ<i>p</i></div>
   <div class="meaning"><i>Xw</i> is the reachable price vector closest to the observed prices <i>p</i>: geometrically, it is the projection of <i>p</i> onto the columns of <i>X</i>. In the clean square example below, this simplifies to <i>w = X</i>⁻¹<i>p</i>.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>X</i></b><span>the sold houses — one row each, one column per feature</span></span>
+    <span><b><i>p</i></b><span>the prices those houses actually sold for</span></span>
+    <span><b><i>w</i></b><span>a candidate price list — the unknown you are solving for</span></span>
+    <span><b>ŵ</b><span>the best-fit answer; the hat means estimated from data, not exact</span></span>
+    <span><b><i>Xw</i></b><span>the prices a candidate price list <i>w</i> predicts</span></span>
+    <span><b>‖·‖²₂</b><span>squared length from 10.4 — the total miss, added over every house</span></span>
+    <span><b>arg min<sub>w</sub></b><span>“the <i>w</i> that makes what follows as small as it goes”</span></span>
+    <span><b><i>X</i>ᵀ</b><span><i>X</i> flipped on its side — its rows become columns</span></span>
+    <span><b>(·)⁻¹</b><span>the inverse from 10.6 — the matrix that undoes the multiplication</span></span>
+  </div>
 </div>
 
 <details class="deep">
@@ -349,18 +379,28 @@ table repeats information.</p>
   <div class="deep-body">
 
 <p>Someone adds a column to your table: the area again, this time in square feet. It is honest
-data, correctly measured, and it destroys the model. Every entry in the new column is
-<span class="m">10.7639</span> times the entry beside it, so it carries no information the table
-did not already have.</p>
+data, correctly measured, and it destroys the model. One metre is 3.28084 feet, so one square
+metre is <span class="m">3.28084² = 10.7639</span> square feet — that factor is a definition of
+the units, not anything measured about these houses. Every entry in the new column is therefore
+exactly <span class="m">10.7639</span> times the entry beside it, so it carries no information
+the table did not already have.</p>
   </div>
 </details>
 
 <div class="math-work" aria-label="Worked determinant of two duplicate house features">
-  <div class="step"><i>D</i> = <span class="matrix"><span>120</span><span>1291.668</span><span>60</span><span>645.834</span></span>
-    <span class="meaning">rows: houses A and B; columns: area in m² and the same area in ft²</span></div>
+  <div class="step">1 m = 3.28084 ft &nbsp;⇒&nbsp; 1 m² = 3.28084² = <strong>10.7639</strong> ft²</div>
+  <div class="step">120 × 10.7639 = 1291.668 &nbsp;·&nbsp; 60 × 10.7639 = 645.834</div>
+  <div class="step"><i>D</i> = <span class="matrix"><span>120</span><span>1291.668</span><span>60</span><span>645.834</span></span></div>
+  <div class="meaning">rows: houses A and B &nbsp;·&nbsp; columns: the area in m², and the same area in ft²</div>
   <div class="step">det(<i>D</i>) = (120)(645.834) − (60)(1291.668)</div>
   <div class="step">= 77,500.08 − 77,500.08 = <strong>0</strong></div>
   <div class="meaning">The second column is 10.7639 times the first, so the two columns trace only one direction. A zero determinant means this square slice cannot be inverted.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>D</i></b><span>a 2×2 slice: two houses, one feature written twice in two units</span></span>
+    <span><b>det(<i>D</i>)</b><span>the determinant — the area the two columns enclose between them</span></span>
+    <span><b>10.7639</b><span>square feet in one square metre — 3.28084², fixed by the units and nothing else</span></span>
+    <span><b>0</b><span>the columns lie along one line, so they enclose no area at all</span></span>
+  </div>
 </div>
 
 <div class="viz math-terms" data-viz="house-singular"></div>
@@ -425,6 +465,12 @@ two off-diagonal entries are <span class="m">0.98</span> because area and bedroo
   <div class="step">= <span class="matrix vector"><span>1.400</span><span>1.400</span></span>
     = 1.98<span class="matrix vector"><span>0.707</span><span>0.707</span></span> = 1.98<i>v</i></div>
   <div class="meaning">The output is longer but still points along “area and bedrooms rise together.” Therefore v is an eigenvector and 1.98 is its eigenvalue.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>C</i></b><span>how the two features move together: 1.00 on the diagonal, 0.98 off it</span></span>
+    <span><b><i>v</i></b><span>a candidate direction, written as a pair of length 1</span></span>
+    <span><b><i>Cv</i></b><span>that direction after <i>C</i> has acted on it</span></span>
+    <span><b>1.98</b><span>the eigenvalue — how much longer <i>v</i> got, having not turned</span></span>
+  </div>
 </div>
 
 <div class="viz math-terms" data-viz="house-eigen"></div>
@@ -464,6 +510,12 @@ replace area and bedrooms with each house’s one coordinate along the useful di
       <div class="step">det(<i>C</i>−λ<i>I</i>) = det<span class="matrix"><span>1−λ</span><span>0.98</span><span>0.98</span><span>1−λ</span></span></div>
       <div class="step">= (1−λ)² − (0.98)² = 0</div>
       <div class="step">1−λ = ±0.98 &nbsp;⇒&nbsp; <strong>λ₁ = 1.98</strong>, <strong>λ₂ = 0.02</strong></div>
+      <div class="legend"><span class="lt">what each symbol is</span>
+        <span><b>λ</b><span>the eigenvalue being solved for — the stretch factor, still unknown</span></span>
+        <span><b><i>I</i></b><span>the identity: 1 down the diagonal, 0 elsewhere; it leaves any vector alone</span></span>
+        <span><b><i>C</i>−λ<i>I</i></b><span>the same <i>C</i> with λ subtracted from each diagonal entry</span></span>
+        <span><b>det(·)=0</b><span>the condition that some direction survives unturned</span></span>
+      </div>
     </div>
   </div>
 </details>
@@ -482,6 +534,13 @@ replace area and bedrooms with each house’s one coordinate along the useful di
   <div class="step"><i>X</i><sub>houses×features</sub> = <i>U</i><sub>houses×directions</sub> Σ<sub>direction strengths</sub> <i>V</i>ᵀ<sub>directions×features</sub></div>
   <div class="step"><i>X</i><sub>4×4</sub> = <i>U</i><sub>4×4</sub> Σ<sub>4×4</sub> <i>V</i>ᵀ<sub>4×4</sub></div>
   <div class="meaning">Read right to left: Vᵀ mixes the four features into directions, Σ scales those directions, and U assigns the resulting amounts to the four houses.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>X</i></b><span>the house table, standardised and centred first</span></span>
+    <span><b><i>U</i></b><span>how much of each direction each house takes</span></span>
+    <span><b>Σ</b><span>the strengths — one number per direction, biggest first</span></span>
+    <span><b><i>V</i>ᵀ</b><span>the directions themselves, written over the four features</span></span>
+    <span><b><sub>4×4</sub></b><span>the subscripts are shapes: rows × columns</span></span>
+  </div>
 </div>
 
 <details class="deep">
@@ -568,9 +627,21 @@ error; the rebuild tab lets you watch what each extra recipe repairs.</p>
   <div class="step"><i>j</i>·<i>r</i> = 10(5)+2(−6)+15(6)+6(−3) = 50−12+90−18 = 110</div>
   <div class="step"><i>j</i>·<i>j</i> = 10²+2²+15²+6² = 100+4+225+36 = 365</div>
   <div class="step"><i>a</i> = 110/365 = <strong>0.3014</strong></div>
-  <div class="step">α=0.30: &nbsp; w<sub>L1</sub> = max(0.3014−0.30, 0) = 0.0014 &nbsp;·&nbsp; w<sub>L2</sub> = 0.3014/(1+0.30) = 0.2318</div>
+  <div class="step">now choose α = 0.30 &nbsp;—&nbsp; a dial you set, not a number the data handed you</div>
+  <div class="step">w<sub>L1</sub> = max(0.3014 − 0.30, 0) = 0.0014</div>
+  <div class="step">w<sub>L2</sub> = 0.3014 / (1 + 0.30) = 0.2318</div>
   <div class="step">α≥0.3014: &nbsp; <strong>w<sub>L1</sub> = 0</strong> &nbsp;·&nbsp; w<sub>L2</sub> remains above 0 for finite α</div>
   <div class="meaning">The day-of-month feature accidentally fits noise. Lasso can delete it; Ridge keeps it but limits its influence.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>j</i></b><span>the junk feature — the day of the month each house happened to sell on</span></span>
+    <span><b><i>r</i></b><span>the residuals — what the four-feature price rule got wrong on each house</span></span>
+    <span><b><i>j</i>·<i>r</i></b><span>a dot product from 10.3: how much of the leftover error <i>j</i> lines up with</span></span>
+    <span><b><i>j</i>·<i>j</i></b><span>the same dot product of <i>j</i> with itself — its squared length</span></span>
+    <span><b><i>a</i></b><span>the weight an unpenalised fit hands the junk feature: 110/365</span></span>
+    <span><b>α</b><span>the penalty strength — the one number here you pick yourself. 0.30 is chosen to sit just under <i>a</i>, so you can watch L1 nearly delete the feature and L2 not</span></span>
+    <span><b>w<sub>L1</sub></b><span>that weight after Lasso — subtract α, floor at 0</span></span>
+    <span><b>w<sub>L2</sub></b><span>that weight after Ridge — divide by 1+α, never quite 0</span></span>
+  </div>
 </div>
 
 <details class="deep">
@@ -785,9 +856,9 @@ than a chosen limit, it rescales that vector without changing its direction.</p>
   <a href="../index.html#11" target="_top"><span class="k">Next</span>11 · Calculus &amp; minima →</a>
 </div>
 
-<script src="../assets/code.js"></script>
-<script src="../assets/viz.js?v=20260907-linear-density-12"></script>
-<script src="../assets/glossary.js"></script>
-<script src="../assets/app.js?v=20260907-linear-density-12"></script>
+<script src="../assets/code.js?v=20260907-legend-11"></script>
+<script src="../assets/viz.js?v=20260907-legend-11"></script>
+<script src="../assets/glossary.js?v=20260907-legend-11"></script>
+<script src="../assets/app.js?v=20260907-legend-11"></script>
 </body>
 </html>
