@@ -7,7 +7,13 @@ Attention is how a fixed parameter budget buys arbitrary context. This lesson de
 problem it solves, builds it in four stages, and ends with the multi-head causal attention that goes
 into your model in B5.
 
-Reference companion: [Module 03](../03-attention.md).
+**You write** `code/b4_attention.py` · **you record in** `notes/b4-attention.md` ·
+**reference companion** [M03 — Attention](../03-attention.md)
+
+```bash
+cp notes/_template.md notes/b4-attention.md
+touch code/b4_attention.py
+```
 
 ---
 

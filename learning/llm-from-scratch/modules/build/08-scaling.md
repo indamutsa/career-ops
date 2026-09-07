@@ -8,7 +8,13 @@ You have three trained models. In this lesson you fit a power law to your own da
 and then test the extrapolation by training a fourth model — which is the entire scientific content
 of the scaling-laws literature, at a size where you can run it in an afternoon.
 
-Reference companion: [Module 06](../06-pretraining.md).
+**You write** `code/b8_scaling.py` · **you record in** `notes/b8-scaling.md` ·
+**reference companion** [M06 — Pretraining](../06-pretraining.md), the scaling-law half
+
+```bash
+cp notes/_template.md notes/b8-scaling.md
+touch code/b8_scaling.py
+```
 
 ---
 

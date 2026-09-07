@@ -198,6 +198,7 @@
     initTabs(root);
     if (window.MLIPCode) window.MLIPCode.init(root);
     if (window.MLIPViz) window.MLIPViz.init(root);
+    if (window.MLIPGloss) window.MLIPGloss.init(root);
   }
 
   /* ---------------------------------------------------------------
@@ -205,18 +206,71 @@
      --------------------------------------------------------------- */
   var nav = document.getElementById('nav');
 
+  function initStandaloneCompletion() {
+    if (window.parent !== window) return;
+    if (document.body.dataset.completionReady) return;
+    var filename = decodeURIComponent(location.pathname.split('/').pop() || '');
+    var module = null;
+    for (var i = 0; i < MODULES.length; i++) {
+      if (MODULES[i].f === filename) { module = MODULES[i]; break; }
+    }
+    if (!module) return;
+    document.body.dataset.completionReady = '1';
+
+    var modal = document.createElement('div');
+    modal.id = 'modal';
+    modal.hidden = true;
+    modal.innerHTML = '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mtitle">' +
+      '<h3 id="mtitle">Mark it done?</h3>' +
+      '<p id="mbody" class="muted"></p>' +
+      '<div class="row"><button id="mno" type="button">Cancel</button>' +
+      '<button id="myes" type="button" class="primary">Mark done</button></div></div>';
+    document.body.appendChild(modal);
+    modal.querySelector('#mbody').textContent = '\u201c' + module.t + '\u201d gets a tick in the ' +
+      'course sidebar and counts toward the track total. You can undo it there any time.';
+
+    var prompted = false;
+    function savedDone() {
+      try { return new Set(JSON.parse(LS.get('mlip.done', '[]'))); }
+      catch (e) { return new Set(); }
+    }
+    function close() { modal.hidden = true; }
+    function checkBottom() {
+      var root = document.scrollingElement || document.documentElement;
+      var range = root.scrollHeight - root.clientHeight;
+      if (prompted || range <= 40 || range - root.scrollTop > 8 || savedDone().has(module.id)) return;
+      prompted = true;
+      modal.hidden = false;
+      modal.querySelector('#myes').focus();
+    }
+    modal.querySelector('#mno').addEventListener('click', close);
+    modal.querySelector('#myes').addEventListener('click', function () {
+      var done = savedDone();
+      done.add(module.id);
+      LS.set('mlip.done', JSON.stringify(Array.from(done)));
+      close();
+    });
+    modal.addEventListener('click', function (event) { if (event.target === modal) close(); });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !modal.hidden) close();
+    });
+    window.addEventListener('scroll', checkBottom, { passive: true });
+    checkBottom();
+  }
+
   if (!nav) {
     /* ----- standalone part page ----- */
     document.body.classList.add('standalone');
-    document.addEventListener('DOMContentLoaded', function () { initPage(document); });
-    if (document.readyState !== 'loading') initPage(document);
+    function startStandalone() { initPage(document); initStandaloneCompletion(); }
+    document.addEventListener('DOMContentLoaded', startStandalone);
+    if (document.readyState !== 'loading') startStandalone();
 
     // let the shell drive theme + drill when we are inside its iframe
     window.addEventListener('message', function (e) {
       var d = e.data || {};
       if (d.mlip === 'theme') applyTheme(d.value);
       if (d.mlip === 'drill') document.body.classList.toggle('drill', !!d.value);
-      if (d.mlip === 'expand') setAll(document.querySelectorAll('details.q'), !!d.value);
+      if (d.mlip === 'expand') setAll(document.querySelectorAll('details.q, details.deep'), !!d.value);
     });
     return;
   }
@@ -317,6 +371,7 @@
   /* ---------- loading a module ---------- */
   var textCache = {};   // id -> plain text, for search
   var current = null;
+  var searchRevealUntil = 0;
 
   function byId(id) {
     for (var i = 0; i < MODULES.length; i++) if (MODULES[i].id === id) return MODULES[i];
@@ -336,7 +391,20 @@
     if (IFRAME_MODE) {
       wrap.hidden = true; frame.hidden = false;
       frame.src = 'parts/' + m.f;
-      frame.onload = function () { pushToFrame(); };
+      frame.onload = function () {
+        pushToFrame();
+        try {
+          var doc = frame.contentDocument;
+          var scroller = doc.scrollingElement || doc.documentElement;
+          revealSearchMatch(doc.body, qbox ? qbox.value : '');
+          var frameBottom = function () {
+            var range = scroller.scrollHeight - scroller.clientHeight;
+            maybePromptCompletion(range > 40 && range - scroller.scrollTop <= 8);
+          };
+          scroller.addEventListener('scroll', frameBottom, { passive: true });
+          frameBottom();
+        } catch (e) {}
+      };
     } else {
       frame.hidden = true; wrap.hidden = false;
       wrap.innerHTML = '<p class="faint">Loading…</p>';
@@ -350,6 +418,7 @@
         initPage(wrap);
         applyDrillLocal();
         document.getElementById('main').scrollTop = 0;
+        revealSearchMatch(wrap, qbox ? qbox.value : '');
         paintScroll();
       }).catch(function (e) {
         wrap.innerHTML = '<h1>Not written yet</h1><p class="lead">' +
@@ -385,6 +454,74 @@
   }
 
   /* ---------- search ---------- */
+  function clearSearchHighlights(root) {
+    if (!root) return;
+    var marks = root.querySelectorAll('mark[data-search-hit]');
+    for (var i = 0; i < marks.length; i++) {
+      var mark = marks[i], parent = mark.parentNode;
+      parent.replaceChild(mark.ownerDocument.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    }
+  }
+
+  function revealSearchMatch(root, rawTerm) {
+    if (!root) return 0;
+    clearSearchHighlights(root);
+    var term = (rawTerm || '').trim();
+    if (term.length < 3) return 0;
+
+    var doc = root.ownerDocument || document;
+    var win = doc.defaultView || window;
+    var walker = doc.createTreeWalker(root, win.NodeFilter.SHOW_TEXT);
+    var nodes = [], node;
+    while ((node = walker.nextNode())) {
+      var parent = node.parentElement;
+      if (!parent || parent.closest('script, style, svg, button, input, textarea, select, ' +
+                                    'mark, [hidden], [aria-hidden="true"]')) continue;
+      if (node.data.toLowerCase().indexOf(term.toLowerCase()) >= 0) nodes.push(node);
+    }
+
+    var first = null, count = 0, needle = term.toLowerCase();
+    nodes.forEach(function (textNode) {
+      if (count >= 80 || !textNode.parentNode) return;
+      var source = textNode.data, lower = source.toLowerCase(), at = 0, hit;
+      var fragment = doc.createDocumentFragment();
+      while (count < 80 && (hit = lower.indexOf(needle, at)) >= 0) {
+        if (hit > at) fragment.appendChild(doc.createTextNode(source.slice(at, hit)));
+        var mark = doc.createElement('mark');
+        mark.dataset.searchHit = '1';
+        mark.textContent = source.slice(hit, hit + term.length);
+        if (!first) { first = mark; mark.classList.add('current'); }
+        fragment.appendChild(mark);
+        count++;
+        at = hit + term.length;
+      }
+      if (at < source.length) fragment.appendChild(doc.createTextNode(source.slice(at)));
+      textNode.parentNode.replaceChild(fragment, textNode);
+    });
+
+    if (first) {
+      var details = first.closest('details');
+      if (details) details.open = true;
+      searchRevealUntil = Date.now() + 250;
+      win.requestAnimationFrame(function () {
+        win.requestAnimationFrame(function () {
+          first.scrollIntoView({ block: 'center', inline: 'nearest' });
+        });
+      });
+    }
+    return count;
+  }
+
+  function highlightCurrentSearch() {
+    var term = qbox ? qbox.value : '';
+    if (IFRAME_MODE) {
+      try { revealSearchMatch(frame.contentDocument.body, term); } catch (e) {}
+    } else {
+      revealSearchMatch(wrap, term);
+    }
+  }
+
   var allFetched = false;
   function fetchAllText() {
     if (allFetched || IFRAME_MODE) return Promise.resolve();
@@ -424,11 +561,17 @@
     qbox.addEventListener('input', function () {
       var t = qbox.value;
       filterNav(t);
+      if (!t.trim()) highlightCurrentSearch();
       // the box lives in the topbar but filters the sidebar, so on narrow screens
       // the results sit behind a closed drawer — open it while a term is active
       if (window.matchMedia('(max-width: 900px)').matches)
         document.body.classList.toggle('navopen', !!t.trim());
       if (t.length >= 3) fetchAllText().then(function () { filterNav(qbox.value); });
+    });
+    nav.addEventListener('click', function (event) {
+      var link = event.target.closest('a[data-id]');
+      if (link && link.dataset.id === current)
+        setTimeout(highlightCurrentSearch, 0);
     });
   }
 
@@ -468,6 +611,13 @@
     saveDone(s); paintProgress();
   }
 
+  function promptMarkDone(id) {
+    var m = byId(id), name = m ? '\u201c' + m.t + '\u201d' : 'this module';
+    ask('Mark it done?',
+        name + ' gets a tick in the sidebar and counts toward the track total. You can undo it any time.',
+        'Mark done', function () { setDone(id, true); });
+  }
+
   bind('fabdone', function () {
     var m = byId(current), name = m ? '\u201c' + m.t + '\u201d' : 'this module';
     var id = current;
@@ -476,18 +626,25 @@
           name + ' is marked done. Clearing it removes the tick and drops it from the count.',
           'Clear it', function () { setDone(id, false); });
     else
-      ask('Mark it done?',
-          name + ' gets a tick in the sidebar and counts toward the track total. You can undo it any time.',
-          'Mark done', function () { setDone(id, true); });
+      promptMarkDone(id);
   });
 
   /* ---------- reading progress ---------- */
   var rbar = document.querySelector('#rprog i');
   var mainEl = document.getElementById('main');
+  var bottomPrompted = {};
+  function maybePromptCompletion(atBottom) {
+    if (!atBottom || !current || bottomPrompted[current] ||
+        Date.now() < searchRevealUntil || doneSet().has(current) ||
+        (modal && !modal.hidden)) return;
+    bottomPrompted[current] = true;
+    promptMarkDone(current);
+  }
   function paintScroll() {
     if (!rbar || !mainEl) return;
     var h = mainEl.scrollHeight - mainEl.clientHeight;
     rbar.style.width = (h > 40 ? Math.min(100, (mainEl.scrollTop / h) * 100) : 0) + '%';
+    if (!IFRAME_MODE) maybePromptCompletion(h > 40 && h - mainEl.scrollTop <= 8);
   }
   if (mainEl) mainEl.addEventListener('scroll', paintScroll, { passive: true });
   bind('expandbtn', function () {
@@ -495,7 +652,7 @@
       try { frame.contentWindow.postMessage({ mlip: 'expand', value: true }, '*'); } catch (e) {}
       return;
     }
-    var qs = wrap.querySelectorAll('details.q');
+    var qs = wrap.querySelectorAll('details.q, details.deep');
     var anyClosed = false;
     for (var i = 0; i < qs.length; i++) if (!qs[i].open) anyClosed = true;
     setAll(qs, anyClosed);

@@ -288,7 +288,7 @@ ${nav.join('\n')}
 </div>
 
 <script src="../assets/code.js"></script>
-<script src="../assets/viz.js"></script>
+<script src="../assets/viz.js"></script>\n<script src="../assets/glossary.js"></script>
 <script src="../assets/app.js"></script>
 </body>
 </html>

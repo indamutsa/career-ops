@@ -9,6 +9,14 @@ samples from it. The model will be bad — that is deliberate. It establishes th
 later model must beat, and it builds the training loop skeleton you will reuse unchanged for the
 next eight lessons.
 
+**You write** `code/b1_bigram.py` · **you record in** `notes/b1-first-model.md` ·
+**reference companion** [M02 — Embeddings and the residual stream](../02-embeddings.md)
+
+```bash
+cp notes/_template.md notes/b1-first-model.md
+touch code/b1_bigram.py
+```
+
 ---
 
 ## Terms

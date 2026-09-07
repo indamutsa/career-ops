@@ -322,6 +322,107 @@ pre.hl .to { color: var(--tx-dim); }                        /* operator */
 .term .warn-inline { color: var(--tx-dim); font-size: .94em; }
 .term .warn-inline::before { content: "\26A0  "; color: var(--red); font-weight: 700; }
 
+/* ---------- concise concept layers ---------- */
+.study-guide {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+  margin: 1.25em 0 2em;
+}
+.study-guide > div {
+  padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); color: var(--tx-dim); font-size: 14px; line-height: 1.55;
+}
+.study-guide b { display: block; color: var(--gold); margin-bottom: 3px; }
+
+.concept-brief {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+  margin: 1em 0 1.15em;
+}
+.concept-brief > div {
+  min-width: 0; padding: 12px 14px; border-top: 2px solid var(--border-2);
+  background: var(--panel); border-radius: 0 0 var(--radius) var(--radius);
+  color: var(--tx-soft); font-size: 14.6px; line-height: 1.58;
+}
+.concept-brief b {
+  display: block; margin-bottom: 4px; color: var(--tx-faint); font-family: var(--mono);
+  font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+}
+.concept-brief .what { border-top-color: var(--gold); }
+.concept-brief .why { border-top-color: var(--accent); }
+.concept-brief .when { border-top-color: var(--green); }
+
+.interview-line {
+  margin: .85em 0 1.55em; padding: 10px 14px; border-left: 3px solid var(--pink);
+  background: var(--pink-bg); color: var(--tx-soft); font-size: 14.8px; line-height: 1.6;
+}
+.interview-line b {
+  color: var(--pink); font-family: var(--mono); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; margin-right: 8px;
+}
+
+details.deep {
+  margin: 10px 0 14px; border: 1px dashed var(--border-2); border-radius: var(--radius);
+  background: var(--board-alt); overflow: hidden;
+}
+details.deep > summary {
+  display: flex; align-items: center; gap: 9px; padding: 10px 14px; cursor: pointer;
+  color: var(--tx-dim); font-size: 14px; font-weight: 600; line-height: 1.45;
+  list-style: none;
+}
+details.deep > summary::-webkit-details-marker { display: none; }
+details.deep > summary::after {
+  content: "+"; margin-left: auto; color: var(--gold); font-family: var(--mono); font-size: 18px;
+}
+details.deep[open] > summary::after { content: "−"; }
+details.deep > summary:hover { color: var(--tx); background: var(--panel); }
+.deep-q {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; flex: 0 0 22px;
+  border: 1px solid var(--gold-dim); border-radius: 50%; color: var(--gold);
+  font-family: var(--mono); font-size: 12px;
+}
+.deep-body {
+  padding: 14px 18px 18px; border-top: 1px solid var(--rule-line-soft);
+  color: var(--tx-soft); font-size: 15.3px; line-height: 1.68;
+}
+.deep-body > :first-child { margin-top: 0; }
+.deep-body > :last-child { margin-bottom: 0; }
+
+.math-work {
+  margin: 1em 0 1.25em; padding: 15px 16px; overflow-x: auto;
+  border: 1px solid var(--rule-line); border-radius: var(--radius); background: var(--board);
+  color: var(--chalk); text-align: center; font-family: var(--serif);
+}
+.math-work .step { margin: 7px 0; white-space: nowrap; font-size: clamp(15px, 2vw, 18px); }
+.math-work .step + .step { padding-top: 7px; border-top: 1px dashed var(--rule-line-soft); }
+.math-work .meaning {
+  margin-top: 10px; color: var(--chalk-dim); font-family: var(--sans);
+  font-size: 13.5px; line-height: 1.55; white-space: normal;
+}
+.matrix {
+  position: relative; display: inline-grid; grid-template-columns: repeat(var(--cols, 2), auto);
+  gap: 6px 15px; margin: 0 10px; padding: 4px 9px; vertical-align: middle;
+  font-family: var(--mono); font-size: .88em; font-style: normal;
+}
+.matrix::before, .matrix::after {
+  position: absolute; top: 0; bottom: 0; width: 6px; content: "";
+  border-top: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+}
+.matrix::before { left: 0; border-left: 1.5px solid currentColor; }
+.matrix::after { right: 0; border-right: 1.5px solid currentColor; }
+.matrix.vector { --cols: 1; }
+.matrix.four { --cols: 4; }
+.bridge {
+  margin: 1em 0 1.3em; color: var(--tx-dim); font-family: var(--mono); font-size: 13px;
+  line-height: 1.8; text-align: center;
+}
+.bridge strong { color: var(--gold); }
+
+@media (max-width: 720px) {
+  .study-guide, .concept-brief { grid-template-columns: 1fr; }
+  .study-guide { gap: 7px; }
+  .concept-brief { gap: 7px; }
+  .math-work { text-align: left; }
+}
+
 /* ---------- Q&A accordion ---------- */
 details.q {
   border: 1px solid var(--border); border-radius: var(--radius);
@@ -585,6 +686,14 @@ body.shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; height:
   -webkit-appearance: none; appearance: none;
 }
 #topbar #q::placeholder { color: var(--tx-faint); }
+
+mark[data-search-hit] {
+  padding: 0 .12em; color: var(--board); background: var(--amber);
+  border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+mark[data-search-hit].current {
+  outline: 2px solid var(--gold); outline-offset: 2px; scroll-margin-block: 35vh;
+}
 #topbar #q:focus { outline: none; border-color: var(--accent); }
 #topbar #q:not(:placeholder-shown) { border-color: var(--gold); color: var(--tx); }
 #topbar button { font-size: .78rem; padding: 3px 10px; background: var(--panel);
@@ -740,4 +849,189 @@ html[data-theme="light"] #modal { background: rgba(36, 48, 42, .38); }
   #fabdone { right: 18px; bottom: 18px; width: 48px; height: 48px; }
   #fabdone svg { width: 21px; height: 21px; }
   #modal .sheet { padding: 20px 20px 16px; border-radius: 14px; }
+}
+
+/* ---------- shape figures ---------------------------------------- */
+/* One renderer draws every tensor in the course; these are its parts.
+   Cells behind the front slice are dimmed rather than hidden, so a
+   3-D block reads as a stack of grids and not as a flat texture. */
+.sh-cell  { fill: var(--panel-2); stroke: var(--border-2); stroke-width: 1;
+            opacity: .45; transition: fill .18s ease, opacity .18s ease; }
+.sh-front { opacity: 1; }
+.sh-hi    { fill: var(--amber-bg); stroke: var(--gold); stroke-width: 1.6; opacity: 1; }
+.sh-hi2   { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.6; opacity: 1; }
+.viz .sh-stage { min-height: 10px; }
+
+/* the shape string under a figure, colour-matched to the axis arrows */
+.viz .shapestr { font-family: var(--mono); font-size: 15.5px; margin-top: 16px;
+                 letter-spacing: .01em; }
+.viz .shapestr .br   { color: var(--tx-faint); }
+.viz .shapestr .sep  { color: var(--tx-faint); }
+.viz .shapestr .ax   { font-weight: 600; }
+.viz .shapestr .axv  { opacity: .68; font-weight: 400; }
+.viz .shapestr .note { color: var(--tx-faint); font-size: 13.5px; }
+.viz .shapestr .ax-amber  { color: var(--amber); }
+.viz .shapestr .ax-accent { color: var(--accent); }
+.viz .shapestr .ax-green  { color: var(--green); }
+.viz .shapestr .ax-pink   { color: var(--pink); }
+
+/* the live readout a figure writes while you step through it */
+.viz .shapenote { margin-top: 14px; text-align: left; max-width: 620px;
+                  margin-left: auto; margin-right: auto; }
+.viz .shapenote p { margin: 6px 0; line-height: 1.65; }
+.viz .rd-s { font-family: var(--mono); font-size: 14px; color: var(--gold);
+             font-weight: 600; }
+.viz .rd-a { font-size: 15px; color: var(--tx-soft); }
+.viz .rd-b { font-size: 14.4px; color: var(--tx-dim); }
+.viz .ctl button.on { border-color: var(--gold); color: var(--gold);
+                      background: var(--amber-bg); }
+
+/* ---------- worked formulas -------------------------------------- */
+/* A formula on its own is a wall. Every one in this course is followed
+   by the same formula with the numbers from the surrounding story
+   already substituted, so the symbols arrive attached to something. */
+.mth { margin: 1.1em 0; padding: 14px 16px; text-align: center;
+       background: var(--board); border: 1px solid var(--rule-line);
+       border-left: 3px solid var(--gold-dim); border-radius: var(--radius); }
+.mth .f { font-family: var(--mono); font-size: 16.5px; color: var(--chalk);
+          letter-spacing: .01em; }
+.mth .w { font-family: var(--mono); font-size: 14.5px; color: var(--gold);
+          margin-top: 9px; line-height: 1.7; }
+.mth .w b { color: var(--gold); font-weight: 700; }
+.mth .n  { font-size: 13.6px; color: var(--tx-dim); margin-top: 9px;
+           font-family: var(--sans); line-height: 1.65; }
+#wrap > .mth { max-width: var(--maxw); }
+
+/* ---------- glossary chips --------------------------------------- */
+/* Any term the course uses before it teaches it gets one of these,
+   inserted automatically by glossary.js. Click it and the definition
+   opens where it stands — no popover to clip on a narrow screen. */
+.gl { border-bottom: 1px dashed var(--gold-dim); cursor: help;
+      color: inherit; }
+.gl:hover { border-bottom-color: var(--gold); color: var(--gold); }
+.gl:focus-visible { outline: 2px solid var(--gold-dim); outline-offset: 2px;
+                    border-radius: 2px; }
+.gl > i { display: none; }
+.gl.open { border-bottom-color: transparent; }
+.gl.open > i {
+  display: block; font-style: normal; margin: 10px 0 12px;
+  padding: 12px 14px; border-left: 3px solid var(--gold-dim);
+  background: var(--board-alt); border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 15px; line-height: 1.68; color: var(--tx-soft);
+}
+.gl.open > i b { color: var(--gold); font-weight: 600; }
+.gl.open > i .at { display: block; margin-top: 7px; font-size: 13.4px;
+                   color: var(--tx-faint); font-family: var(--mono); }
+
+@media print { .gl > i { display: block !important; } }
+
+/* a figure living inside a term card: it is already on a panel, so it
+   drops the outer frame and tightens up rather than nesting two boxes */
+.term .viz { background: var(--board); border-style: dashed; margin: 1.1em 0 .9em;
+             padding: 16px 14px 14px; }
+.term .viz .cap { background: transparent; border: 0; padding: 10px 0 0;
+                  font-size: 13.8px; }
+.term ul { margin: .2em 0 0; padding-left: 1.2em; }
+.term li { font-size: 16.1px; line-height: 1.7; margin-bottom: .55em;
+           color: var(--tx-soft); }
+
+/* Maths figures preserve their numerical labels at small screen widths. */
+.math-terms, .math-terms .term, .math-terms .viz { min-width: 0; }
+.math-terms .math-drawing { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.math-terms .math-drawing svg { max-width: none; }
+.math-terms .math-drawing:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.math-terms .math-pan-hint { color: var(--tx-dim); font-size: 13px; margin-top: 8px; }
+.math-terms .mth .f, .math-terms .mth .w { white-space: pre-line; overflow-wrap: anywhere; }
+.math-terms .ctl label { flex-wrap: wrap; justify-content: center; }
+.math-terms .ctl button[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+
+/* ---- The one live house, shared by every figure in module 10 ------------- */
+.house-panel {
+  position: fixed; top: 82px; right: max(16px, env(safe-area-inset-right)); z-index: 70;
+  width: 124px; margin: 0; padding: 0; background: transparent; border: 0;
+  border-radius: 0; text-align: left;
+}
+.house-panel[data-expanded="true"] { width: min(350px, calc(100vw - 32px)); }
+.hp {
+  overflow: hidden; background: var(--panel-2); border: 1px solid var(--border-2);
+  border-radius: 14px; padding: 6px;
+  box-shadow: 0 10px 28px -12px rgba(0,0,0,.7);
+  transition: box-shadow .18s ease;
+}
+.hp-head { display: flex; align-items: stretch; min-width: 0; }
+.hp-drag {
+  appearance: none; flex: 0 0 24px; width: 24px; min-height: 44px; padding: 0;
+  display: grid; place-items: center; color: var(--tx-faint); background: transparent;
+  border: 0; border-radius: 8px; cursor: grab; touch-action: none;
+}
+.hp-drag:hover { color: var(--gold); background: var(--amber-bg); }
+.hp-drag:active, .house-panel[data-dragging="true"] .hp-drag { cursor: grabbing; }
+.hp-drag:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hp-grip { width: 12px; height: 20px; }
+.house-panel[data-expanded="true"] .hp {
+  padding: 10px 14px 13px; box-shadow: 0 18px 42px -14px rgba(0,0,0,.78);
+}
+.hp-toggle {
+  appearance: none; flex: 1 1 auto; min-width: 0; min-height: 44px; padding: 0; border: 0;
+  display: grid; grid-template-columns: 23px minmax(0,1fr) 12px;
+  grid-template-areas: "icon title arrow" "icon price arrow";
+  align-items: center; column-gap: 5px; color: var(--tx-soft); background: transparent;
+  cursor: pointer; text-align: left;
+}
+.hp-toggle:hover { color: var(--gold); }
+.hp-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 8px; }
+.hp-icon { grid-area: icon; width: 21px; height: 21px; color: var(--gold); }
+.hp-chevron { grid-area: arrow; width: 12px; height: 12px; color: var(--tx-dim);
+              transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+.house-panel[data-expanded="true"] .hp-chevron { transform: rotate(180deg); }
+.hp-title { grid-area: title; color: var(--tx-dim); font-family: var(--mono);
+            font-size: 10px; letter-spacing: .03em; white-space: nowrap; }
+.hp-price { grid-area: price; color: var(--gold); font-family: var(--mono); font-size: 12px;
+            line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.house-panel[data-expanded="true"] .hp-title { font-size: 11px; }
+.house-panel[data-expanded="true"] .hp-price { font-size: 16px; }
+.hp-editor {
+  display: none;
+}
+.house-panel[data-expanded="true"] .hp-editor {
+  display: block; margin-top: 8px;
+  animation: house-editor-in .18s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes house-editor-in {
+  from { opacity: .35; transform: translateY(-4px); clip-path: inset(0 0 16% 0); }
+  to { opacity: 1; transform: translateY(0); clip-path: inset(0); }
+}
+.hp-row { display: grid; grid-template-columns: 104px 1fr 72px;
+          align-items: center; gap: 12px; margin: 7px 0; cursor: pointer; }
+.hp-row input[type=range] { width: 100%; }
+.hp-k { color: var(--tx-dim); font-size: 12.5px; }
+.hp-v { color: var(--tx-soft); font-size: 12.5px; text-align: right;
+        font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.hp-vec { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule-line-soft);
+          color: var(--tx-dim); font-family: var(--mono); font-size: 12px; }
+.hp-hint { margin: 7px 0 0; color: var(--tx-dim); font-size: 12.5px; line-height: 1.45; }
+@media (max-width: 640px) {
+  .house-panel { top: auto; right: max(12px, env(safe-area-inset-right));
+                 bottom: calc(76px + env(safe-area-inset-bottom)); width: 120px; }
+  .house-panel[data-expanded="true"] { width: calc(100vw - 24px); }
+  .house-panel[data-expanded="true"] .hp-editor { max-height: min(360px, 64dvh); overflow-y: auto; }
+  .hp-row { grid-template-columns: 92px 1fr 72px; gap: 8px; }
+  .hp-k, .hp-v { font-size: 11.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp, .hp-chevron { transition: none; }
+  .house-panel[data-expanded="true"] .hp-editor { animation: none; }
+}
+.hp-row input[type=range] {
+  -webkit-appearance: none; appearance: none; height: 4px;
+  border-radius: 2px; background: var(--rule-line); cursor: pointer;
+}
+.hp-row input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--gold); border: 2px solid var(--board-alt);
+  box-shadow: 0 0 0 3px rgba(232, 196, 104, 0.22);
+}
+.hp-row input[type=range]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--gold);
+  border: 2px solid var(--board-alt); cursor: pointer;
 }

@@ -10,6 +10,14 @@ By the end of this lesson you will have implemented Byte-Pair Encoding from noth
 
 The reference companion is [Module 01](../01-tokenization.md) — read it after this, not before.
 
+**You write** `code/b2_tokenizer.py` · **you record in** `notes/b2-tokenizer.md` ·
+**reference companion** [M01 — Tokenization](../01-tokenization.md)
+
+```bash
+cp notes/_template.md notes/b2-tokenizer.md
+touch code/b2_tokenizer.py
+```
+
 ---
 
 ## Terms

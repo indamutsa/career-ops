@@ -7,7 +7,13 @@ write. This lesson is where you stop treating generation as a black box.
 You will implement greedy, temperature, top-k, top-p and min-p decoding from scratch, build a KV
 cache and measure the speedup, and see repetition and degeneration appear in your own outputs.
 
-Reference companion: [Module 08](../08-decoding.md).
+**You write** `code/b7_sample.py` · **you record in** `notes/b7-sampling.md` ·
+**reference companion** [M08 — Decoding and sampling](../08-decoding.md)
+
+```bash
+cp notes/_template.md notes/b7-sampling.md
+touch code/b7_sample.py
+```
 
 ---
 

@@ -10,7 +10,14 @@ evaluation, days later.
 
 By the end you will have a tokenized TinyStories corpus on disk and a batch loader you trust.
 
-Reference companions: [Module 13](../13-datasets.md) and [Module 06](../06-pretraining.md).
+**You write** `code/b3_data.py` · **you record in** `notes/b3-data.md` · **reference companion**
+[M13 — Fine-tuning dataset construction](../13-datasets.md) ·
+[M06 — Pretraining](../06-pretraining.md)
+
+```bash
+cp notes/_template.md notes/b3-data.md
+touch code/b3_data.py
+```
 
 ---
 

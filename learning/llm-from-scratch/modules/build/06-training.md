@@ -12,7 +12,14 @@ instead of finding out at step 20,000.
 Target: **val loss ≈ 1.5–1.8 bits/token on TinyStories, coherent multi-sentence output, ~45 minutes
 on your M3 Pro.**
 
-Reference companions: [Module 06](../06-pretraining.md), [Module 17](../17-distributed.md).
+**You write** `code/b6_train.py` · **you record in** `notes/b6-training.md` ·
+**reference companion** [M06 — Pretraining](../06-pretraining.md) ·
+[M17 — Distributed training](../17-distributed.md)
+
+```bash
+cp notes/_template.md notes/b6-training.md
+touch code/b6_train.py
+```
 
 ---
 

@@ -6,13 +6,28 @@ every concept in 28 reference modules.
 
 ## → [**START-HERE.md**](START-HERE.md) ←
 
-That file is the entry point: environment check, the first lesson to open, and the order to do
-everything in. Read it first.
+That file is the entry point: what the page ids mean, how to set up the workspace, the first lesson
+to open, and the order to do everything in. Read it first.
 
-Two other files, both reference — not starting points:
+```bash
+cd learning/llm-from-scratch
+mkdir -p code notes data checkpoints
+pip install -r requirements.txt
+python3 code/check_env.py
+```
 
-- [`SYLLABUS.md`](SYLLABUS.md) — index of the 28 deep-dive modules
-- [`GLOSSARY.md`](GLOSSARY.md) — 175 terms, each with where you'd meet it in production
+### The rest of the tree
+
+| Path | What it is |
+|------|------------|
+| [`START-HERE.md`](START-HERE.md) | The entry point. Start here. |
+| [`PLAN.md`](PLAN.md) | The dated schedule — four sprints, a hard gate at the end of each |
+| [`modules/build/`](modules/build/README.md) | **The curriculum.** Eleven lessons, B0 → B10 |
+| [`SYLLABUS.md`](SYLLABUS.md) | Index of the 28 deep-dive reference modules in `modules/` |
+| [`GLOSSARY.md`](GLOSSARY.md) | 175 terms, each with where you'd meet it in production |
+| [`code/`](code/README.md) | Lab code, one file per lesson. Written by hand, not generated. |
+| [`notes/`](notes/README.md) | Measurements, one file per lesson. B8 and B9 read these back. |
+| `data/`, `checkpoints/` | Corpora and weights — gitignored, regenerable |
 
 ## Reading it as a website
 

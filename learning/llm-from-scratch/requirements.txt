@@ -1,0 +1,13 @@
+# Everything the curriculum depends on. Nothing else is needed at any point:
+# no `transformers` until B5 Lab 6, no `trl`, no `peft`, no `accelerate`.
+#
+#   pip install -r requirements.txt
+#   python3 code/check_env.py
+
+torch>=2.2          # 2.13.0 verified on macOS/MPS
+numpy
+regex               # B2 — GPT-style pre-tokenization
+datasets            # B3 — pulling the TinyStories subset
+matplotlib          # B6, B8 — loss curves and the scaling fit
+scipy               # B8 — curve_fit for the power law
+transformers        # B5 Lab 6 only — reading Qwen3's block next to yours

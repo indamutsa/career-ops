@@ -1,0 +1,16 @@
+# Corpora, token streams and trained weights: large, and regenerable from the
+# code and notes that are tracked. Everything you learn is in the other two
+# folders; these are just bytes.
+data/*
+!data/.gitkeep
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Plots written next to the code that made them; the numbers live in notes/.
+*.png
+!modules/**/*.png
+
+.venv/
+__pycache__/
+*.pyc
+.DS_Store

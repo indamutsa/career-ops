@@ -7,6 +7,46 @@ it as the subject of every concept an AI Research Engineer interview can ask abo
 
 ---
 
+## How this is organised
+
+The same content is two things: a folder of markdown in this repository, and a website with a
+sidebar. On the website every page carries a short id — `L0`, `B4`, `M15`, `LG`. Those ids are the
+map, so here is what they mean.
+
+There are **two tracks**, shown as tabs at the top of the sidebar:
+
+| Track | Ids | Pages | What it is |
+|-------|-----|-------|------------|
+| **Recall** | `00`, `A`–`G` | 43 | Maths → classical ML → deep learning → transformers → MLOps → mock rounds. Reading and recall, no code to write. A separate course; not part of this one. |
+| **Build LLM** | `L`, `B`, `M`, `LG` | 44 | **This track.** You write the code. |
+
+Within the Build LLM track, the first letter tells you what kind of page you are looking at:
+
+| Prefix | Sidebar group | What it is | In the repo |
+|--------|---------------|------------|-------------|
+| **L** | `H · LLM track` | Orientation. Four documents that tell you what to do and when. | the four files at the track root |
+| **B** | `I · Build labs` | The eleven build lessons, `B0` → `B10`. **This is the curriculum.** | `modules/build/` |
+| **M** | `J · LLM concepts` | 28 reference modules, `M00` → `M25`. Read alongside the labs, never instead of them. | `modules/` |
+| **LG** | `K · Reference` | The glossary — 175 terms. | `GLOSSARY.md` |
+
+The `H`–`K` group letters just continue the Recall track's `A`–`G` so the two tabs share one
+ordering. They carry no other meaning.
+
+### The four `L` pages
+
+`L` is a reading order, not a sequence of work. You are reading `L0` now.
+
+| Id | File | The question it answers | When to read it |
+|----|------|-------------------------|-----------------|
+| **L0** | [`START-HERE.md`](START-HERE.md) | What am I doing, in what order, and where do the files go? | Now, once. |
+| **L1** | [`PLAN.md`](PLAN.md) | Which lesson on which day, and what must be true at the end of each week? | After this file, then every Monday. |
+| **L2** | [`SYLLABUS.md`](SYLLABUS.md) | What is in the 28 reference modules? | Step 5 — **not before.** |
+| **L3** | [`modules/build/README.md`](modules/build/README.md) | Why build rather than read? What exactly are we building, and will this laptop take it? | After B0, when you want the whole shape at once. |
+
+Everything else you will meet is a `B` lesson. Start at `B0` and go in order.
+
+---
+
 ## The one rule
 
 **The lessons are written. You write the code.**
@@ -20,43 +60,72 @@ state what changed, you have not finished that lesson.
 
 ---
 
-## Step 1 — Check the machine (2 minutes)
+## Step 1 — Make the workspace (1 minute)
+
+Run this once. It creates the four folders every lesson writes into, so nothing later fails on a
+missing directory:
 
 ```bash
 cd learning/llm-from-scratch
+mkdir -p code notes data checkpoints
+ls
+```
+
+You should see `code  checkpoints  data  modules  notes` alongside the markdown files. What each
+one is for:
+
+| Folder | Holds | In git? |
+|--------|-------|---------|
+| `code/` | **Your code.** One file per lesson — `b0_autograd.py`, `b1_bigram.py`, … | Yes — it is the work. |
+| `notes/` | **Your numbers.** One file per lesson: losses, timings, what broke. | Yes — it is the proof. |
+| `data/` | Corpora and `.bin` token files. Hundreds of MB. | No — ignored. |
+| `checkpoints/` | `ckpt_best.pt`, `ckpt_instruct.pt`, the tiny/base/wide ladder. | No — ignored. |
+
+`.gitignore` already excludes `data/` and `checkpoints/` — they are large and regenerable. It does
+**not** exclude `code/` or `notes/`, and that is deliberate: those two folders are the artifact you
+show someone.
+
+---
+
+## Step 2 — Check the machine (2 minutes)
+
+```bash
 python3 code/check_env.py
 ```
 
-As of the last run on this machine: **Python 3.13.13, torch 2.13.0, MPS available, bf16 autocast
-working.** Two packages were missing:
+It prints a PASS or FAIL line per requirement and exits non-zero if anything is missing. Install
+whatever it names:
 
 ```bash
-pip install matplotlib datasets
+pip install -r requirements.txt
 ```
 
 Then re-run `python3 code/check_env.py` until every line says PASS.
 
-> If you prefer an isolated environment: `python3 -m venv .venv && source .venv/bin/activate`
-> then `pip install torch numpy matplotlib datasets regex`. The curriculum has no other
-> dependencies — no HuggingFace `transformers` until B5 Lab 6, no `trl`, no `peft`, nothing.
+As of the last run on this machine: **Python 3.13.13, torch 2.13.0, MPS available, bf16 autocast
+working.**
+
+> **Prefer an isolated environment?** `python3 -m venv .venv && source .venv/bin/activate` then
+> `pip install -r requirements.txt`. `.venv/` is gitignored. The curriculum has no dependencies
+> beyond that file — no HuggingFace `transformers` until B5 Lab 6, no `trl`, no `peft`, nothing.
 
 ---
 
-## Step 2 — Open the first lesson
+## Step 3 — Open the first lesson
 
-```
-modules/build/00-foundations.md
+```bash
+open modules/build/00-foundations.md      # or read B0 on the site
 ```
 
 Read it top to bottom, then do the labs in it. That is the whole instruction.
 
-**Do not start with `SYLLABUS.md`.** It is a reference index of 28 deep-dive modules, and reading it
-first is how people spend an evening feeling productive without writing a line of code. Come back to
-it in Step 4.
+**Do not start with `SYLLABUS.md` (L2).** It is a reference index of 28 deep-dive modules, and
+reading it first is how people spend an evening feeling productive without writing a line of code.
+Come back to it in Step 5.
 
 ---
 
-## Step 3 — Work the Build Track, B0 → B10
+## Step 4 — Work the Build Track, B0 → B10
 
 Eleven lessons. Each one leaves you something that runs.
 
@@ -73,6 +142,36 @@ Eleven lessons. Each one leaves you something that runs.
 | **B8** | [Scaling laws](modules/build/08-scaling.md) | 3 h + runs | A power law fitted to models *you* trained, and a tested prediction |
 | **B9** | [Instruction tuning](modules/build/09-instruct.md) | 3 h | A base model **and** an instruct model, both yours |
 | **B10** | [Teaching it to reason](modules/build/10-reasoning.md) | 4–5 h | CoT + GRPO against a verifier you wrote |
+
+### The two files each lesson creates
+
+Every lesson opens with the same two lines: the code file you are writing, and the notes file you
+record into. Create them at the start of the lesson, not the end.
+
+| Lesson | Create in your editor | Record your numbers in | Also produces |
+|--------|-----------------------|------------------------|---------------|
+| **B0** | `code/b0_autograd.py` | `notes/b0-foundations.md` | — |
+| **B1** | `code/b1_bigram.py` | `notes/b1-first-model.md` | — |
+| **B2** | `code/b2_tokenizer.py` | `notes/b2-tokenizer.md` | `data/tokenizer.json` |
+| **B3** | `code/b3_data.py` | `notes/b3-data.md` | `data/train.bin`, `data/val.bin` |
+| **B4** | `code/b4_attention.py` | `notes/b4-attention.md` | — |
+| **B5** | `code/b5_model.py` | `notes/b5-transformer.md` | — |
+| **B6** | `code/b6_train.py` | `notes/b6-training.md` | `checkpoints/ckpt_best.pt` |
+| **B7** | `code/b7_sample.py` | `notes/b7-sampling.md` | — |
+| **B8** | `code/b8_scaling.py` | `notes/b8-scaling.md` | `checkpoints/ckpt_{tiny,base,wide}.pt` |
+| **B9** | `code/b9_instruct.py` | `notes/b9-instruct.md` | `checkpoints/ckpt_instruct.pt` |
+| **B10** | `code/b10_reasoning.py` | `notes/b10-reasoning.md` | `checkpoints/ckpt_reason.pt` |
+
+Starting B0, then, is exactly this:
+
+```bash
+touch code/b0_autograd.py notes/b0-foundations.md
+open modules/build/00-foundations.md
+```
+
+The names are a convention, not an import contract — no lesson imports another lesson's file, so
+nothing breaks if you rename one. Keep them anyway: `notes/` is read back in B8 and B9, and a
+consistent tree is the difference between a repository someone reads and one they close.
 
 **The shape of the whole thing** — the same three stages as every frontier model, four orders of
 magnitude smaller:
@@ -98,8 +197,9 @@ magnitude smaller:
 Interview: **Wednesday 30 September 2026.** 25 days, four full weekends — enough for the full track
 with no cutting.
 
-**→ [`PLAN.md`](PLAN.md)** has the dated breakdown: four sprints, a hard gate at the end of each,
-which reference modules to read alongside, and the five things you should be able to say on the day.
+**→ [`PLAN.md`](PLAN.md) (L1)** has the dated breakdown: four sprints, a hard gate at the end of
+each, which reference modules to read alongside, and the five things you should be able to say on
+the day.
 
 Short version:
 
@@ -115,36 +215,69 @@ B2's tokenizer (use `tiktoken`) — never cutting B6 or B10.
 
 ---
 
-## Step 4 — Read the reference modules alongside
+## Step 5 — Read the reference modules alongside
 
-`SYLLABUS.md` indexes 28 deep-dive modules (00–25, plus `05a` encoder-decoder and `15a`
-DeepSeek-R1). Each has the same shape: **Terms · Concepts · Where it's used · Labs · Failure
-modes · Interview Q&A · Checkpoint.**
+[`SYLLABUS.md`](SYLLABUS.md) (L2) indexes 28 deep-dive modules — `M00`–`M25`, plus `M05a`
+encoder-decoder and `M15a` DeepSeek-R1. Each has the same shape: **Terms · Concepts · Where it's
+used · Labs · Failure modes · Interview Q&A · Checkpoint.**
 
 Read them **in parallel with the Build Track, not before it.** Each build lesson names its
-reference companion at the top — read that one after finishing the build lesson, while the code
-is still in your head.
+reference companion in its header block — read that module after finishing the lesson, while the
+code is still in your head:
 
-`GLOSSARY.md` — 175 terms, each with what it is *and* where you'd meet it in production. Read it
-end to end the night before the interview. Any term you can't place is a gap; go to its module.
+| Lesson | Reference companion |
+|--------|---------------------|
+| B0 | — B0 derives its own maths from nothing |
+| B1 | [M02 Embeddings and the residual stream](modules/02-embeddings.md) |
+| B2 | [M01 Tokenization](modules/01-tokenization.md) |
+| B3 | [M13 Fine-tuning dataset construction](modules/13-datasets.md) · [M06 Pretraining](modules/06-pretraining.md) |
+| B4 | [M03 Attention](modules/03-attention.md) |
+| B5 | [M02 Embeddings](modules/02-embeddings.md) · [M04 Positional encoding](modules/04-positional.md) · [M05 The transformer block](modules/05-transformer-block.md) |
+| B6 | [M06 Pretraining](modules/06-pretraining.md) · [M17 Distributed training](modules/17-distributed.md) |
+| B7 | [M08 Decoding and sampling](modules/08-decoding.md) |
+| B8 | [M06 Pretraining](modules/06-pretraining.md) — the scaling-law half |
+| B9 | [M11 Supervised fine-tuning](modules/11-sft.md) · [M12 Parameter-efficient fine-tuning](modules/12-peft.md) |
+| B10 | [M15 RL with verifiable rewards](modules/15-rlvr-grpo.md) · [M15a DeepSeek-R1](modules/15a-deepseek-r1.md) · [M14 Preference optimisation](modules/14-preference.md) |
+
+[`GLOSSARY.md`](GLOSSARY.md) (LG) — 175 terms, each with what it is *and* where you'd meet it in
+production. Read it end to end the night before the interview. Any term you can't place is a gap;
+go to its module.
 
 ---
 
 ## Where things go
 
+This is the tree after Step 1, with a couple of lessons done:
+
 ```
 learning/llm-from-scratch/
-  START-HERE.md          this file
-  SYLLABUS.md            index of the 28 reference modules
-  GLOSSARY.md            175 terms
+  START-HERE.md          L0 — this file
+  PLAN.md                L1 — the dated schedule
+  SYLLABUS.md            L2 — index of the 28 reference modules
+  GLOSSARY.md            LG — 175 terms
+  README.md              the repository front door
+  requirements.txt       every dependency the curriculum has
+  .gitignore             excludes data/, checkpoints/, .venv/
+
   modules/
-    build/               ← the Build Track, B0-B10. Start at 00-foundations.md
-    00-25 + 05a, 15a     the reference modules
-  code/                  ← YOUR code. One file per lesson: b0_autograd.py, b1_bigram.py, ...
-    check_env.py         the only file I wrote here
-  data/                  corpora and .bin token files (large; keep out of git)
-  checkpoints/           ckpt_best.pt, ckpt_instruct.pt, the tiny/base/wide ladder
-  notes/                 ← your numbers. One file per lesson.
+    build/               B0-B10 — the Build Track. Start at 00-foundations.md
+      README.md          L3 — why build rather than read
+    00-25 + 05a, 15a     M00-M25 — the reference modules
+
+  code/                  ← YOUR code. One file per lesson.
+    README.md            the naming convention
+    check_env.py         the only lab file I wrote
+    b0_autograd.py       yours, from here down
+    b1_bigram.py
+  notes/                 ← YOUR numbers. One file per lesson.
+    README.md            what a good note contains
+    _template.md         copy this at the start of each lesson
+    b0-foundations.md
+    b1-first-model.md
+  data/                  corpora, tokenizer.json, .bin token files   (gitignored)
+  checkpoints/           ckpt_best.pt, ckpt_instruct.pt, the ladder  (gitignored)
+
+  build-site.mjs         regenerates the website from this markdown
 ```
 
 **`notes/` is not optional.** Every lesson's checkpoint asks for measurements, and three later
@@ -189,8 +322,10 @@ Useful things to say:
 
 ```bash
 cd learning/llm-from-scratch
-pip install matplotlib datasets
+mkdir -p code notes data checkpoints
+pip install -r requirements.txt
 python3 code/check_env.py
+touch code/b0_autograd.py notes/b0-foundations.md
 open modules/build/00-foundations.md
 ```
 
