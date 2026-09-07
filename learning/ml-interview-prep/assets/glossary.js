@@ -145,6 +145,145 @@ window.MLIPGloss = (function () {
     'posterior': ['What you believe about a quantity after seeing the data — your earlier belief updated by the evidence.', '12 · Probability']
   };
 
+  /* ---- worked examples -------------------------------------------------
+     A definition says what a word means. It does not say what the thing
+     does, and a reader who has to go and find that out has left the page.
+     So every term the maths modules lean on carries one worked example in
+     the four sold houses of module 10 — A [120, 3, 41, 4.2] at 317.2 k€,
+     B [60, 2, 51, 6] at 103.6, C [200, 5, 16, 2.5] at 603.6,
+     D [90, 3, 28, 5.1] at 221.6, priced by w = [3, 8, −0.4, −12].
+
+     Each example restates its own setup in the first clause, so it still
+     reads correctly on a page that has never mentioned a house.
+     --------------------------------------------------------------------- */
+  /* g(cols, cells...) — one small grid of real numbers. First cell of each
+     row is its label; <b> is a header, <u> a figure, <s> a figure worth
+     staring at. Nothing here is invented: every value is computed from the
+     four sold houses of module 10 and matches the figures on that page. */
+  function g(c, rows) {
+    return '<span class="exg" data-c="' + c + '">' + rows.join('') + '</span>';
+  }
+  function q(t) { return '<span class="exq">' + t + '</span>'; }
+
+  var EX = {
+    'dot product':
+      g(5, ['<b></b><b>area</b><b>beds</b><b>age</b><b>km</b>',
+            '<i>house A</i><u>120</u><u>3</u><u>41</u><u>4.2</u>',
+            '<i>price list w</i><u>×3</u><u>×8</u><u>×−0.4</u><u>×−12</u>',
+            '<i>product</i><s>360</s><s>24</s><s>−16.4</s><s>−50.4</s>']) +
+      q('add the four: <b>317.2 k€</b> — that is the dot product, and the price '  +
+        'this list predicts for house A'),
+
+    'norm':
+      g(5, ['<b></b><b>area</b><b>beds</b><b>age</b><b>km</b>',
+            '<i>house A</i><u>120</u><u>3</u><u>41</u><u>4.2</u>',
+            '<i>house B</i><u>60</u><u>2</u><u>51</u><u>6.0</u>',
+            '<i>A − B</i><s>60</s><s>1</s><s>−10</s><s>−1.8</s>',
+            '<i>squared</i><u>3600</u><u>1</u><u>100</u><u>3.24</u>']) +
+      q('L2 = √3704.24 = <b>60.9</b> · L1 = 72.8 · L∞ = 60'),
+
+    'variance':
+      g(4, ['<b></b><b>the four values</b><b>variance</b><b>spread</b>',
+            '<i>area</i><u>120 60 200 90</u><s>3625</s><u>60.21</u>',
+            '<i>bedrooms</i><u>3 2 5 3</u><s>1.58</s><u>1.26</u>']) +
+      q('same four houses, variances 2,300× apart — which is why every ' +
+        'column is divided by its own spread before anything is compared'),
+
+    'rank':
+      g(3, ['<b>house</b><b>area m²</b><b>area ft²</b>',
+            '<i>A</i><u>120</u><u>1291.7</u>',
+            '<i>B</i><u>60</u><u>645.8</u>',
+            '<i>C</i><u>200</u><u>2152.8</u>',
+            '<i>D</i><u>90</u><u>968.8</u>']) +
+      q('every ft² is 10.76 × the m² beside it, so the second column adds ' +
+        'nothing: <b>5 columns, rank still 4</b>'),
+
+    'condition number':
+      g(2, ['<b>stretch</b><b>size</b>',
+            '<i>σ₁ largest</i><s>262.96</s>',
+            '<i>σ₂</i><u>49.05</u>',
+            '<i>σ₃</i><u>1.92</u>',
+            '<i>σ₄ smallest</i><s>0.03</s>']) +
+      q('262.96 ÷ 0.03 ≈ <b>7,650</b>. Recovering the price list magnifies ' +
+        'an error in one sale up to 7,650× — that number is the condition number'),
+
+    'eigenvector':
+      g(4, ['<b>direction in</b><b></b><b>out</b><b></b>',
+            '<i>[0.707, 0.707]</i><u>→</u><s>[1.399, 1.399]</s><u>same way, ×1.979</u>',
+            '<i>[1, 0]</i><u>→</u><u>[1.000, 0.979]</u><u>turned</u>']) +
+      q('the first survives the matrix pointing where it started, so it is an ' +
+        'eigenvector and 1.979 is its eigenvalue; the second does not'),
+
+    'pca':
+      g(3, ['<b></b><b>eigenvalue</b><b>of the spread</b>',
+            '<i>PC1 — size</i><s>1.979</s><s>98.9 %</s>',
+            '<i>PC2 — the rest</i><u>0.021</u><u>1.1 %</u>']) +
+      q('keep PC1 alone and each house becomes <b>one number instead of two</b>, ' +
+        'losing 1.1 % of what separated them'),
+
+    'loss':
+      g(5, ['<b></b><b>A</b><b>B</b><b>C</b><b>D</b>',
+            '<i>predicted</i><u>317.2</u><u>103.6</u><u>603.6</u><u>221.6</u>',
+            '<i>actually sold</i><u>330</u><u>100</u><u>590</u><u>228</u>',
+            '<i>error</i><s>12.8</s><s>−3.6</s><s>−13.6</s><s>6.4</s>',
+            '<i>error²</i><u>163.8</u><u>13.0</u><u>185.0</u><u>41.0</u>']) +
+      q('loss = <b>402.7</b>, one number for how wrong this price list is'),
+
+    'gradient':
+      g(3, ['<b>weight</b><b>slope of the loss</b><b>so</b>',
+            '<i>per m²</i><s>+412.0</s><u>lower it</u>',
+            '<i>per bedroom</i><u>+8.8</u><u>lower it</u>',
+            '<i>per year of age</i><s>−151.4</s><u>raise it</u>',
+            '<i>per km</i><u>−15.4</u><u>raise it</u>']) +
+      q('four numbers, one per weight. Training steps <b>against</b> them'),
+
+    'gradient clipping':
+      g(3, ['<b>house A typed in as 3,172 k€</b><b>raw</b><b>clipped</b>',
+            '<i>gradient length</i><s>180,007</s><s>1.00</s>',
+            '<i>price per m² after one step</i><s>3 → 173.1</s><s>3 → 3.001</s>']) +
+      q('same direction either way — only the length is capped, so the bad ' +
+        'row nudges the weights instead of destroying them'),
+
+    'overfitting':
+      g(3, ['<b></b><b>honest rule</b><b>exact fit</b>',
+            '<i>price per bedroom</i><u>+8</u><s>−470.1</s>',
+            '<i>error on the 4 it learned</i><u>±13</u><s>0.000</s>',
+            '<i>new house E, worth 431.6</i><u>431.6</u><s>164.5</s>']) +
+      q('four sales, four unknowns: the exact fit reaches <b>zero training ' +
+        'error</b> and is 267 k€ wrong on the first house it has not seen'),
+
+    'regularisation':
+      g(3, ['<b>penalty α</b><b>L2 keeps</b><b>L1 keeps</b>',
+            '<i>0 — no penalty</i><s>0.3014</s><s>0.3014</s>',
+            '<i>0.3</i><u>0.2318</u><u>0.1514</u>',
+            '<i>0.6</i><u>0.1884</u><s>0.0014</s>']) +
+      q('the weight on a junk column — day of the month each house sold. ' +
+        'L2 shrinks it, <b>L1 deletes it</b>'),
+
+    'calibration':
+      g(4, ['<b>model says</b><b>houses</b><b>sold in 30 days</b><b>really</b>',
+            '<i>0.7</i><u>100</u><u>42</u><s>0.42</s>',
+            '<i>0.9</i><u>100</u><u>55</u><s>0.55</s>']) +
+      q('the ranking is right — 0.9 beats 0.7 — but the numbers are not ' +
+        'probabilities until 0.7 means 70 out of every 100'),
+
+    'embedding':
+      g(3, ['<b>postcode</b><b>as an id</b><b>learned vector</b>',
+            '<i>28012</i><u>[1, 0, 0]</u><s>[0.82, −0.15]</s>',
+            '<i>28014</i><u>[0, 1, 0]</u><s>[0.79, −0.11]</s>',
+            '<i>28860</i><u>[0, 0, 1]</u><u>[−0.44, 0.63]</u>']) +
+      q('as ids all three are equally far apart. As learned vectors the two ' +
+        'central postcodes land <b>0.05 apart</b> and the outer one 1.5 away'),
+
+    'attention':
+      g(4, ['<b>price A by looking at</b><b>score</b><b>weight</b><b>its price</b>',
+            '<i>house B</i><s>0.25</s><s>0.44</s><u>103.6</u>',
+            '<i>house C</i><u>−0.27</u><u>0.26</u><u>603.6</u>',
+            '<i>house D</i><u>−0.12</u><u>0.30</u><u>221.6</u>']) +
+      q('each score is a dot product of A against that house; softmax turns ' +
+        'the three into weights that add to 1. No price list anywhere — ' +
+        'A leans hardest on B because both are old')
+  };
   var RX = null, KEYS = null;
 
   function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -157,8 +296,19 @@ window.MLIPGloss = (function () {
   var SKIP = { PRE: 1, CODE: 1, A: 1, SCRIPT: 1, STYLE: 1, SUMMARY: 1, BUTTON: 1,
                H1: 1, H2: 1, H3: 1, H4: 1, TEXTAREA: 1, INPUT: 1, SVG: 1 };
 
+  /* the module currently on screen, so a chip does not send the reader to
+     the page they are already reading */
+  var HERE = null;
+
+  /* every worked example below is computed from the module-10 house table, so
+     they are only shown while the reader is on that page; elsewhere the chip
+     stays a plain definition */
+  var EX_MODULE = '10';
+
   function chip(term, word) {
     var e = G[term];
+    var elsewhere = HERE === null || e[1].split(' ')[0] !== HERE;
+    var ex = HERE === EX_MODULE ? EX[term] : null;
     var s = document.createElement('span');
     s.className = 'gl';
     s.setAttribute('role', 'button');
@@ -168,7 +318,9 @@ window.MLIPGloss = (function () {
     s.appendChild(document.createTextNode(word));
     var i = document.createElement('i');
     i.innerHTML = '<b>' + word + '</b> — ' + e[0] +
-                  '<span class="at">taught properly in ' + e[1] + '</span>';
+                  (ex ? '<span class="ex"><span class="exl">worked example</span>' +
+                        ex + '</span>' : '') +
+                  (elsewhere ? '<span class="at">taught properly in ' + e[1] + '</span>' : '');
     s.appendChild(i);
     return s;
   }
@@ -211,6 +363,9 @@ window.MLIPGloss = (function () {
         if (head.indexOf(KEYS[k]) >= 0) defined[KEYS[k]] = 1;
     }
     var scope = root.querySelector('#wrap') || root.body || root;
+    var crumb = scope.querySelector('.crumb');
+    var m = crumb && crumb.textContent.match(/Module\s+([\w.]+)/i);
+    HERE = m ? m[1] : null;
     walk(scope, {}, defined);
   }
 
@@ -234,7 +389,8 @@ window.MLIPGloss = (function () {
 
   var GAP = 10;          /* chip-to-panel breathing room */
   var EDGE = 12;         /* closest the panel may come to a viewport edge */
-  var WIDE = 380;        /* panel width on a roomy screen */
+  var WIDE = 470;        /* panel width on a roomy screen */
+  var MINH = 160;        /* never squeeze the panel below this before scrolling */
   var NARROW = 560;      /* at or below this, dock it to the bottom instead */
 
   var pop = null, anchor = null, queued = false;
@@ -270,6 +426,7 @@ window.MLIPGloss = (function () {
       pop.classList.add('dock');
       pop.classList.remove('up');
       pop.style.left = pop.style.top = pop.style.width = '';
+      pop.querySelector('.glpop-body').style.maxHeight = '';
       return;
     }
     pop.classList.remove('dock');
@@ -280,13 +437,22 @@ window.MLIPGloss = (function () {
     var left = Math.round(r.left + r.width / 2 - w / 2);
     left = Math.max(EDGE, Math.min(left, vw - EDGE - w));
 
+    /* A worked example makes a panel that can be taller than the gap under
+       the chip. Measure it uncapped, take whichever side has more room, and
+       cap the body to that side so it scrolls internally rather than running
+       off the screen — the page underneath still must not move. */
+    var body = pop.querySelector('.glpop-body');
+    body.style.maxHeight = 'none';
     var h = pop.offsetHeight;
-    var below = r.bottom + GAP;
-    var above = r.top - GAP - h;
-    var up = (below + h > vh - EDGE) && above >= EDGE;
+    var chrome = h - body.offsetHeight;          /* the panel's own padding */
+    var roomBelow = vh - EDGE - (r.bottom + GAP);
+    var roomAbove = (r.top - GAP) - EDGE;
+    var up = h > roomBelow && roomAbove > roomBelow;
+    body.style.maxHeight = (Math.max(MINH, up ? roomAbove : roomBelow) - chrome) + 'px';
 
+    h = pop.offsetHeight;
     pop.style.left = left + 'px';
-    pop.style.top = (up ? above : below) + 'px';
+    pop.style.top = (up ? Math.max(EDGE, r.top - GAP - h) : r.bottom + GAP) + 'px';
     pop.classList.toggle('up', up);
 
     /* The caret tracks the chip but stays within the panel's own corners.

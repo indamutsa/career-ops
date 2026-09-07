@@ -187,6 +187,20 @@
       if (all[i] !== d && all[i].open && !all[i].contains(d)) all[i].open = false;
   }, true);
 
+  /* Revealing is deliberate, so it is its own click and not the one that
+     opened the question. Closing the question drops `shown` again — a
+     question you come back to should still be a question. */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest ? e.target.closest('.qreveal') : null;
+    if (!b) return;
+    var d = b.closest('details.q');
+    if (d) d.classList.add('shown');
+  });
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (d && d.tagName === 'DETAILS' && !d.open) d.classList.remove('shown');
+  }, true);
+
   /** Open or close many at once without the one-at-a-time rule firing. */
   function setAll(nodes, open) {
     bulk = true;
@@ -194,7 +208,28 @@
     setTimeout(function () { bulk = false; }, 0);
   }
 
+  /* The drill-mode reveal bar. One per question, inserted once and left
+     in place: it costs nothing while drill is off (CSS hides it), and
+     building it up front means toggling drill is a class flip rather
+     than a DOM pass over every question on the page. */
+  function addRevealBars(root) {
+    var qs = root.querySelectorAll('details.q');
+    for (var i = 0; i < qs.length; i++) {
+      /* `.a` is ambiguous — the SENIOR difficulty pip is `pip a` and sits
+         inside the summary, so an unscoped lookup finds the badge rather
+         than the answer. Only the direct child is the answer body. */
+      var d = qs[i], a = d.querySelector(':scope > .a');
+      if (!a || d.querySelector(':scope > .qreveal')) continue;
+      var b = d.ownerDocument.createElement('button');
+      b.type = 'button';
+      b.className = 'qreveal';
+      b.textContent = 'show answer';
+      d.insertBefore(b, a);
+    }
+  }
+
   function initPage(root) {
+    addRevealBars(root);
     initTabs(root);
     if (window.MLIPCode) window.MLIPCode.init(root);
     if (window.MLIPViz) window.MLIPViz.init(root);
@@ -416,6 +451,7 @@
         wrap.innerHTML = doc.body.innerHTML;
         textCache[id] = (wrap.textContent || '').replace(/\s+/g, ' ');
         initPage(wrap);
+        paintTools();
         applyDrillLocal();
         document.getElementById('main').scrollTop = 0;
         revealSearchMatch(wrap, qbox ? qbox.value : '');
@@ -427,9 +463,32 @@
           '<p class="small">If every module fails, you are probably not serving the folder. ' +
           'Run <code>python3 -m http.server 8000</code> here and open ' +
           '<code>http://localhost:8000</code>.</p></div>';
+        paintTools();
       });
     }
     paintProgress();
+  }
+
+  /* Half the course has no questions at all — the whole generated Build
+     LLM track, the start page and the walkthrough rounds carry prose and
+     tables only. Both tools act on `details`, so on those pages they can
+     do nothing; leaving them looking live makes a working button read as
+     broken. In iframe mode the content is cross-origin, so we cannot
+     count anything and leave them alone rather than guess. */
+  function paintTools() {
+    if (IFRAME_MODE || !wrap) return;
+    var qCount = wrap.querySelectorAll('details.q').length;
+    var xCount = qCount + wrap.querySelectorAll('details.deep').length;
+    setTool('drillbtn',  qCount, 'd — hide all answers',
+            'no questions on this page');
+    setTool('expandbtn', xCount, 'open/close every question',
+            'nothing to open on this page');
+  }
+  function setTool(id, count, liveTitle, deadTitle) {
+    var b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = !count;
+    b.title = count ? liveTitle : deadTitle;
   }
 
   function pushToFrame() {
@@ -448,8 +507,11 @@
     applyDrillLocal();
     var b = document.getElementById('drillbtn');
     if (b) { b.classList.toggle('on', v); }
-    if (v)    // collapse everything so nothing is pre-revealed
-      setAll(IFRAME_MODE ? [] : wrap.querySelectorAll('details.q'), false);
+    if (v) {  // collapse everything so nothing is pre-revealed
+      var qs = IFRAME_MODE ? [] : wrap.querySelectorAll('details.q');
+      for (var i = 0; i < qs.length; i++) qs[i].classList.remove('shown');
+      setAll(qs, false);
+    }
     pushToFrame();
   }
 
@@ -681,7 +743,10 @@
     if (e.key === '/') { e.preventDefault(); if (qbox) qbox.focus(); }
     else if (e.key === 'j') step(1);
     else if (e.key === 'k') step(-1);
-    else if (e.key === 'd') setDrill(!drill);
+    else if (e.key === 'd') {
+      var db = document.getElementById('drillbtn');
+      if (!db || !db.disabled) setDrill(!drill);
+    }
     else if (e.key === 't') { var b = document.getElementById('themebtn'); if (b) b.click(); }
   });
 
@@ -692,4 +757,5 @@
   setTrack(track, false);
   show((location.hash || '#00').slice(1));
   paintProgress();
+  paintTools();
 })();

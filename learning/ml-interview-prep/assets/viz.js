@@ -81,6 +81,31 @@ window.MLIPViz = (function () {
   }
   function cap(host, txt) { h('div', 'cap', txt, host); }
   function ctl(host) { return h('div', 'ctl', null, host); }
+
+  /* Colour key. These figures use colour to carry meaning — which term subtracts,
+     which direction turned, which cell is still wrong — and a reader who has to
+     infer that from context is guessing. keys() is called from inside paint(), so
+     the strip is rebuilt with the view and can never name a colour that is not
+     currently on screen. */
+  function keyBar(host) { return h('div', 'vizkey', null, host); }
+  function keys(bar, rows) {
+    if (!bar) return;
+    bar.textContent = '';
+    rows.forEach(function (r) {
+      if (!r) return;
+      var s = h('span', 'k', null, bar), sw = h('i', r[2] || null, null, s);
+      if (r[0] === 'cell') {
+        sw.style.background = css('--amber-bg');
+        sw.style.borderColor = css('--gold');
+      } else if (r[2] === 'line' || r[2] === 'dash' || r[2] === 'dot') {
+        sw.style.borderTopColor = css(r[0]);
+      } else {
+        sw.style.background = css(r[0]);
+        sw.style.borderColor = css(r[0]);
+      }
+      h('b', null, r[1], s);
+    });
+  }
   function slider(parent, label, min, max, step, val, oninput) {
     var lb = h('label', null, label + ' ', parent);
     var inp = document.createElement('input');
@@ -3972,7 +3997,8 @@ window.MLIPViz = (function () {
     });
 
     var vecline = h('div', 'hp-vec', null, editor);
-    h('p', 'hp-hint', 'Changes update every figure on this page.', editor);
+    h('p', 'hp-hint', 'Drives 10.1 to 10.6 and the eigenvector figure in 10.9. ' +
+                      'From 10.7 the page works on the four sold houses, which stay fixed.', editor);
 
     function expand(next, returnFocus) {
       host.dataset.expanded = next ? 'true' : 'false';
@@ -4096,6 +4122,57 @@ window.MLIPViz = (function () {
       out.textContent = hFmt(hPrice(L)) + ' k€';
       toggle.setAttribute('aria-label', 'Edit house values. Current predicted price ' +
                           hFmt(hPrice(L)) + ' thousand euros.');
+    });
+    bindHouseText(host);
+  }
+
+  /* ---- prose that quotes the live house --------------------------------
+     Not every number on the page lives in an SVG. The opening paragraph
+     and the worked dot product in 10.3 spell the house out in ordinary
+     HTML, and they sit next to live figures in the same visual style — so
+     hard-coding them made them read as broken the moment a slider moved.
+     Any element carrying data-house="{key}" is rewritten from the live
+     house on every change; the markup keeps the default values so the page
+     is still correct with JavaScript off.
+     -------------------------------------------------------------------- */
+  function hTerms(L) {
+    return hVec(L).map(function (x, i) { return hFmt(x) + '(' + hFmt(H_W[i]) + ')'; }).join(' + ');
+  }
+  function hProducts(L) {
+    return hVec(L).map(function (x, i) {
+      var t = H_W[i] * x, s = hFmt(Math.abs(t));
+      if (i === 0) return t < 0 ? '−' + s : s;
+      return (t < 0 ? '− ' : '+ ') + s;
+    }).join(' ');
+  }
+  var H_TEXT = {
+    area:  function (L) { return hFmt(L.area); },
+    beds:  function (L) { return hFmt(L.beds, 0); },
+    year:  function (L) { return String(L.year); },
+    age:   function (L) { return hFmt(H_NOW - L.year, 0); },
+    km:    function (L) { return hFmt(L.km); },
+    price: function (L) { return hFmt(hPrice(L)); },
+    terms: hTerms,
+    products: hProducts,
+    'vec-raw': function (L) {
+      return '[' + [L.area, L.beds, L.year, L.km].map(function (x) { return hFmt(x); }).join(', ') + ']';
+    },
+    'vec-model': function (L) {
+      return '[' + hVec(L).map(function (x) { return hFmt(x); }).join(', ') + ']';
+    },
+    'age-calc': function (L) {
+      return 'age = ' + H_NOW + ' − year built = ' + H_NOW + ' − ' + L.year +
+             ' = ' + hFmt(H_NOW - L.year, 0);
+    }
+  };
+  function bindHouseText(anchor) {
+    var doc = anchor.ownerDocument;
+    House.on(anchor, function (L) {
+      var nodes = doc.querySelectorAll('[data-house]'), i, fn;
+      for (i = 0; i < nodes.length; i++) {
+        fn = H_TEXT[nodes[i].getAttribute('data-house')];
+        if (fn) nodes[i].textContent = fn(L);
+      }
     });
   }
 
@@ -4268,8 +4345,8 @@ window.MLIPViz = (function () {
 
   /* ---- 10.3 · the dot product is what prices the house ---- */
   function vizHousePrice(host) {
-    var W = 660, H = 250, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var W = 660, H = 276, svg = makeSVG(host, W, H);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), step = 4;
     button(bar, 'one term at a time', function () { step = step >= 4 ? 1 : step + 1; paint(H_LIVE); });
     button(bar, 'show all four', function () { step = 4; paint(H_LIVE); });
@@ -4281,22 +4358,29 @@ window.MLIPViz = (function () {
       var pw = panel(g, [H_W.map(function (x) { return hFmt(x); })],
                      { label: 'the weights  w', sub: 'what the market pays per unit', cell: 62, fs: 12.5,
                        hi: function (r, c) { return c < step ? 'sh-hi' : ''; } });
+      /* 76px between the two panels put the second panel's title on top of the
+         first one's subtitle, and its own subtitle on top of the term row */
       var ph = panel(g, [v.map(function (x) { return hFmt(x); })],
-                     { label: 'your house  h', sub: 'shape [4]', cell: 62, fs: 12.5,
+                     { label: 'your house  h  ·  shape [4]', cell: 62, fs: 12.5,
                        hi: function (r, c) { return c < step ? 'sh-hi' : ''; } });
-      pw.move(150, 16); ph.move(150, 92);
-      for (i = 0; i < 4; i++) txt(g, 150 + 10 + i * 65 + 31, 168, H_F[i], 'tx-faint', 10);
+      pw.move(150, 16); ph.move(150, 120);
+      for (i = 0; i < 4; i++) txt(g, 150 + 10 + i * 65 + 31, 216, H_F[i], 'tx-faint', 10);
       txt(g, 140, 16 + 34, 'w', 'amber', 13, 'end');
-      txt(g, 140, 92 + 34, 'h', 'accent', 13, 'end');
+      txt(g, 140, 120 + 34, 'h', 'accent', 13, 'end');
 
       for (i = 0; i < step; i++) {
         var t = H_W[i] * v[i];
         run += t;
-        txt(g, 150 + 10 + i * 65 + 31, 196,
+        txt(g, 150 + 10 + i * 65 + 31, 244,
             hFmt(H_W[i]) + '×' + hFmt(v[i]), 'tx-dim', 10.5);
-        txt(g, 150 + 10 + i * 65 + 31, 213, hFmt(t), t < 0 ? 'pink' : 'green', 13);
+        txt(g, 150 + 10 + i * 65 + 31, 261, hFmt(t), t < 0 ? 'pink' : 'green', 13);
       }
-      txt(g, 500, 205, (step === 4 ? '= ' : 'so far  ') + hFmt(run) + ' k€', 'amber', 17, 'start');
+      txt(g, 500, 253, (step === 4 ? '= ' : 'so far  ') + hFmt(run) + ' k€', 'amber', 17, 'start');
+
+      keys(keyb, [['cell', 'multiplied so far'],
+                  ['--green', 'this term adds to the price'],
+                  ['--pink', 'this term takes price off'],
+                  ['--amber', 'the total so far']]);
 
       var W_WHY = ['each extra square metre adds 3 k€',
                    'each extra bedroom adds 8 k€',
@@ -4320,8 +4404,8 @@ window.MLIPViz = (function () {
 
   /* ---- 10.4 · a norm measures how different two houses are ---- */
   function vizHouseDist(host) {
-    var W = 660, H = 315, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var W = 660, H = 392, svg = makeSVG(host, W, H);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), scaled = false, D = H_SET[3];
     button(bar, 'put the features on one scale', function () { scaled = !scaled; paint(H_LIVE); });
 
@@ -4344,42 +4428,90 @@ window.MLIPViz = (function () {
       var i, shortFeature = ['area', 'bedrooms', 'age', 'distance'];
       for (i = 0; i < 4; i++) {
         txt(g, 130 + i * 79 + 38, 150, shortFeature[i], 'tx-faint', 10);
-        txt(g, 130 + i * 79 + 38, 169, hFmt(d[i], dp) + '² = ' + hFmt(sq[i], dp === 1 ? 2 : 4),
-            'tx-dim', 10.5);
+        /* on two lines: standardised, "−0.257² = 0.0661" is wider than the
+           79px column it has to sit in */
+        txt(g, 130 + i * 79 + 38, 163, hFmt(d[i], dp) + '²', 'tx-dim', 10.5);
+        txt(g, 130 + i * 79 + 38, 176, '=  ' + hFmt(sq[i], dp === 1 ? 2 : 4), 'tx-dim', 10.5);
       }
-      /* the two biggest contributions drawn as a right triangle — the same
-         Pythagoras from school, with the other features waiting in the sum */
-      var ord = [0, 1, 2, 3].sort(function (p, q) { return sq[q] - sq[p]; });
-      var p1 = ord[0], p2 = ord[1];
-      var sc = 96 / Math.max(Math.abs(d[p1]), 1e-9);
-      var lx = Math.max(12, Math.min(120, Math.abs(d[p1]) * sc));
-      var ly = Math.max(8, Math.min(96, Math.abs(d[p2]) * sc));
-      var ox = 130, oy = 290;
-      el('path', { d: 'M' + ox + ',' + oy + 'L' + (ox + lx) + ',' + oy +
-                      'L' + (ox + lx) + ',' + (oy - ly) + 'Z',
-                   fill: css('--amber'), 'fill-opacity': 0.12,
-                   stroke: css('--amber'), 'stroke-width': 1.5 }, g);
-      txt(g, ox + lx / 2, oy + 15, H_F[p1] + ' ' + hFmt(Math.abs(d[p1]), dp), 'tx-dim', 10.5);
-      txt(g, ox + lx + 8, oy - ly / 2, H_F[p2] + ' ' + hFmt(Math.abs(d[p2]), dp), 'tx-dim', 10.5, 'start');
-      txt(g, ox + lx / 2 - 26, oy - ly / 2 - 8, hFmt(l2, dp === 1 ? 2 : 3), 'amber', 14, 'end');
+      /* one bar per feature, in the same four columns as the numbers above, so
+         every difference is on the page and the reader picks the winner
+         instead of being handed a shape built from two of them */
+      var base = 292, s1 = 92 / Math.max(li, 1e-9);
+      el('line', { x1: 122, y1: base, x2: 452, y2: base,
+                   stroke: css('--rule-line'), 'stroke-width': 1 }, g);
+      for (i = 0; i < 4; i++) {
+        var bh = Math.max(Math.abs(d[i]) * s1, 2), bx = 130 + i * 79 + 9;
+        var win = Math.abs(d[i]) === li && li > 0;
+        el('rect', { x: bx, y: base - bh, width: 60, height: bh, rx: 2,
+                     fill: css(win ? '--amber' : '--tx-faint'),
+                     'fill-opacity': win ? 0.85 : 0.32,
+                     stroke: css(win ? '--amber' : '--border-2'),
+                     'stroke-width': 1 }, g);
+        txt(g, bx + 30, base - bh - 6, hFmt(Math.abs(d[i]), dp),
+            win ? 'amber' : 'tx-dim', 12);
+      }
+      el('line', { x1: 122, y1: base - 92, x2: 452, y2: base - 92,
+                   stroke: css('--amber'), 'stroke-width': 1,
+                   'stroke-dasharray': '3 4', 'stroke-opacity': 0.65 }, g);
+      txt(g, 458, base - 88, 'L∞ stops here', 'tx-faint', 10.5, 'start');
+      txt(g, 458, base - 76, 'nothing below it counts', 'tx-faint', 10.5, 'start');
 
-      var ROW = [['L2  straight line', l2, 'the crow’s flight'],
-                 ['L1  add them up', l1, 'the taxi on a grid'],
-                 ['L∞  the worst one', li, 'the single biggest gap']];
-      ROW.forEach(function (r, j) {
-        var y = 218 + j * 30;
-        txt(g, 380, y, r[0], 'tx-dim', 12, 'start');
-        txt(g, 530, y, hFmt(r[1], dp === 1 ? 2 : 3), j === 0 ? 'amber' : 'chalk', 14, 'end');
-        txt(g, 542, y, r[2], 'tx-faint', 10.5, 'start');
+      /* the three norms on one scale, each one built out of the same four bars
+         so the number is never asserted — L1 is the four laid end to end, L∞
+         is the winning one on its own, and both name where they came from */
+      var winner = shortFeature[d.map(Math.abs).indexOf(li)];
+      var NR = [['L1  add the four', l1,
+                 d.map(function (x) { return hFmt(Math.abs(x), dp); }).join(' + ')],
+                ['L2  square, add, root', l2, '√' + hFmt(sum, dp === 1 ? 2 : 4)],
+                ['L∞  keep the biggest', li, 'the ' + winner + ' gap, on its own']];
+      var s2 = 200 / Math.max(l1, 1e-9), X0 = 250;
+      NR.forEach(function (r, j) {
+        var y = 322 + j * 26, w = Math.max(r[1] * s2, 1), k, seg, sx = X0;
+        txt(g, 240, y + 4, r[0], 'tx-dim', 12, 'end');
+        if (j === 0) {
+          /* four segments, in feature order, adding up to the bar */
+          for (k = 0; k < 4; k++) {
+            seg = Math.abs(d[k]) * s2;
+            if (seg <= 0.5) continue;
+            var top = Math.abs(d[k]) === li && li > 0;
+            el('rect', { x: sx, y: y - 8, width: Math.max(seg - 1, 1), height: 13, rx: 2,
+                         fill: css(top ? '--amber' : '--tx-faint'),
+                         'fill-opacity': top ? 0.8 : 0.3 }, g);
+            if (seg > 26) txt(g, sx + seg / 2, y + 4, hFmt(Math.abs(d[k]), dp),
+                              top ? 'bg-2' : 'tx-dim', 10.5);
+            sx += seg;
+          }
+        } else if (j === 2) {
+          /* L∞ is the winning bar and nothing else, so it keeps its colour */
+          el('rect', { x: X0, y: y - 8, width: w, height: 13, rx: 2,
+                       fill: css('--amber'), 'fill-opacity': 0.8 }, g);
+        } else {
+          el('rect', { x: X0, y: y - 8, width: w, height: 13, rx: 2,
+                       fill: css('--tx-faint'), 'fill-opacity': 0.3,
+                       stroke: css('--amber'), 'stroke-width': 1,
+                       'stroke-opacity': 0.55 }, g);
+        }
+        var vt = txt(g, X0 + w + 8, y + 4, hFmt(r[1], dp === 1 ? 2 : 3),
+                     j === 1 ? 'amber' : 'chalk', 13.5, 'start');
+        var vw = 0;
+        try { vw = vt.getBBox().width; } catch (e) { vw = 0; }
+        if (!vw) vw = String(hFmt(r[1], dp === 1 ? 2 : 3)).length * 7.4;
+        txt(g, X0 + w + 20 + vw, y + 4, r[2], 'tx-faint', 10.5, 'start');
       });
+
+      keys(keyb, [['--amber', 'the biggest of the four gaps — the one L∞ keeps'],
+                  ['--tx-faint', 'the other three gaps, which L1 and L2 still count'],
+                  ['--amber', 'the height L∞ stops at', 'dash']]);
 
       worked(read, '‖d‖₂  =  √( d₀² + d₁² + d₂² + d₃² )',
              '√( ' + sq.map(function (x) { return hFmt(x, dp === 1 ? 2 : 4); }).join(' + ') +
              ' )  =  √' + hFmt(sum, dp === 1 ? 2 : 4) + '  =  ' + hFmt(l2, dp === 1 ? 2 : 3));
-      h('p', 'rd-a', 'This is Pythagoras and nothing else. With two features it is the triangle ' +
-                     'drawn on the left: square the two legs, add, take the root. With four ' +
-                     'features you square four numbers instead of two and put them all under ' +
-                     'the same root. Nobody ever changes the rule — they only add terms.', read);
+      h('p', 'rd-a', 'One rule, however many features: square every difference, add them all, ' +
+                     'take the root. The bars are those differences before squaring, and every ' +
+                     'feature gets one — a feature that matches exactly draws a flat bar and ' +
+                     'contributes 0 to the sum, but it is still there. Squaring is what turns a ' +
+                     'modest lead into a decisive one, which is why the tallest bar ends up ' +
+                     'deciding the answer almost on its own.', read);
       h('p', 'rd-b', scaled
         ? 'Now every feature has been divided by its own spread across houses A–D, so all four ' +
           'are measured on a comparable yardstick, and the answer changes character: the ' +
@@ -4392,15 +4524,16 @@ window.MLIPViz = (function () {
           'the answer change.', read);
     }
     House.on(host, paint);
-    cap(host, 'L1 is the sum of the bars, L2 is the diagonal across them, L∞ is the tallest bar ' +
-              'alone. Three honest answers to “how far apart”, and they disagree — which is why ' +
-              'the choice is yours to make and to justify.');
+    cap(host, 'Every norm bar is built from the four bars above it. L1 lays all four end to end. ' +
+              'L∞ keeps the tallest and discards the rest. L2 squares all four, adds them and ' +
+              'takes the root, which always lands between the other two. The more one feature ' +
+              'dominates, the closer the three answers get to each other.');
   }
 
   /* ---- 10.5 · cosine strips out size and leaves the shape ---- */
   function vizHouseShape(host) {
-    var W = 640, H = 250, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var W = 700, H = 272, svg = makeSVG(host, W, H);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), scaled = true, other = 2;
     button(bar, 'compare with another house', function () {
       other = (other + 1) % H_SET.length; paint(H_LIVE);
@@ -4428,22 +4561,38 @@ window.MLIPViz = (function () {
       txt(g, cx + R * Math.cos(th) + 6, cy - R * Math.sin(th) - 4, 'house ' + O.id, 'green', 11, 'start');
       txt(g, cx + 46, cy - 12, (th * 180 / Math.PI).toFixed(1) + '°', 'amber', 13, 'start');
 
-      var lines = [['dot product', hFmt(dot, 2)],
-                   ['‖yours‖', hFmt(na, 2)],
-                   ['‖house ' + O.id + '‖', hFmt(nb, 2)],
-                   ['cos θ', cos.toFixed(3)]];
+      /* every one of these four numbers is written out from the two houses'
+         own components — none of them is asserted */
+      var dq = scaled ? 3 : 1;
+      function sq4(v) {
+        return '√( ' + v.map(function (x) { return hFmt(x, dq) + '²'; }).join(' + ') + ' )';
+      }
+      var lines = [['yours · house ' + O.id, hFmt(dot, 2),
+                    a.map(function (x, k) { return hFmt(x, dq) + '×' + hFmt(b[k], dq); }).join(' + ')],
+                   ['‖yours‖', hFmt(na, 2), sq4(a)],
+                   ['‖house ' + O.id + '‖', hFmt(nb, 2), sq4(b)],
+                   ['cos θ', cos.toFixed(3),
+                    hFmt(dot, 2) + '  /  ( ' + hFmt(na, 2) + ' × ' + hFmt(nb, 2) + ' )']];
       lines.forEach(function (r, j) {
-        var y = 62 + j * 32;
-        txt(g, 360, y, r[0], 'tx-dim', 12, 'start');
-        txt(g, 540, y, r[1], j === 3 ? 'amber' : 'chalk', j === 3 ? 17 : 14, 'end');
+        var y = 52 + j * 48;
+        txt(g, 340, y, r[0], 'tx-dim', 12, 'start');
+        txt(g, 690, y, r[1], j === 3 ? 'amber' : 'chalk', j === 3 ? 17 : 14, 'end');
+        txt(g, 340, y + 16, r[2], 'tx-faint', 9.5, 'start');
       });
-      txt(g, 450, 214, scaled ? 'features put on one scale' : 'raw units — area dominates',
+      txt(g, 510, 258, scaled ? 'features put on one scale' : 'raw units — area dominates',
           scaled ? 'green' : 'pink', 11);
 
+      keys(keyb, [['--accent', 'your house, drawn as an arrow', 'line'],
+                  ['--green', 'house ' + O.id + ', the one you are comparing against', 'line'],
+                  ['--amber', 'the angle between them — what cosine measures']]);
+
       worked(read, 'cos θ  =  (a · b) / ( ‖a‖ ‖b‖ )',
-             '‖yours‖ = √( ' + a.map(function (x) { return hFmt(x, scaled ? 3 : 1) + '²'; }).join(' + ') +
-             ' ) = ' + hFmt(na, 2) + '   — the same Pythagoras as the previous section, ' +
-             'which is where every one of these lengths comes from');
+             hFmt(dot, 2) + '  /  ( ' + hFmt(na, 2) + ' × ' + hFmt(nb, 2) + ' )  =  ' +
+             cos.toFixed(3));
+      h('p', 'rd-a', 'Nothing new is being computed. The top line is the dot product from 10.3 ' +
+                     'run on these two houses, and the two lengths are the Pythagoras from ' +
+                     '10.4. Every figure above is written out from the two houses’ own four ' +
+                     'numbers.', read);
       h('p', 'rd-a', 'Two houses can be the same kind of house at different sizes. Double every ' +
                      'measurement and the arrow gets longer but points exactly where it did, so ' +
                      'the angle is zero and the cosine is 1. Dividing by both lengths is what ' +
@@ -4501,7 +4650,7 @@ window.MLIPViz = (function () {
   /* ---- 10.6 · every house priced at once — a matrix times a vector ---- */
   function vizHouseTable(host) {
     var W = 660, H = 268, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), row = 0, flip = false;
     button(bar, 'next house', function () { flip = false; row = (row + 1) % 5; paint(H_LIVE); });
     button(bar, 'transpose the table', function () { flip = !flip; paint(H_LIVE); });
@@ -4522,6 +4671,7 @@ window.MLIPViz = (function () {
           txt(g, 330 - pt.w / 2 + 10 + i * 35 + 16, 46, names[i], i ? 'tx-faint' : 'amber', 10);
         for (c = 0; c < 4; c++)
           txt(g, 330 - pt.w / 2 - 8, 80 + c * 35 + 16, H_FS[c], 'tx-faint', 10, 'end');
+        keys(keyb, [['--amber', 'your house — the only row the sliders move']]);
         worked(read, 'X is [5, 4]  →  Xᵀ is [4, 5]',
                'The entry in row 2, column 3 of X is the entry in row 3, column 2 of Xᵀ. ' +
                'Nothing was multiplied and nothing was added — every number kept its value ' +
@@ -4554,6 +4704,8 @@ window.MLIPViz = (function () {
       for (c = 0; c < 4; c++)
         txt(g, X0 + 10 + c * 35 + 16, Y0 + 20 + 5 * 32 + 4 * 3 + 16, H_FS[c], 'tx-faint', 10);
 
+      keys(keyb, [['cell', 'the row being multiplied, and the price it produces'],
+                  ['--amber', 'the house named in the line below']]);
       var rv = rows[row], terms = rv.map(function (x, j) {
         return hFmt(H_W[j]) + '×' + hFmt(x);
       }).join('  +  ').replace(/\+  −/g, '−  ');
@@ -4576,7 +4728,7 @@ window.MLIPViz = (function () {
   /* ---- 10.7 · running the model backwards — the inverse ---- */
   function vizHouseSolve(host) {
     var W = 660, H = 278, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), step = 0, XI = matInv(H_X), REC = matVec(XI, H_P);
     button(bar, 'next step', function () { step = (step + 1) % 3; paint(); });
     button(bar, 'start over', function () { step = 0; paint(); });
@@ -4658,6 +4810,12 @@ window.MLIPViz = (function () {
                        'squaring X up first, and the transpose from the last section is exactly ' +
                        'what makes those shapes chain.', read);
       }
+      keys(keyb, step === 0
+        ? [['--pink', 'unknown — the four numbers you are solving for'],
+           ['--chalk', 'known — measured houses and the prices they sold for']]
+        : step === 1
+          ? [['--amber', 'the three lines of algebra that isolate w']]
+          : [['cell', 'the recovered price list — the answer']]);
       txt(g, 330, 20, ['the question', 'the tool', 'the answer'][step], 'gold-dim', 11);
     }
     paint();
@@ -4668,7 +4826,7 @@ window.MLIPViz = (function () {
   /* ---- 10.8 · when the undo fails — rank and the determinant ---- */
   function vizHouseSingular(host) {
     var W = 660, H = 310, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var FT = 10.7639, t = 0;
     var Y = H_X.map(function (rv) { return [rv[0], rv[0] * FT, rv[1], rv[2], rv[3]]; });
     var LBL = ['m²', 'ft²', 'beds', 'age', 'km'];
@@ -4703,11 +4861,17 @@ window.MLIPViz = (function () {
       for (i = 0; i < 5; i++)
         txt(g, parseFloat(ow[1]) + pw.w + 6, parseFloat(ow[2]) + 20 + i * 37 + 22,
             LBL[i], i < 2 ? 'amber' : 'tx-faint', 9.5, 'start');
+      keys(keyb, [['cell', 'the two columns that say the same thing in different units'],
+                  ['--amber', 'the m² and ft² labels — the duplicated pair, on the table and on w'],
+                  ['--pink', 'the three ways of saying the undo has failed']]);
       txt(g, 185, 286, 'det(YᵀY) = 0', 'pink', 13);
       txt(g, 330, 286, 'rank 4, not 5', 'pink', 13);
       txt(g, 485, 286, '(YᵀY)⁻¹ does not exist', 'pink', 13);
 
       worked(read, 'column 1 = 10.7639 × column 0',
+             'The 10.7639 is not measured from these houses — one metre is 3.28084 feet, so one ' +
+             'square metre is 3.28084² = 10.7639 square feet, and column 1 is column 0 through ' +
+             'that fixed conversion. ' +
              'The area contributes w₀ + w₁×10.7639 per square metre, whatever the split: ' +
              hFmt(w[0], 2) + ' + ' + hFmt(w[1], 4) + '×10.7639 = ' + hFmt(w[0], 2) + ' + ' +
              hFmt(w[1] * FT, 2) + ' = 3.00 k€. The second column carries no information the ' +
@@ -4755,7 +4919,7 @@ window.MLIPViz = (function () {
   /* ---- 10.9 · the direction the market varies in ---- */
   function vizHouseEigen(host) {
     var W = 660, H = 306, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), mode = 0;
     var MODES = ['the cloud', 'the eigenvector', 'a direction that is not one',
                  'one number instead of two'];
@@ -4797,8 +4961,13 @@ window.MLIPViz = (function () {
       el('circle', { cx: F.X(Math.max(-2.4, Math.min(2.4, zx))),
                      cy: F.Y(Math.max(-2.4, Math.min(2.4, zy))), r: 6.5,
                      fill: 'none', stroke: css('--accent'), 'stroke-width': 2 }, g);
-      txt(g, F.X(Math.max(-2.4, Math.min(2.4, zx))) + 12,
-          F.Y(Math.max(-2.4, Math.min(2.4, zy))) - 8, 'yours', 'accent', 10, 'start');
+      /* the marker is clamped to the frame, so at the slider extremes the label
+         would sit outside it — above the top edge, on the caption, or past the
+         right edge. Flip it inwards instead of letting it leave the box. */
+      var mx = F.X(Math.max(-2.4, Math.min(2.4, zx))), my = F.Y(Math.max(-2.4, Math.min(2.4, zy)));
+      var far = mx > box.l + box.w - 46;
+      txt(g, mx + (far ? -12 : 12), my < box.t + 18 ? my + 18 : my - 8, 'yours', 'accent', 10,
+          far ? 'end' : 'start');
 
       if (mode === 1) {
         arrow(g, F.X(0), F.Y(0), F.X(L2), F.Y(L2), 'accent');
@@ -4809,7 +4978,7 @@ window.MLIPViz = (function () {
         arrow(g, F.X(0), F.Y(0), F.X(1.4), F.Y(0), 'accent');
         arrow(g, F.X(0), F.Y(0), F.X(1.4), F.Y(1.4 * H_R), 'pink');
         txt(g, F.X(1.5), F.Y(0) - 10, 'u', 'accent', 12, 'start');
-        txt(g, F.X(1.5), F.Y(1.4 * H_R) + 4, 'Cu', 'pink', 12, 'start');
+        txt(g, F.X(1.5), F.Y(1.4 * H_R) + 20, 'Cu', 'pink', 12, 'start');
       }
 
       /* the right-hand column: the matrix, and what this mode is saying */
@@ -4819,6 +4988,13 @@ window.MLIPViz = (function () {
       txt(g, 452, 176, ['area', 'beds'][0] + '   ' + ['area', 'beds'][1], 'tx-faint', 0);
       txt(g, 452 - 44, 172, 'area', 'tx-faint', 10);
       txt(g, 452 + 44, 172, 'beds', 'tx-faint', 10);
+
+      keys(keyb, [['--tx-dim', 'the four sold houses'],
+                  ['--accent', 'your house, and the direction going in', 'line'],
+                  mode === 1 ? ['--amber', 'the same direction after C — longer, not turned', 'line'] : null,
+                  mode === 2 ? ['--pink', 'after C — turned, so u is not an eigenvector', 'line'] : null,
+                  mode === 3 ? ['--gold', 'each house reduced to one number on the bigness axis'] : null,
+                  (mode === 1 || mode === 3) ? ['--gold-dim', 'the bigness axis', 'dash'] : null]);
 
       var LINES = [
         ['Almost a straight line.', 'Bigger houses have more bedrooms:',
@@ -4960,7 +5136,7 @@ window.MLIPViz = (function () {
 
   function vizHouseSVD(host) {
     var W = 660, H = 300, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), view = 0, k = 1;
     button(bar, 'the three factors', function () { view = 0; paint(); });
     button(bar, 'what the recipes say', function () { view = 1; paint(); });
@@ -5007,13 +5183,15 @@ window.MLIPViz = (function () {
       } else if (view === 1) {
         var NAME = ['big, roomy, new and central', 'old but large and close in',
                     'the third direction', 'nothing left to explain'];
-        var BX = 250, BW = 300;
+        /* the bars had to come left and shorten: at BX 250 with a 62px scale the
+           names ran off the right edge and the last column's bar reached them */
+        var BX = 205, BW = 260;
         for (i = 0; i < 4; i++) {
           var y0 = 48 + i * 62;
-          txt(g, 232, y0 + 4, 'recipe ' + (i + 1), i < 2 ? 'amber' : 'tx-faint', 12, 'end');
-          txt(g, 232, y0 + 19, hFmt(100 * H_SVD.energy[i], 1) + ' %', 'tx-faint', 10, 'end');
+          txt(g, 187, y0 + 4, 'recipe ' + (i + 1), i < 2 ? 'amber' : 'tx-faint', 12, 'end');
+          txt(g, 187, y0 + 19, hFmt(100 * H_SVD.energy[i], 1) + ' %', 'tx-faint', 10, 'end');
           for (j = 0; j < 4; j++) {
-            var x = BX + j * (BW / 4), val = H_SVD.Vt[i][j], bw = Math.abs(val) * 62;
+            var x = BX + j * (BW / 4), val = H_SVD.Vt[i][j], bw = Math.abs(val) * 50;
             var mid = x + BW / 8;
             el('line', { x1: mid, y1: y0 - 10, x2: mid, y2: y0 + 18,
                          stroke: css('--rule-line-soft'), 'stroke-width': 1 }, g);
@@ -5021,7 +5199,7 @@ window.MLIPViz = (function () {
                          fill: css(val >= 0 ? '--green' : '--pink'), opacity: i < 2 ? 0.85 : 0.4 }, g);
             if (i === 3) txt(g, mid, y0 + 32, H_FS[j], 'tx-faint', 10);
           }
-          txt(g, BX + BW + 12, y0 + 4, NAME[i], i < 2 ? 'tx-dim' : 'tx-faint', 10.5, 'start');
+          txt(g, 652, y0 + 4, NAME[i], i < 2 ? 'tx-dim' : 'tx-faint', 10.5, 'end');
         }
         txt(g, 330, 24, 'each bar is one weight of one recipe   ·   right = adds, left = subtracts',
             'tx-faint', 10.5);
@@ -5080,15 +5258,36 @@ window.MLIPViz = (function () {
                }).join(',  ') + '.  The truth is ' + hVec(H_SET[0]).map(function (x, j2) {
                  return hFmt(x, 1) + ' ' + H_U[j2];
                }).join(',  ') + '.');
-        h('p', 'rd-a', 'With ' + k + ' recipe' + (k > 1 ? 's' : '') + ', the rebuilt table keeps ' +
-                       hFmt(100 * H_SVD.energy.slice(0, k).reduce(function (s, x) { return s + x; }, 0), 1) +
-                       ' % of the variation and leaves ' + hFmt(100 * Math.sqrt(err / nrm), 1) +
-                       ' % normalised reconstruction error. That is what “low-rank approximation” ' +
-                       'buys you, stated in the measurements of these houses.', read);
+        var kept = 100 * H_SVD.energy.slice(0, k).reduce(function (s2, x) { return s2 + x; }, 0);
+        var sqr = function (v) {
+          return v.map(function (x) { return hFmt(x * x, 2); }).join(' + ');
+        };
+        var tot2 = H_SVD.sig.reduce(function (s2, x) { return s2 + x * x; }, 0);
+        h('p', 'rd-a', 'Neither percentage is a figure you have to take on trust. The strengths ' +
+                       'on the diagonal of Σ are ' +
+                       H_SVD.sig.map(function (x) { return hFmt(x, 2); }).join(', ') +
+                       ' — the same list the first view prints. Square them and they add up to ' +
+                       hFmt(tot2, 2) + '; the ' + k + ' you kept account' + (k > 1 ? '' : 's') +
+                       ' for ' +
+                       sqr(H_SVD.sig.slice(0, k)) + ' of that, which is the ' + hFmt(kept, 1) +
+                       ' %. The error left is the rebuilt table minus the real one, every ' +
+                       'feature counted in units of its own spread so metres and rooms can be ' +
+                       'added: √( ' + hFmt(err, 2) + ' / ' + hFmt(nrm, 2) + ' ) = ' +
+                       hFmt(100 * Math.sqrt(err / nrm), 1) + ' %, where ' + hFmt(nrm, 2) +
+                       ' is how far the real houses sit from their own average to begin with.', read);
         h('p', 'rd-b', 'For this house table, the tradeoff is now visible: keep fewer recipes ' +
                        'to store fewer numbers, and accept the highlighted measurement errors ' +
                        'that remain in the rebuilt houses.', read);
       }
+      keys(keyb, view === 0
+        ? [['--amber', 'the three factors and what each one carries']]
+        : view === 1
+          ? [['--green', 'the recipe adds this feature'],
+             ['--pink', 'the recipe subtracts it'],
+             ['--amber', 'the two recipes worth keeping'],
+             ['--tx-faint', 'the two that carry almost nothing']]
+          : [['cell', 'rebuilt cells still visibly wrong'],
+             ['--amber', 'the variation kept and the error left']]);
     }
     paint();
     cap(host, 'The four houses are fixed here — a decomposition describes a table, so it needs ' +
@@ -5103,7 +5302,7 @@ window.MLIPViz = (function () {
 
   function vizHouseL1L2(host) {
     var W = 660, H = 320, svg = makeSVG(host, W, H);
-    var g = el('g', {}, svg), read = h('div', 'shapenote', null, host);
+    var g = el('g', {}, svg), keyb = keyBar(host), read = h('div', 'shapenote', null, host);
     var bar = ctl(host), view = 0, al = 0, timer = null, A = H_JUNK.a;
     button(bar, 'where 0.3014 comes from', function () { view = 0; stop(); paint(); });
     button(bar, 'what the penalties do', function () { view = 1; paint(); });
@@ -5158,6 +5357,8 @@ window.MLIPViz = (function () {
             'a  =  Σ day×r  /  Σ day²   =   ' + hFmt(H_JUNK.num, 0) + ' / ' +
             hFmt(H_JUNK.den, 0) + '   =   ' + hFmt(A, 4), 'gold', 15);
         txt(g, 330, 274, 'that is the 0.3014 — nobody chose it', 'tx-faint', 11);
+        keys(keyb, [['--amber', 'the day × residual column, its sum, and the weight ' +
+                                'that comes out of the division']]);
         worked(read, 'a  =  ( j · r ) / ( j · j )  =  ' + hFmt(H_JUNK.num, 0) + ' / ' +
                hFmt(H_JUNK.den, 0) + '  =  ' + hFmt(A, 4),
                'j is the junk column — the day of the month each house was listed. r is what the ' +
@@ -5209,15 +5410,22 @@ window.MLIPViz = (function () {
           el('line', { x1: F.X(A), y1: b.t + b.h, x2: F.X(A), y2: b.t + b.h + 4,
                        stroke: css('--tx-faint') }, g);
         });
+      keys(keyb, [['--tx-faint', 'dashed: the data cost alone, pulling w towards 0.3014', 'dash'],
+                  ['--rule-line', 'dotted: the penalty alone, pulling w towards 0', 'dot'],
+                  ['--gold', 'solid: the two added together under L1, and where it bottoms out', 'line'],
+                  ['--accent', 'solid: the same under L2', 'line']]);
+
       worked(read, 'minimise  ½(w − 0.3014)²  +  α·penalty(w)',
              'L1 penalty α|w| → w* = max(0.3014 − α, 0), so the weight hits exactly zero once ' +
              'α reaches 0.3014 and stays there. L2 penalty ½αw² → w* = 0.3014 / (1 + α), which ' +
              'shrinks towards zero and never arrives: at α = 0.6 it is still ' +
              hFmt(ridge(0.6), 3) + '.');
       h('p', 'rd-a', 'The dashed parabola is the data pulling the weight towards 0.3014 — that is ' +
-                     'the number you just derived. The penalty pulls it towards zero. Where the ' +
-                     'two pulls balance is where the solid curve bottoms out, and that is the ' +
-                     'weight you actually get.', read);
+                     'the number you just derived. The penalty pulls it towards zero, and how ' +
+                     'hard it pulls is α, the one quantity on this figure that is not computed ' +
+                     'from anything: it is the slider, and you set it. Where the two pulls ' +
+                     'balance is where the solid curve bottoms out, and that is the weight you ' +
+                     'actually get.', read);
       h('p', 'rd-b', 'The whole difference is the shape at w = 0. |w| has a corner there: its ' +
                      'slope jumps from −α to +α no matter how small α is, so as soon as α beats ' +
                      'the data’s pull of 0.3014, zero becomes the minimum outright and the ' +
