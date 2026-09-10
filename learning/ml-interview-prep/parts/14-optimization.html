@@ -10,521 +10,917 @@
 
 <p class="crumb">Part A · Maths · Module 14</p>
 <h1>Optimisation
-  <span class="lede">Module 11 told you what a minimum is. This one is about actually getting there —
-  the algorithms, the one hyperparameter that matters more than all the others combined, and the
-  machinery for minimising something <em>subject to a rule</em>: Lagrange, the dual, KKT, and the
-  Laplace approximation.</span>
+  <span class="lede">Module 10 fitted the house price rule <span class="m">w</span> by solving an
+  equation exactly. Module 11 showed that the gradient is the local slope of a loss surface. This
+  module is what happens when you cannot solve the equation and have to walk downhill instead — and
+  what happens when walking downhill is not enough, because a rule says how far you are allowed to
+  go. Same four houses throughout.</span>
 </h1>
 
-<h2 data-n="14.1">The whole of training, in one sentence</h2>
+<h2 data-n="14.1">From a solved equation to a moving one</h2>
+
+<p>Section 10.7 found the house weights <span class="m">w = [3, 8, −0.4, −12]</span> in one shot, by
+inverting a matrix: four sold houses, four unknown prices-per-feature, four equations, one exact
+answer. That trick only works because the system was small and square. A real model can have billions
+of weights, and no inverse exists at that size even in principle. So instead of solving for
+<span class="m">w</span> directly, you guess a starting value, measure how wrong it is, and nudge it
+in the direction that reduces the error. Repeat a few thousand times. That is the whole of this
+module.</p>
 
 <div class="box analogy">
   <span class="lbl">The picture to hold</span>
-  <p>You are standing in fog on a hilly landscape. Height = how wrong your model is. You cannot see
-  the valley, but you can feel which way the ground slopes under your feet. So you take a step
-  downhill, feel again, step again. That is <strong>every</strong> optimiser in machine learning.
-  Everything else — momentum, Adam, schedules — is a refinement of <em>how big a step</em> and
-  <em>in exactly which direction</em>.</p>
+  <p>You are standing in fog on a hilly landscape. Height is the loss — how wrong your current guess
+  at <span class="m">w</span> is. You cannot see the valley, but you can feel which way the ground
+  slopes under your feet, so you take a step downhill, feel again, step again. Momentum, Adam,
+  schedules, clipping — every refinement below is an answer to <em>how big a step</em> and
+  <em>in exactly which direction</em>, nothing more exotic than that.</p>
 </div>
 
-<p>The refinements exist because the naive version has three specific problems: it is slow in
-narrow valleys, it stalls on plateaus, and the right step size differs wildly from parameter to
-parameter. Each named optimiser is an answer to one of those three.</p>
+<h2 data-n="14.2">Gradient descent — one real update</h2>
 
-<h2 data-n="14.2">The terms</h2>
+<div class="bridge"><strong>fitted weight <span class="m">w</span></strong> (10.7, solved by matrix
+inverse) → no inverse exists at scale → follow the local slope instead → <strong>gradient
+descent</strong></div>
 
-<div class="terms math-terms">
-
-  <div class="term">
-    <div class="t">Objective / loss / cost <span class="tag">basic</span></div>
-    <p>The single number you are trying to make small. Loss is usually per-example, cost is the
-       average over the batch, objective is the whole thing including regularisation.</p>
-    <div class="viz" data-viz="p14-loss"></div>
-    <p class="wh">If you cannot write your objective down, you do not have a machine-learning
-       problem yet — you have a wish.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Gradient descent <span class="tag">basic</span>
-        <span class="sym">θ ← θ − η∇L</span></div>
-    <p>Step in the direction of steepest <em>descent</em>, which is the negative gradient. η is the
-       learning rate.</p>
-    <p class="an">Walking downhill in fog, one careful step at a time.</p>
-    <div class="viz" data-viz="gd-step"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Batch / mini-batch / stochastic <span class="tag">basic</span></div>
-    <p>How many examples you look at before each step. All of them (batch), a handful (mini-batch,
-       what everyone actually does), or one (stochastic).</p>
-    <p class="an">Polling the entire country before every decision, surveying a sample, or
-       asking one person on the street. Smaller samples cost less, but their answers vary more.</p>
-    <div class="viz" data-viz="p14-batch"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Epoch vs step <span class="tag">basic</span></div>
-    <p>A <strong>step</strong> is one parameter update. An <strong>epoch</strong> is one full pass
-       over the training data.</p>
-    <div class="viz" data-viz="p14-epoch"></div>
-    <p class="wh">LLM pretraining is usually reported in tokens and steps, not epochs, because you
-       often see the data barely once.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Learning rate <span class="tag">basic</span></div>
-    <p>Step size. Too small: training crawls or gets stuck. Too large: you overshoot the valley,
-       bounce, and may diverge. If numerical calculations overflow, they can eventually produce
-       <code>NaN</code> — “not a number”.</p>
-    <div class="viz" data-viz="p14-rate"></div>
-    <p class="wh"><strong>The single most important hyperparameter.</strong> If you tune exactly one
-       thing, tune this.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Schedule &amp; warmup <span class="tag">mid</span></div>
-    <p>Changing the learning rate over training — usually a short linear <em>warmup</em> from near
-       zero, then a <em>cosine</em> decay down to a small final value.</p>
-    <p class="an">Warming up a car engine before flooring it, then easing off as you arrive.</p>
-    <div class="viz" data-viz="p14-schedule"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Momentum <span class="tag">mid</span></div>
-    <p>Accumulate an exponentially-weighted average of past gradients and step along <em>that</em>
-       instead of the raw gradient.</p>
-    <p class="an">A heavy ball rolling downhill instead of a cautious walker. It powers through
-       small bumps and ignores side-to-side jitter, because the oscillating components cancel in the
-       average while the consistent downhill component accumulates.</p>
-    <div class="viz" data-viz="momentum"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">RMSProp / Adam / AdamW <span class="tag">mid</span></div>
-    <p>Rescale each parameter's update using its recent gradients. RMSProp remembers their
-       squared sizes. Adam also remembers their signed direction. AdamW adds a separate
-       shrinkage step to keep weights small.</p>
-    <p class="an">A thermostat per room instead of one for the whole house.</p>
-    <div class="viz" data-viz="p14-adaptive"></div>
-    <p class="wh">AdamW separates weight decay from the rescaled gradient update. Adding an L2
-       penalty to Adam's loss generally gives a different update; see the worked comparison below.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Gradient clipping <span class="tag">mid</span></div>
-    <p>The gradient is a vector, so it has a length — its L2 norm, the ordinary straight-line
-       length from section 10.6. Clipping puts a ceiling on that length. Measure it; if it is over
-       the threshold (1.0 is the usual choice), shrink the whole vector until it is exactly the
-       threshold. <strong>The direction never changes</strong> — only how far you travel along it.</p>
-    <p class="an">A speed limiter, not a steering correction.</p>
-    <div class="viz" data-viz="clipping"></div>
-    <p class="wh">Standard in LLM and RNN training. It is the difference between one bad batch
-       causing a loss spike and one bad batch destroying the run.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Constrained optimisation <span class="tag">senior</span></div>
-    <p>Minimise something <em>subject to a rule</em> — "as small as possible, but the weights must
-       not exceed this size" or "but the new policy must stay close to the old one".</p>
-    <div class="viz" data-viz="p14-constrained"></div>
-    <p class="wh">Examples include a maximum prediction time or a limit on model size.
-       Constraints rule choices out; penalties merely make some choices more expensive.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Lagrange multiplier <span class="tag">senior</span>
-        <span class="sym">λ</span></div>
-    <p>Attach a multiplier λ to a constraint and add that term to the objective. The result is
-       called the <strong>Lagrangian</strong>, written ℒ. We must choose the multiplier and the
-       solution together; an arbitrary λ does not enforce the rule.</p>
-    <p class="an">λ is the price of scarce budget: how much the best result would improve if
-       you could loosen the limit a little.</p>
-    <div class="viz" data-viz="p14-multiplier"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Dual problem <span class="tag">senior</span></div>
-    <p>The Lagrangian gives lower bounds on the best constrained cost. The dual problem chooses
-       multipliers to make that bound as high as possible. <strong>Strong duality</strong> means
-       the best bound equals the original minimum.</p>
-    <div class="viz" data-viz="p14-dual"></div>
-    <p class="wh">A matching lower bound proves you cannot do better. A remaining gap means the
-       bound alone does not certify the answer.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">KKT conditions <span class="tag">senior</span></div>
-    <p>The Karush–Kuhn–Tucker conditions extend “slope = 0” to constrained problems.
-       <strong>Complementary slackness</strong> says the multiplier times the constraint's
-       signed gap is zero: unused budget must have zero price.</p>
-    <p class="an">You only feel the wall if you are pressed against it.</p>
-    <div class="viz" data-viz="p14-kkt"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Laplace approximation <span class="tag">senior</span></div>
-    <p>Approximate a probability distribution near a peak with a Gaussian bell curve. Centre it
-       at the mode (the peak's position). Its width comes from the curvature of the
-       <em>negative log-density</em> there — not directly from the height curve.</p>
-    <p class="an">You cannot map the whole mountain, so you stand on the summit and measure how
-       steeply it falls away in each direction. Steep in every direction → a narrow peak → you are
-       confident. Gentle → a broad peak → you are not.</p>
-    <div class="viz" data-viz="p14-laplace"></div>
-    <p class="wh">A local way to estimate uncertainty around fitted parameters. A narrow peak
-       means concentrated probability under the model's assumptions; it does not guarantee that
-       those assumptions describe reality.</p>
-  </div>
-
+<div class="concept-brief">
+  <div class="what"><b>What</b>Repeatedly subtract a small multiple of the gradient from the current weight.</div>
+  <div class="why"><b>Why</b>It finds a good weight without ever solving the fitting equation exactly.</div>
+  <div class="when"><b>Where in ML</b>Training every model in this course — linear, logistic, and every neural network.</div>
 </div>
 
-<h2 data-n="14.3">Learning rate — why it dominates everything</h2>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>The general rule, before it gets a house in it</summary>
+  <div class="deep-body">
 
+<p>Write the update once in general form, using <span class="m">θ</span> — the generic symbol for
+<em>any single number the model is learning</em>, whether that is one weight, one bias, or one
+embedding entry:</p>
+
+<div class="eq">θ ← θ − η∇L
+  <span class="note">new value = old value − (step size) × (slope at the old value)</span>
+</div>
+
+<p><span class="m">∇L</span> is the gradient of the loss with respect to <span class="m">θ</span> —
+section 11's compass needle, pointing uphill. <span class="m">η</span> (eta) is the
+<strong>learning rate</strong>: how much of that slope you actually subtract. The minus sign is the
+entire idea — the gradient points uphill, and you want to go down.</p>
+
+<p>For the rest of this page <span class="m">θ</span> is one specific number: the bedrooms weight in
+<span class="m">w</span>, which section 10.7 already told us is <strong>8</strong>. Pretend, for this
+section only, that you do not know that yet — you only have a bad guess, <span class="m">w = 5</span>
+— and you will use gradient descent to find your way back to 8.</p>
+  </div>
+</details>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Where the loss curve for this one weight comes from</summary>
+  <div class="deep-body">
+
+<p>Freeze the other three weights at their known-correct values — area 3, age −0.4, km −12 — and
+leave only the bedrooms weight, call it <span class="m">w</span>, unknown. For any house
+<span class="m">h</span>, the predicted price is
+<span class="m">3·area<sub>h</sub> + w·beds<sub>h</sub> − 0.4·age<sub>h</sub> − 12·km<sub>h</sub></span>,
+and because <span class="m">w = 8</span> already reproduces every price in the 10.1 table exactly (no
+noise in this dataset), the error at any other <span class="m">w</span> is clean:</p>
+
+<div class="eq">error<sub>h</sub>(w) = beds<sub>h</sub> · (w − 8)
+  <span class="note">the three frozen weights cancel out of the error entirely</span>
+</div>
+
+<p>Square that error and average it over the four houses — the same "mean of squared errors" cost
+from 10.7 — and beds<sub>A,B,C,D</sub> = 3, 2, 5, 3 gives:</p>
+
+<div class="eq">L(w) = ¼(3² + 2² + 5² + 3²)(w − 8)² = ¼(47)(w − 8)² = 11.75(w − 8)²</div>
+
+<p>A single bowl-shaped curve in one weight, exactly the shape 11.4 calls a minimum: flat at
+<span class="m">w = 8</span>, curving up on both sides.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="One gradient-descent step on the bedrooms weight">
+  <div class="step">L(w) = 11.75(w − 8)² &nbsp;&nbsp;⇒&nbsp;&nbsp; ∇L(w) = 23.5(w − 8)</div>
+  <div class="step">start: w = 5 &nbsp;·&nbsp; ∇L(5) = 23.5(5 − 8) = 23.5(−3) = <strong>−70.5</strong></div>
+  <div class="step">choose η = 0.02</div>
+  <div class="step">w ← w − η∇L(w) = 5 − 0.02×(−70.5) = 5 + 1.41 = <strong>6.41</strong></div>
+  <div class="step">second step: ∇L(6.41) = 23.5(6.41 − 8) = −37.365</div>
+  <div class="step">w ← 6.41 − 0.02×(−37.365) = 6.41 + 0.7473 = <strong>7.1573</strong></div>
+  <div class="meaning">Two steps closed most of the gap from 5 to 8. Nothing here used the inverse
+  from 10.7 — only the slope at the current guess and a fixed step size.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>L(w)</b><span>the loss as a function of the one weight we are pretending not to know</span></span>
+    <span><b>∇L(w)</b><span>its slope — how the loss changes for a small change in w</span></span>
+    <span><b>η</b><span>the learning rate — how much of the slope to subtract each step</span></span>
+    <span><b>w ← w − η∇L</b><span>the update rule from the deep box above, with θ replaced by w</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-loss"></div>
+<div class="viz" data-viz="gd-step"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Gradient descent is one arithmetic step, repeated: compute the slope where you stand, subtract a fraction of it, repeat.</div>
+
+<h2 data-n="14.3">Batch, mini-batch, and stochastic</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>How many houses you average the gradient over before taking one step.</div>
+  <div class="why"><b>Why</b>Averaging over every house is exact but expensive; averaging over fewer is cheap but noisier.</div>
+  <div class="when"><b>Where in ML</b>Full-batch is rare past toy problems; mini-batches of tens to thousands of examples are what every real training run uses.</div>
+</div>
+
+<div class="terms two">
+  <div class="term">
+    <div class="t">Full batch</div>
+    <p><strong>What:</strong> average the gradient over every training example before stepping.</p>
+    <p><strong>Effect:</strong> the exact gradient of the true loss — no noise, but one step costs a
+       full pass over the data.</p>
+    <p class="wh"><strong>Use when:</strong> the dataset is small enough that a pass is cheap, or you
+       need a noise-free gradient to debug against.</p>
+  </div>
+  <div class="term">
+    <div class="t">Mini-batch / stochastic</div>
+    <p><strong>What:</strong> average over a small subset (mini-batch), or a single example
+       (stochastic).</p>
+    <p><strong>Effect:</strong> a noisy estimate of the same gradient, but hundreds of steps for the
+       price of one full-batch step.</p>
+    <p class="wh"><strong>Use when:</strong> always, past a handful of examples — this is what
+       "SGD" means in every framework, even though most people run mini-batches, not single examples.</p>
+  </div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>The same step at w = 5, three different ways</summary>
+  <div class="deep-body">
+
+<p>14.2's step used every house. Break that same computation apart. The per-house contribution to
+<span class="m">∇L</span> at <span class="m">w = 5</span> is
+<span class="m">2·beds<sub>h</sub>²·(w − 8)</span>:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>house</th><th>beds</th><th>gradient contribution</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>3</td><td>2(3²)(−3) = −54</td></tr>
+    <tr><td>B</td><td>2</td><td>2(2²)(−3) = −24</td></tr>
+    <tr><td>C</td><td>5</td><td>2(5²)(−3) = −150</td></tr>
+    <tr><td>D</td><td>3</td><td>2(3²)(−3) = −54</td></tr>
+  </tbody>
+</table></div>
+
+<p><strong>Full batch (all four):</strong> mean = (−54−24−150−54)/4 = −282/4 = −70.5 — exactly the
+gradient 14.2 used.</p>
+<p><strong>Mini-batch (A and B only):</strong> mean = (−54−24)/2 = <strong>−39</strong> — a real
+number, in the right direction, but not the same number.</p>
+<p><strong>Stochastic (house C alone):</strong> <strong>−150</strong> — massively overstates the
+step, because C alone happens to have the most bedrooms.</p>
+
+<p>Every one of these is an honest estimate of "which way is downhill". None but the full batch is
+exactly right, and the smaller the subset, the more it can differ from −70.5 on any given step. That
+variance is the price of speed.</p>
+  </div>
+</details>
+
+<div class="viz" data-viz="p14-batch"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>A mini-batch gradient is an unbiased but noisy estimate of the full-batch gradient — cheaper per step, and the noise itself can help escape flat regions (11.4's saddle argument).</div>
+
+<h2 data-n="14.4">Epoch vs. step</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A <em>step</em> is one weight update. An <em>epoch</em> is one full pass over the training data.</div>
+  <div class="why"><b>Why</b>They are the same thing only for full-batch training; everywhere else you take several steps per epoch.</div>
+  <div class="when"><b>Where in ML</b>LLM pretraining is usually reported in steps and tokens, because the data is often seen barely once.</div>
+</div>
+
+<p>Four houses, mini-batches of two — say {A, B} then {C, D} — means <span class="m">4 / 2 = 2</span>
+steps make one epoch. Step 3 starts epoch 2 by revisiting {A, B}, usually reshuffled first.</p>
+
+<div class="viz" data-viz="p14-epoch"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Steps per epoch = examples ÷ batch size; never assume "epoch" and "step" are interchangeable when someone quotes a training-run number.</div>
+
+<h2 data-n="14.5">The learning rate — why it dominates everything</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The multiplier <span class="m">η</span> on the gradient in every update.</div>
+  <div class="why"><b>Why</b>Too small and training crawls; too large and it overshoots and can diverge — on the exact same loss curve.</div>
+  <div class="when"><b>Where in ML</b>The single hyperparameter to tune first, in every model on this page.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>The same loss, two learning rates, four steps each</summary>
+  <div class="deep-body">
+
+<p>Reuse 14.2's exact loss, <span class="m">L(w) = 11.75(w − 8)²</span>, starting again at
+<span class="m">w = 5</span>. Only <span class="m">η</span> changes.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="A too-large learning rate on the same loss">
+  <div class="step">η = 0.09 &nbsp;·&nbsp; start w = 5, ∇L(5) = −70.5</div>
+  <div class="step">w ← 5 − 0.09×(−70.5) = 5 + 6.345 = <strong>11.345</strong></div>
+  <div class="step">∇L(11.345) = 23.5(11.345 − 8) = 78.6075</div>
+  <div class="step">w ← 11.345 − 0.09×78.6075 = 11.345 − 7.0747 = <strong>4.2703</strong></div>
+  <div class="meaning">Distance from the true value 8 went 3 → 3.345 → 3.730 — <strong>growing</strong>
+  by the same factor (1.115) every step, flipping side each time. Compare η = 0.02 in 14.2, where the
+  distance shrank from 3 to 0.8427 in the same two steps. Same loss, same starting point, opposite
+  outcome — the only thing that changed is η.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>η = 0.09</b><span>a learning rate almost three times 14.2's 0.02 — chosen here to
+    cross this loss's stability limit</span></span>
+    <span><b>growth factor</b><span>|1 − 2×11.75×η|; below 1 the steps shrink toward 8, above 1
+    they grow away from it — at η = 0.09 that factor is 1.115</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-rate"></div>
 <div class="viz" data-viz="lr"></div>
-
-<p>Drag the slider. There are three regimes and they are worth being able to name on sight from a
-loss curve alone:</p>
 
 <div class="tw">
 <table>
 <tr><th>Symptom in the loss curve</th><th>Cause</th><th>Fix</th></tr>
-<tr><td>Loss falls, then flatlines high, forever</td><td>LR too small — or you are in a genuine
-    plateau</td><td>Raise LR; add momentum</td></tr>
-<tr><td>Loss bounces around a floor without settling</td><td>LR too large for the final phase</td>
-    <td>Decay the LR — this is exactly what a cosine schedule is for</td></tr>
-<tr><td>Loss goes up, then to NaN</td><td>LR far too large; the step jumped past the valley up the
-    far wall</td><td>Lower LR ~10×, add gradient clipping, check for a bad batch</td></tr>
-<tr><td>Loss spikes early then recovers</td><td>No warmup with Adam</td><td>Add 1–2 % of steps as
-    linear warmup</td></tr>
+<tr><td>Loss falls, then flatlines high, forever</td><td>η too small, or a genuine plateau (11.4)</td>
+    <td>Raise η; add momentum (14.7)</td></tr>
+<tr><td>Loss bounces around a floor without settling</td><td>η too large for the final phase</td>
+    <td>Decay η — the schedule in 14.6</td></tr>
+<tr><td>Loss grows, then <code>NaN</code></td><td>η far past the stability limit, like the 0.09 case
+    above but worse</td><td>Lower η ~10×, add gradient clipping (14.9)</td></tr>
+<tr><td>Loss spikes early then recovers</td><td>No warmup with Adam (14.8)</td><td>Add a short
+    linear warmup, 14.6</td></tr>
 </table>
 </div>
 
-<h2 data-n="14.4">The family tree of optimisers</h2>
+<div class="interview-line"><b>Interview takeaway</b>The same loss surface can converge or diverge depending only on η; if you tune exactly one hyperparameter, tune this one first.</div>
 
-<p>Each one is the previous one plus a fix. Learn it as a chain and you can derive any of them from
-the one before:</p>
+<h2 data-n="14.6">Schedules and warmup</h2>
 
-<ol>
-  <li><strong>GD</strong> — use the true gradient. Correct, and far too slow: one step per pass over
-      the entire dataset.</li>
-  <li><strong>SGD</strong> — estimate the gradient from a mini-batch. Noisier per step, vastly more
-      steps per second, and the noise itself turns out to help escape saddles.</li>
-  <li><strong>+ Momentum</strong> — average the gradients over time. Fixes slow progress in narrow
-      ravines, where raw SGD ping-pongs across the valley rather than moving along it.</li>
-  <li><strong>+ RMSProp</strong> — divide by a running average of gradient <em>magnitude</em>. Fixes
-      the "one learning rate cannot suit every parameter" problem.</li>
-  <li><strong>Adam</strong> = momentum + RMSProp, plus a bias correction for the fact that both
-      running averages start at zero and are therefore badly underestimated for the first few
-      hundred steps.</li>
-  <li><strong>AdamW</strong> = Adam with weight decay decoupled from the gradient, which is the
-      version that actually implements the regularisation people think they are getting.</li>
-</ol>
+<div class="concept-brief">
+  <div class="what"><b>What</b>Change η over training instead of holding it fixed — usually a short linear rise (<em>warmup</em>), then a smooth decay.</div>
+  <div class="why"><b>Why</b>Adam's early updates are badly scaled (14.8 explains why); a large η then is exactly the 0.09 failure above.</div>
+  <div class="when"><b>Where in ML</b>Standard for transformer pretraining: linear warmup over 1–2% of steps, then cosine decay.</div>
+</div>
+
+<p>Warmup keeps η small — nowhere near 14.5's diverging 0.09 — while the model's first few updates
+settle, then raises it into the productive range once it is safe. Decay does the opposite job at the
+end: a rate that safely explores early is too large to settle into a narrow minimum late, so it is
+brought back down, typically along a cosine curve.</p>
+
+<div class="viz" data-viz="p14-schedule"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Warmup answers "what if the first step overshoots before the model has any signal"; decay answers "what if the last step overshoots the minimum it finally found".</div>
+
+<h2 data-n="14.7">Momentum</h2>
+
+<div class="bridge"><strong>gradient descent</strong> (14.2) → each step forgets every earlier step
+→ remember a running average of past gradients instead → <strong>momentum</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Keep a running average of gradients, <span class="m">v</span>, and step along that instead of the raw gradient.</div>
+  <div class="why"><b>Why</b>Consistent gradients build up speed; inconsistent ones average out.</div>
+  <div class="when"><b>Where in ML</b>SGD+momentum is still a strong, well-tuned baseline for vision models trained from scratch.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why "heavy ball" is the right picture</summary>
+  <div class="deep-body">
+
+<p>Plain gradient descent recomputes its direction from nothing every step — a cautious walker who
+stops, feels the ground, and decides fresh each time. Momentum instead keeps a velocity
+<span class="m">v</span>, updates it a little every step, and moves along <span class="m">v</span>
+rather than the instantaneous slope — a heavy ball that keeps rolling. If the last several gradients
+all point the same way, the ball speeds up in that direction; if they point opposite ways in
+alternation, the contributions cancel and the ball barely moves sideways at all.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="One momentum update on the bedrooms weight">
+  <div class="step">v ← βv + ∇L(w) &nbsp;&nbsp;&nbsp;&nbsp; w ← w − ηv</div>
+  <div class="step">β = 0.85, η = 0.02 &nbsp;·&nbsp; start w = 5, v = 0</div>
+  <div class="step">step 1: ∇L(5) = −70.5 &nbsp;·&nbsp; v ← 0.85(0) + (−70.5) = −70.5</div>
+  <div class="step">w ← 5 − 0.02×(−70.5) = <strong>6.41</strong> &nbsp;— identical to plain GD's
+  first step, since v started at 0</div>
+  <div class="step">step 2: ∇L(6.41) = −37.365 &nbsp;·&nbsp; v ← 0.85(−70.5) + (−37.365) = −97.29</div>
+  <div class="step">w ← 6.41 − 0.02×(−97.29) = 6.41 + 1.9458 = <strong>8.3558</strong></div>
+  <div class="meaning">Plain gradient descent's second step reached 7.1573 (14.2); momentum reached
+  8.3558 — it has already <em>overshot</em> the true value 8, because the accumulated velocity from
+  step 1 is still pushing forward. It will need a step or two to settle back, in exchange for the
+  faster early progress.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>v</b><span>velocity — a running average of gradients, not the gradient itself</span></span>
+    <span><b>β</b><span>how much of the old velocity survives each step; 0.85 keeps 85%</span></span>
+    <span><b>1/(1−β)</b><span>the rough number of recent steps v is averaging over; for β = 0.85
+    that is 1/0.15 ≈ 6.7 steps</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="momentum"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Momentum trades a chance of overshoot for faster progress along a direction the recent gradients agree on — say the trade-off out loud, don't just call it "faster".</div>
+
+<h2 data-n="14.8">Adaptive steps — RMSProp, Adam, AdamW</h2>
+
+<div class="bridge"><strong>momentum's v</strong> (14.7, remembers direction) +
+<strong>a running average of squared gradients</strong> (remembers magnitude) → combine both →
+<strong>Adam</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Rescale each parameter's step using its own recent gradient history, instead of one shared η for every weight.</div>
+  <div class="why"><b>Why</b>Different weights need different step sizes; one global η is a compromise that suits none of them well.</div>
+  <div class="when"><b>Where in ML</b>Adam/AdamW is the default optimiser for transformers and most modern architectures.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>RMSProp first, since Adam is built on it</summary>
+  <div class="deep-body">
+
+<p><strong>RMSProp</strong> keeps a running average <span class="m">s</span> of the <em>squared</em>
+gradient, and divides the step by <span class="m">√s</span>:</p>
+
+<div class="eq">s ← β₂s + (1 − β₂)g² &nbsp;&nbsp;&nbsp;&nbsp; w ← w − ηg/(√s + ε)</div>
+
+<p>A parameter whose gradients have been consistently large gets a smaller effective step; one whose
+gradients have been consistently tiny gets a relatively larger one. <span class="m">ε</span> is a
+tiny constant (typically 1e-8) that only matters when <span class="m">s</span> is near zero, so
+division never blows up.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="One Adam update on the bedrooms weight">
+  <div class="step">m ← β₁m + (1−β₁)g &nbsp;&nbsp;&nbsp;&nbsp; s ← β₂s + (1−β₂)g²</div>
+  <div class="step">m̂ = m/(1−β₁ᵗ) &nbsp;&nbsp;&nbsp;&nbsp; ŝ = s/(1−β₂ᵗ) &nbsp;&nbsp;&nbsp;&nbsp;
+  w ← w − ηm̂/(√ŝ + ε)</div>
+  <div class="step">β₁ = 0.9, β₂ = 0.999, η = 0.001, ε = 1e-8 &nbsp;·&nbsp; t = 1, w = 5,
+  g = ∇L(5) = −70.5</div>
+  <div class="step">m = 0.9(0) + 0.1(−70.5) = −7.05 &nbsp;·&nbsp; s = 0.999(0) + 0.001(−70.5)² = 4.97025</div>
+  <div class="step">m̂ = −7.05/(1−0.9¹) = −7.05/0.1 = <strong>−70.5</strong> &nbsp;·&nbsp;
+  ŝ = 4.97025/(1−0.999¹) = 4.97025/0.001 = <strong>4970.25</strong></div>
+  <div class="step">√ŝ = √4970.25 = 70.5 &nbsp;·&nbsp; w ← 5 − 0.001×(−70.5)/(70.5+ε) ≈ 5 + 0.001
+  = <strong>5.001</strong></div>
+  <div class="meaning">At t=1, bias correction always makes m̂ equal to the raw gradient exactly and
+  ŝ equal to its square exactly, whatever β₁ and β₂ are — so m̂/√ŝ is always exactly
+  sign(g) = −1 here. The step size is therefore just η, <strong>regardless of how large the raw
+  gradient (−70.5) was.</strong> That is the entire point of adaptive scaling: a huge or tiny
+  gradient produces a step of about the same, controlled size.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>m</b><span>the first-moment average — the same idea as momentum's v, using its own decay β₁</span></span>
+    <span><b>s</b><span>the second-moment average — mean squared gradient, RMSProp's accumulator</span></span>
+    <span><b>β₁, β₂</b><span>the two memory factors; 1/(1−β) recent steps, same formula as momentum</span></span>
+    <span><b>m̂, ŝ</b><span>bias-corrected versions — both start at 0, which underestimates the true
+    average until enough steps accumulate; dividing by (1−βᵗ) corrects that</span></span>
+    <span><b>ε</b><span>keeps the division safe; negligible here since √ŝ = 70.5 is far from 0</span></span>
+  </div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why large models often use β₂ = 0.95, not the 0.999 default</summary>
+  <div class="deep-body">
+
+<p><span class="m">1/(1−β₂)</span> is roughly how many recent steps <span class="m">s</span> is
+averaging over — the same formula 14.7 used for momentum's <span class="m">β</span>. At the default
+<span class="m">β₂ = 0.999</span> that span is <span class="m">1/0.001 = 1000</span> steps: the
+second-moment estimate reacts slowly to a genuine change in gradient scale. Lowering it to
+<span class="m">β₂ = 0.95</span> shrinks the span to <span class="m">1/0.05 = 20</span> steps — the
+per-parameter scale adapts much faster, which large-model training pipelines find worth the extra
+noise.</p>
+  </div>
+</details>
+
+<div class="viz" data-viz="p14-adaptive"></div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>AdamW — the Ridge idea, applied in a different place</summary>
+  <div class="deep-body">
+
+<p>10.11 penalised large weights by adding <span class="m">½αw²</span> to the <em>loss</em> — Ridge.
+Plain Adam-with-an-L2-penalty does exactly that, which means the penalty's own gradient,
+<span class="m">αw</span>, gets folded into <span class="m">g</span> and divided by
+<span class="m">√ŝ</span> along with everything else. A weight with a large gradient history gets
+almost no decay; the one you most want to shrink is shrunk least.</p>
+
+<p><strong>AdamW</strong> applies the same shrinkage directly to the weight, after the adaptive step,
+bypassing <span class="m">√ŝ</span> entirely:</p>
+
+<div class="eq">w ← (1 − ηd)w − ηm̂/(√ŝ + ε)
+  <span class="note">this page calls the decay rate d to avoid a clash with the Lagrange multiplier
+  λ introduced in 14.12; the figure below labels the same quantity λ</span>
+</div>
+
+<p>Reusing 14.2's numbers with <span class="m">d = 0.1</span>: the Adam step above gave
+<span class="m">w = 5.001</span>. AdamW instead gives
+<span class="m">w = (1 − 0.001×0.1)(5) − (−0.001) = 4.9995 + 0.001 = 5.0005</span> — a small
+difference after one step, because <span class="m">η</span> is small by design. Weight decay's
+effect compounds over the thousands of steps of a real run; it does not need to be dramatic in one
+step to matter over the whole of training.</p>
+  </div>
+</details>
 
 <div class="box note">
   <span class="lbl">The one thing people get wrong about Adam</span>
   <p>Adam is <em>not</em> "the smart one that always wins". Well-tuned SGD with momentum still
-  generalises better than Adam on many vision benchmarks. Adam's advantage is that it works
-  acceptably across a very wide range of learning rates with almost no tuning — which is precisely
-  what you want when a single training run costs six figures and you get one attempt.</p>
+  generalises better than Adam on many vision benchmarks. Adam's real advantage, shown numerically
+  above, is that it produces a controlled step size across a huge range of gradient magnitudes with
+  almost no tuning — decisive when a training run costs a fortune and you get one attempt.</p>
 </div>
 
-<h2 data-n="14.5">Constrained optimisation — Lagrange, the dual, KKT</h2>
+<div class="interview-line"><b>Interview takeaway</b>Adam = momentum's m + RMSProp's s + bias correction; AdamW just moves the weight-decay term from inside the loss (Ridge-style) to directly on the weight, so every parameter decays at the same rate regardless of its own gradient history.</div>
 
-<p>Everything so far minimised freely. Now the real version: minimise f(x) <strong>subject to</strong>
-g(x) ≤ 0.</p>
+<h2 data-n="14.9">Gradient clipping</h2>
 
-<div class="viz" data-viz="lagrange"></div>
-
-<p>The geometry is the whole insight, and it is one picture. Draw the contour rings of your loss.
-Draw the constraint region. The best allowed point is where a contour ring first <em>touches</em>
-the constraint boundary — and at the moment of touching, the two curves are tangent, which means
-their gradients point along the same line:</p>
-
-<div class="eq">
-  ∇f = −λ ∇g
-  <span class="note">at the optimum, the two gradients are parallel; λ is how many times bigger one is</span>
+<div class="concept-brief">
+  <div class="what"><b>What</b>Cap the L2 length (10.4) of the whole gradient vector; if it is over a threshold, shrink the vector to exactly that length.</div>
+  <div class="why"><b>Why</b>One bad batch can produce a gradient hundreds of times the usual size; unclipped, that single step can destroy a training run.</div>
+  <div class="when"><b>Where in ML</b>Standard in LLM and RNN training, on by default.</div>
 </div>
 
-<p>So define the <strong>Lagrangian</strong> ℒ(x, λ) = f(x) + λ g(x), set all its derivatives to
-zero, and the constraint gets enforced automatically. A constrained problem in x has become an
-unconstrained problem in (x, λ).</p>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why this is a norm question, not a new idea</summary>
+  <div class="deep-body">
 
-<p><strong>What λ means</strong>, and this is the part interviewers press on: λ is the
-<em>shadow price</em> of the constraint — the rate at which your optimal loss would improve if you
-relaxed the constraint by one unit. Big λ: that constraint is really hurting you. λ = 0: the
-constraint is not binding at all, and you could delete it without changing the answer.</p>
+<p>Every update so far touched one weight. A real model updates many weights per step, so the
+gradient is a vector — one entry per weight — and 10.4 already defined how to turn a vector into one
+number: its norm. Clipping measures the gradient's L2 norm and, if it exceeds a threshold, rescales
+the whole vector by the same factor in every entry. <strong>The direction never changes</strong> —
+only how far you travel along it.</p>
+  </div>
+</details>
 
-<p>With inequality constraints you get the <strong>KKT conditions</strong>. Four of them, but you
-only need to recite them if pushed:</p>
+<div class="math-work" aria-label="Clipping a two-weight gradient snapshot">
+  <div class="step">g = <span class="matrix vector"><span>6</span><span>4.5</span></span>
+    &nbsp;— gradient components for the bedrooms and km weights on one noisy batch</div>
+  <div class="step">‖g‖ = √(6² + 4.5²) = √(36 + 20.25) = √56.25 = <strong>7.5</strong></div>
+  <div class="step">threshold = 1.0 &nbsp;·&nbsp; scale = 1.0/7.5 = 0.1333</div>
+  <div class="step">g ← g × 0.1333 = <span class="matrix vector"><span>0.8</span><span>0.6</span></span>
+    &nbsp;— check: √(0.8² + 0.6²) = √1.0 = 1.0, exactly the threshold</div>
+  <div class="meaning">Same direction (the ratio 6∶4.5 equals 0.8∶0.6), a tenth of the length. Below
+  the threshold, clipping is a no-op — it is a safety rail, not a normaliser.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>g</b><span>the gradient vector across the weights being updated this step</span></span>
+    <span><b>‖g‖</b><span>the L2 norm from 10.4 — the vector's straight-line length</span></span>
+    <span><b>scale</b><span>threshold ÷ ‖g‖, applied to every entry equally</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="clipping"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Clipping caps the damage of the worst step you will ever take without touching direction — a speed limiter, not a steering correction.</div>
+
+<h2 data-n="14.10">The optimizer family, as one chain</h2>
+
+<p>Each one below is the previous one plus exactly one fix, and every piece is now something you have
+computed by hand:</p>
 
 <ol>
-  <li><strong>Stationarity</strong> — ∇ℒ = 0 in x.</li>
-  <li><strong>Primal feasibility</strong> — g(x) ≤ 0, i.e. you obeyed the rule.</li>
-  <li><strong>Dual feasibility</strong> — λ ≥ 0. A constraint can only push you back inside, never
-      pull you out.</li>
-  <li><strong>Complementary slackness</strong> — λ·g(x) = 0. Either you are pressed against the wall
-      (g = 0) or the wall does not matter (λ = 0). Never both.</li>
+  <li><strong>GD (14.2)</strong> — the true, full-batch gradient. Correct, and one step costs a full
+      pass over the data.</li>
+  <li><strong>SGD / mini-batch (14.3)</strong> — estimate the gradient from a subset. Noisier per
+      step, far more steps per second.</li>
+  <li><strong>+ Momentum (14.7)</strong> — average gradients over time with v. Fixes slow, zig-zag
+      progress when the recent gradients keep agreeing on direction.</li>
+  <li><strong>+ RMSProp (14.8)</strong> — divide by a running average of squared gradient magnitude,
+      s. Fixes "one learning rate cannot suit every parameter".</li>
+  <li><strong>Adam (14.8)</strong> = momentum's m + RMSProp's s, plus bias correction so both
+      averages are trustworthy from step 1.</li>
+  <li><strong>AdamW (14.8)</strong> = Adam with weight decay applied directly to the weight instead
+      of folded into the loss — the version that actually delivers the regularisation people
+      think they configured.</li>
 </ol>
 
-<p>Condition 4 is where all the payoff is. In an SVM, it says that every training point either sits
-exactly on the margin (λ &gt; 0 — a <strong>support vector</strong>) or is comfortably inside and
-has λ = 0, contributing nothing to the solution. That is <em>why</em> an SVM depends on a handful of
-points and ignores the rest. The sparsity is not a design choice; it falls out of complementary
-slackness.</p>
+<div class="interview-line"><b>Interview takeaway</b>Name the chain and the one problem each link fixes; that answers "why does Adam exist" better than any one-line definition.</div>
 
-<h2 data-n="14.6">Where you have already met this without noticing</h2>
+<h2 data-n="14.11">Constrained optimisation — minimising subject to a rule</h2>
 
-<div class="tw">
-<table>
-<tr><th>Problem</th><th>The constraint</th><th>What the multiplier becomes</th></tr>
-<tr><td>Ridge regression</td><td>‖w‖² ≤ t</td><td>The λ in λ‖w‖². Every regularisation strength is
-    a Lagrange multiplier for an implicit size budget on the weights</td></tr>
-<tr><td>Lasso</td><td>‖w‖₁ ≤ t</td><td>Same, but the L1 ball's corners are what produce exact
-    zeros — the geometry from module 10</td></tr>
-<tr><td>SVM</td><td>margin ≥ 1 for every point</td><td>One αᵢ per point; the non-zero ones are
-    the support vectors</td></tr>
-<tr><td>Softmax as max-entropy</td><td>match the observed feature means</td><td>The logits. Softmax
-    is the maximum-entropy distribution under moment constraints — the multipliers <em>are</em> the
-    parameters</td></tr>
-<tr><td>PPO / RLHF</td><td>KL(new ‖ old) ≤ δ</td><td>The KL coefficient β. Adaptive-KL PPO literally
-    tunes the multiplier online to hold the constraint</td></tr>
-<tr><td>Constrained serving</td><td>p99 latency ≤ 50 ms — the 99th percentile, meaning 99 of every 100 requests finish inside the budget</td><td>You do this by hand when you pick a
-    smaller model, and it is worth saying so in a system-design round</td></tr>
-</table>
+<div class="bridge"><strong>Ridge's penalty</strong> (10.11, <span class="m">L = cost + ½αw²</span>)
+→ what if instead of a soft penalty there is a hard rule → <strong>constrained
+optimisation</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Minimise a loss <span class="m">f(w)</span> subject to a rule
+  <span class="m">g(w) ≤ 0</span> that some choices are simply not allowed to violate.</div>
+  <div class="why"><b>Why</b>10.11's regularisation charged a penalty for large weights; a constraint
+  instead rules large weights out entirely.</div>
+  <div class="when"><b>Where in ML</b>A maximum weight budget, a maximum prediction latency, a policy
+  that must stay close to a reference model.</div>
 </div>
 
-<h2 data-n="14.7">The Laplace approximation</h2>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Constraint vs. penalty — the distinction that matters</summary>
+  <div class="deep-body">
 
-<p>Bayesian inference wants a full posterior over weights. For any real network that integral is
-hopeless. Laplace's move is aggressively practical: <strong>assume the posterior is a Gaussian,
-centred at the mode you already found</strong>.</p>
+<p>10.11's Ridge added <span class="m">½αw²</span> to the loss: a large weight is <em>expensive</em>,
+but nothing stops you from choosing one if the fit is worth it. A constraint like
+<span class="m">w² ≤ t</span> is different in kind: choices with <span class="m">w² &gt; t</span> are
+not merely costly, they are <strong>not allowed</strong>. Section 14.12 shows these two framings are
+more closely related than they look.</p>
+  </div>
+</details>
 
-<ul>
-  <li>The <strong>mean</strong> is free — it is your trained MAP weights. You already have them.</li>
-  <li>The <strong>covariance</strong> is the inverse Hessian of the negative log-posterior at that
-      point. Sharp curvature → small variance → confident. Flat → large variance → uncertain.</li>
-</ul>
+<div class="viz" data-viz="p14-constrained"></div>
+<div class="viz" data-viz="lagrange"></div>
 
-<p>Why anyone cares: it bolts uncertainty onto an <em>already-trained</em> network with no retraining
-and no change to the architecture. Compare that to deep ensembles (train five models) or MC dropout
-(many forward passes at inference). The catch is that the Hessian is d×d, so real implementations
-approximate it — diagonal, Kronecker-factored (K-FAC), or last-layer-only — and the whole thing is
-only as good as the single-mode assumption, which for a deep network with many equivalent minima is
-generous.</p>
+<div class="interview-line"><b>Interview takeaway</b>A constraint rules choices out; a penalty only makes some choices more expensive — say which one a given problem actually needs.</div>
 
-<div class="box mem">
-  <span class="lbl">Say it this way</span>
-  <p>"Laplace approximation: put a Gaussian at the mode, get its width from the curvature. It is the
-  cheapest honest uncertainty estimate you can get from a model you have already trained — and it is
-  also where BIC's penalty term comes from."</p>
+<h2 data-n="14.12">The Lagrangian and its multiplier</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Attach a multiplier <span class="m">λ</span> to the constraint and add it to the objective, turning a constrained problem in <span class="m">w</span> into an unconstrained one in <span class="m">(w, λ)</span>.</div>
+  <div class="why"><b>Why</b>Unconstrained problems are what gradient descent already solves (14.2); this converts one into the other.</div>
+  <div class="when"><b>Where in ML</b>Every regularisation coefficient — 10.11's α included — is secretly a Lagrange multiplier for a size budget you never wrote down.</div>
 </div>
 
-<h2 data-n="14.8">Questions</h2>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Setting up the constrained version of 10.11's junk feature</summary>
+  <div class="deep-body">
+
+<p>10.11 fit a single "day of month sold" weight against the four residuals and found the
+unpenalised answer <span class="m">a = 110/365 = 0.30137</span> (10.11 rounds this to 0.3014; this
+page keeps one more digit so a later check comes out exact). The unpenalised loss for this one
+weight, from 10.11, is <span class="m">f(w) = ½(w − a)²</span>.</p>
+
+<p>Now put a hard rule on it instead of a soft penalty: the weight's <em>square</em> may not exceed
+some budget, <span class="m">g(w) = w² − t ≤ 0</span> — the same shape of constraint as
+<span class="m">‖w‖² ≤ t</span> in Ridge, applied to this one coefficient.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="Solving the Lagrangian and recovering Ridge's answer">
+  <div class="step">ℒ(w, λ) = f(w) + λg(w) = ½(w − a)² + λ(w² − t)</div>
+  <div class="step">∂ℒ/∂w = (w − a) + 2λw = 0 &nbsp;⇒&nbsp; w(1 + 2λ) = a &nbsp;⇒&nbsp;
+  w*(λ) = a/(1 + 2λ)</div>
+  <div class="step">compare to 10.11's Ridge: minimising ½(w−a)² + ½αw² gives w = a/(1+α)</div>
+  <div class="step">so the two answers match exactly when 1+2λ = 1+α, i.e. <strong>λ = α/2</strong></div>
+  <div class="step">use 10.11's α = 0.30 &nbsp;⇒&nbsp; λ = 0.15 &nbsp;·&nbsp;
+  w* = 0.30137/1.30 = <strong>0.23182</strong> — 10.11's Ridge answer, 0.2318, to four figures</div>
+  <div class="step">the budget this λ is enforcing: t = w*² = 0.23182² = <strong>0.05374</strong></div>
+  <div class="meaning">Ridge's α and a Lagrange multiplier λ for the equivalent hard constraint are
+  the same idea, off by a factor of 2 that comes purely from the ½ in Ridge's own penalty
+  definition. Tuning α in 10.11 was, without saying so, choosing a weight budget t.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>f(w)</b><span>the loss you actually want small — here, 10.11's ½(w−a)²</span></span>
+    <span><b>g(w)</b><span>the constraint, written so "allowed" means g(w) ≤ 0</span></span>
+    <span><b>λ</b><span>the Lagrange multiplier — the price attached to violating the rule</span></span>
+    <span><b>ℒ</b><span>the Lagrangian — objective plus multiplier times constraint</span></span>
+    <span><b>w*(λ)</b><span>the w that minimises ℒ for a given λ</span></span>
+    <span><b>t</b><span>the budget — how large w² is allowed to be</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-multiplier"></div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>What λ = 0.15 actually means, in euros</summary>
+  <div class="deep-body">
+
+<p><span class="m">λ</span> is a <strong>shadow price</strong>: the rate at which the best-achievable
+loss would improve if the budget <span class="m">t</span> were relaxed by one unit. A large
+<span class="m">λ</span> says the rule is really biting; <span class="m">λ = 0</span> says it is not
+binding at all — you could delete it and get the identical answer. 14.14 shows the case where the
+budget is generous enough that this λ falls to exactly 0.</p>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>Form ℒ = f + λg, differentiate, set to zero — a constrained problem in w has become an unconstrained one in (w, λ), and λ is the constraint's shadow price.</div>
+
+<h2 data-n="14.13">The dual problem</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Minimise <span class="m">ℒ</span> over <span class="m">w</span> for a fixed <span class="m">λ</span>, then choose <span class="m">λ</span> to make that minimum as large as possible.</div>
+  <div class="why"><b>Why</b>For any allowed <span class="m">w</span> and <span class="m">λ ≥ 0</span>, that minimum is a guaranteed lower bound on the true constrained loss — the dual asks for the best such bound.</div>
+  <div class="when"><b>Where in ML</b>SVM training solves the dual rather than the primal, because the dual turns out to depend only on dot products between examples.</div>
+</div>
+
+<div class="math-work" aria-label="The dual function for the Ridge Lagrangian">
+  <div class="step">q(λ) = min<sub>w</sub> ℒ(w, λ) = ℒ(w*(λ), λ), using w*(λ) = a/(1+2λ) from 14.12</div>
+  <div class="step">substituting and simplifying: q(λ) = λ[a²/(1+2λ) − t]</div>
+  <div class="step">at λ = 0.15: a² = 0.30137² = 0.09082 &nbsp;·&nbsp; a²/1.30 = 0.06986</div>
+  <div class="step">q(0.15) = 0.15 × (0.06986 − 0.05374) = 0.15 × 0.01612 = <strong>0.00242</strong></div>
+  <div class="step">compare to the actual constrained loss: f(w*) = ½(0.23182 − 0.30137)² =
+  ½(0.06955)² = <strong>0.00242</strong></div>
+  <div class="meaning">The lower bound q(λ) exactly equals the true constrained loss at this λ — no
+  gap. That is <strong>strong duality</strong>: for this convex problem, solving the dual gives you
+  the exact primal answer, not merely a bound on it.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>q(λ)</b><span>the dual function — the best loss achievable once λ is fixed</span></span>
+    <span><b>strong duality</b><span>when the best lower bound meets the true minimum exactly</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-dual"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>A matching lower bound proves you cannot do better; strong duality is when the dual's best bound and the primal's true minimum are the same number.</div>
+
+<h2 data-n="14.14">KKT conditions</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Four conditions that extend "slope = 0" to constrained problems.</div>
+  <div class="why"><b>Why</b>For a convex problem, satisfying all four certifies the global optimum — not just a stationary point.</div>
+  <div class="when"><b>Where in ML</b>Complementary slackness is exactly why an SVM's decision boundary depends on a handful of support vectors and ignores the rest.</div>
+</div>
+
+<div class="math-work" aria-label="Checking all four KKT conditions on the tight and slack cases">
+  <div class="step">1. Stationarity: ∂ℒ/∂w = 0 &nbsp;·&nbsp; at w*=0.23182, λ=0.15: (0.23182−0.30137)+2(0.15)(0.23182) = −0.06955+0.06955 = 0 ✓</div>
+  <div class="step">2. Primal feasibility: w*² ≤ t &nbsp;·&nbsp; 0.05374 ≤ 0.05374 ✓ (tight — the wall is exactly reached)</div>
+  <div class="step">3. Dual feasibility: λ ≥ 0 &nbsp;·&nbsp; 0.15 ≥ 0 ✓</div>
+  <div class="step">4. Complementary slackness: λ(w*² − t) = 0 &nbsp;·&nbsp; 0.15×(0.05374−0.05374) = 0 ✓</div>
+  <div class="step">now widen the budget to t = 0.10 &nbsp;— bigger than a² = 0.09082, so the
+  unconstrained answer already fits</div>
+  <div class="step">then w* = a = 0.30137, <strong>λ = 0</strong> &nbsp;·&nbsp; slackness:
+  0×(0.09082−0.10) = 0 ✓ — satisfied trivially, because the rule never mattered</div>
+  <div class="meaning">Same four checks, two different budgets. When the wall is reached exactly,
+  λ &gt; 0 and it is doing work. When the budget is generous, λ collapses to 0 and the constrained
+  and unconstrained answers are identical — "you only feel the wall if you are pressed against it."</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>complementary slackness</b><span>the multiplier times the constraint's signed gap is
+    zero: unused budget must have zero price</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-kkt"></div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>The same slackness argument gives an SVM its sparsity</summary>
+  <div class="deep-body">
+
+<p>An SVM attaches one multiplier <span class="m">αᵢ</span> to each training point's margin
+constraint. Complementary slackness says exactly what it said above: a point either sits exactly on
+the margin (constraint tight, <span class="m">αᵢ &gt; 0</span> — a <strong>support
+vector</strong>) or sits safely inside it (<span class="m">αᵢ = 0</span>, contributing nothing).
+The model ends up defined by a handful of points for the identical structural reason our one-weight
+budget above either binds or does not.</p>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>KKT is necessary and sufficient for the global optimum only when the problem is convex; complementary slackness is the condition that produces sparsity for free.</div>
+
+<h2 data-n="14.15">The Laplace approximation</h2>
+
+<div class="bridge"><strong>the loss curvature computed for gradient descent</strong> (14.2,
+∇L(w)=23.5(w−8)) → its own slope is the curvature, module 11's Hessian in one dimension → curvature
+also measures confidence in the fitted weight → <strong>Laplace approximation</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Approximate the distribution of a fitted weight with a Gaussian, centred at the fitted value, whose width comes from the loss's curvature there.</div>
+  <div class="why"><b>Why</b>A full Bayesian posterior over the weights is intractable for any real model; this gets an honest-looking uncertainty estimate almost for free.</div>
+  <div class="when"><b>Where in ML</b>Bolting calibrated uncertainty onto a network that is already trained, without retraining or an ensemble.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why curvature, and not the height of the loss, sets the width</summary>
+  <div class="deep-body">
+
+<p>Treat the squared-error loss <span class="m">L(w)</span> as (up to a constant) the negative
+log-posterior over the bedrooms weight. Its minimum, <span class="m">w = 8</span>, is the mode — the
+single most likely value. How <em>sure</em> we should be about that value is a separate question from
+where it sits, and it is answered by how sharply <span class="m">L</span> curves upward around it: a
+steep bowl means nearby values are punished hard and are therefore unlikely; a shallow bowl means
+they are barely worse than the mode, so the weight is uncertain.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="Turning the loss curvature into a Gaussian width">
+  <div class="step">L(w) = 11.75(w − 8)² &nbsp;·&nbsp; ∇L(w) = 23.5(w − 8)</div>
+  <div class="step">curvature H = d/dw[∇L(w)] = <strong>23.5</strong> &nbsp;— constant, since the
+  loss is an exact quadratic in this one-weight sub-problem</div>
+  <div class="step">Laplace: variance = 1/H = 1/23.5 = <strong>0.04255</strong> &nbsp;·&nbsp;
+  standard deviation = √0.04255 = <strong>0.2063</strong></div>
+  <div class="step">approximate posterior: w ≈ Normal(mean 8, std 0.2063)</div>
+  <div class="meaning">A wider bowl (smaller H) would give a larger variance and a less confident
+  estimate of the bedrooms weight; this particular loss is fairly steep, so the approximation is
+  fairly confident. In more than one weight at once, H becomes the Hessian matrix from module 11, and
+  the covariance is its inverse.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>H</b><span>curvature — the second derivative of the loss at its minimum, module 11's Hessian in one dimension</span></span>
+    <span><b>mode</b><span>the fitted weight, 8 — where the loss is smallest</span></span>
+    <span><b>1/H</b><span>the approximate variance: sharp curvature → small variance → confident</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="p14-laplace"></div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Where this stops being free</summary>
+  <div class="deep-body">
+
+<p>For a real network, the Hessian is <span class="m">d×d</span> for <span class="m">d</span>
+parameters, so nobody forms it exactly — real implementations approximate it as diagonal,
+Kronecker-factored (K-FAC), or last-layer-only. The Hessian at a real minimum is also frequently not
+positive-definite numerically, which a valid Gaussian requires; the usual fix is the
+<strong>Gauss–Newton</strong> or <strong>Fisher</strong> approximation, both positive
+semi-definite by construction. And the whole approximation assumes one mode — for a deep network
+with many equivalent minima from permutation symmetry alone, that is a generous assumption; deep
+ensembles capture several modes and often beat Laplace on real out-of-distribution benchmarks for
+exactly that reason.</p>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>Laplace approximation: put a Gaussian at the mode, get its width from the curvature — the cheapest honest uncertainty estimate available from a model you have already finished training.</div>
+
+<h2 data-n="14.16">One-minute recall</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>question</th><th>operation</th><th>house form</th><th>use it for</th></tr></thead>
+  <tbody>
+    <tr><td>Which way is downhill?</td><td>gradient descent</td><td><span class="m">w ← w − η∇L</span></td><td>fitting without an inverse</td></tr>
+    <tr><td>How many houses per step?</td><td>batch / mini-batch / stochastic</td><td>mean over 4, 2, or 1 house(s)</td><td>speed vs. noise</td></tr>
+    <tr><td>How big a step?</td><td>learning rate η</td><td>0.02 converges, 0.09 diverges — same L(w)</td><td>the first hyperparameter to tune</td></tr>
+    <tr><td>What if recent gradients agree?</td><td>momentum</td><td><span class="m">v ← βv + ∇L</span></td><td>ravines, slow zig-zag</td></tr>
+    <tr><td>What if one weight needs a different step?</td><td>RMSProp / Adam / AdamW</td><td><span class="m">w ← w − ηm̂/(√ŝ+ε)</span></td><td>per-parameter scaling</td></tr>
+    <tr><td>What if one batch's gradient is huge?</td><td>gradient clipping</td><td>rescale g to ‖g‖=threshold</td><td>training stability</td></tr>
+    <tr><td>What if a rule can't be violated?</td><td>Lagrangian</td><td><span class="m">ℒ = f + λg</span></td><td>constrained fitting, Ridge as a special case</td></tr>
+    <tr><td>How good is the best allowed bound?</td><td>dual problem</td><td><span class="m">q(λ) = min<sub>w</sub> ℒ</span></td><td>certifying optimality</td></tr>
+    <tr><td>Is the constraint even binding?</td><td>complementary slackness</td><td><span class="m">λ(w²−t)=0</span></td><td>SVM sparsity</td></tr>
+    <tr><td>How confident is the fitted weight?</td><td>Laplace approximation</td><td>Normal(mode, 1/H)</td><td>cheap uncertainty</td></tr>
+  </tbody>
+</table></div>
+
+<h2 data-n="14.17">Questions</h2>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>Explain gradient descent to someone non-technical.</summary>
   <div class="a">
     <div class="tldr">You are on a foggy hillside trying to reach the valley. You cannot see far, but
     you can feel the slope, so you step downhill, feel again, and repeat.</div>
-    <p>Height is how wrong the model is. The slope is the gradient. The size of each step is the
-    learning rate. Training is thousands of small downhill steps.</p>
+    <p>Concretely: 14.2 started at a wrong guess for one house weight, <span class="m">w = 5</span>
+    when the right answer was 8. The slope there was −70.5, so the update moved to 6.41, then to
+    7.1573. Height is how wrong the model is; the slope is the gradient; the step size is the
+    learning rate.</p>
     <p>Two follow-ups worth pre-empting: we go in the <em>negative</em> gradient direction because the
-    gradient points uphill by definition; and we use a mini-batch rather than the full dataset,
-    which makes each step slightly wrong but hundreds of times faster — and the noise turns out to be
-    useful rather than merely tolerable.</p>
+    gradient points uphill by definition; and real training uses a mini-batch rather than the full
+    dataset (14.3), which makes each step's gradient slightly wrong but hundreds of times faster.</p>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip i">MID</span>SGD or Adam — which do you choose, and why?</summary>
   <div class="a">
-    <div class="tldr">Adam when I get few shots at tuning or the gradient scales vary wildly
-    (transformers, sparse features); SGD with momentum when I can afford to tune and I want the last
-    fraction of generalisation (vision).</div>
-    <p><strong>Adam's real advantage is robustness, not speed.</strong> It normalises each parameter's
-    step by that parameter's own gradient history, so it works acceptably across two orders of
-    magnitude of learning rate. That is decisive when a pretraining run costs a fortune and you get
-    one attempt.</p>
+    <div class="tldr">Adam when I get few shots at tuning or gradient scales vary wildly (transformers,
+    sparse features); SGD with momentum when I can afford to tune and want the last fraction of
+    generalisation (vision).</div>
+    <p><strong>Adam's real advantage is robustness, not speed.</strong> 14.8 showed the mechanism
+    directly: a first Adam step moved by almost exactly η regardless of whether the raw gradient was
+    huge or tiny, because <span class="m">m̂/√ŝ</span> is close to sign(g) early in training. That is
+    decisive when a pretraining run costs a fortune and you get one attempt.</p>
     <p><strong>SGD+momentum's advantage is generalisation.</strong> On CNN benchmarks a well-tuned SGD
     still beats Adam on test accuracy. The usual story is that Adam's per-parameter rescaling finds
     sharper minima; that explanation is contested, so I would state it as an observation with a
     plausible mechanism rather than a settled fact.</p>
-    <p>Practically: transformers, AdamW, cosine schedule with warmup, β₂ = 0.95 rather than 0.999 for
-    large models. Vision from scratch, SGD+momentum, cosine. And in both cases the learning rate gets
-    tuned before anything else does.</p>
+    <p>Practically: transformers get AdamW, cosine schedule with warmup (14.6), and often
+    β₂ = 0.95 rather than 0.999 for faster adaptation (14.8). Vision from scratch gets
+    SGD+momentum, cosine.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>"Adam adapts the learning rate so I do not need to tune it." No. It changes the sensible
-      range and makes the curve less sharp, but the peak still matters, and it still needs a
-      schedule.</p></div>
+      <p>"Adam adapts the learning rate so I do not need to tune it." No — it changes the sensible
+      range and flattens the curve, but the peak still matters, and it still needs a schedule.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip i">MID</span>What is AdamW, and why is decoupled weight decay not just cosmetic?</summary>
   <div class="a">
-    <div class="tldr">In plain Adam, weight decay is added to the gradient and then divided by the
-    per-parameter scale — so parameters with large gradients get almost no decay. AdamW applies the
-    decay directly to the weights, after the adaptive step, so every parameter is regularised
-    equally.</div>
-    <p>The mechanism: L2 regularisation adds λw to the gradient. Adam then divides the whole gradient
-    by √v, the running gradient magnitude. So the effective decay on each parameter is λw/√v —
-    inversely proportional to how large that parameter's gradients have been. Exactly the parameters
-    you most want to constrain get decayed least. The regularisation you configured is not the
-    regularisation you got.</p>
-    <p>AdamW decouples them: adaptive step first, then <code>w ← w − ηλw</code> separately. Now the
-    decay is uniform and its hyperparameter means what it says.</p>
-    <p>Why it matters in practice: this is why the sensible weight-decay values differ by roughly an
-    order of magnitude between Adam and AdamW, and it is a real reason a paper fails to reproduce
-    when someone swaps the optimiser and keeps the hyperparameters. It is also standard to exclude
-    biases and LayerNorm gains from decay entirely — decaying a normalisation scale toward zero is
-    just fighting the layer.</p>
+    <div class="tldr">In plain Adam-plus-L2, the penalty's gradient gets divided by √ŝ along with
+    everything else — so parameters with large gradients get almost no decay. AdamW applies decay
+    directly to the weight, after the adaptive step, so every parameter decays equally.</div>
+    <p>14.8 derived the mechanism from 10.11's Ridge penalty: L2 regularisation adds
+    <span class="m">αw</span> to the gradient, and Adam then divides the whole thing by
+    <span class="m">√ŝ</span>. The effective decay on a parameter is therefore proportional to
+    <span class="m">1/√ŝ</span> — inversely tied to how large that parameter's own gradients have
+    been. Exactly the parameters you most want to constrain get decayed least.</p>
+    <p>AdamW decouples them: <span class="m">w ← (1−ηd)w</span> applied separately from the adaptive
+    gradient step. Now the decay is uniform and its hyperparameter means what it says. This is why
+    sensible weight-decay values differ by roughly an order of magnitude between Adam and AdamW, and
+    a real reason a paper fails to reproduce when someone swaps the optimiser and keeps the same
+    hyperparameters.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>"L2 regularisation and weight decay are the same thing." They are identical for plain SGD.
-      They are <em>not</em> identical for any adaptive optimiser, and that difference is the entire
-      content of the AdamW paper.</p></div>
+      <p>"L2 regularisation and weight decay are the same thing." Identical for plain SGD. Not
+      identical for any adaptive optimiser — that difference is the entire content of the AdamW
+      paper.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip i">MID</span>Why do transformers need learning-rate warmup?</summary>
   <div class="a">
-    <div class="tldr">Because Adam's second-moment estimate is computed from almost no data in the
-    first few steps, so its variance is huge — and a huge, badly-scaled early step lands the model
-    somewhere it never recovers from.</div>
-    <p>Adam divides by √v̂, a running average of squared gradients. At step 1 that average has seen
-    exactly one sample. The bias correction fixes its <em>mean</em> but not its <em>variance</em>, so
-    early updates can be wildly over-sized. Warmup keeps η near zero while v̂ accumulates enough
-    samples to be trustworthy.</p>
+    <div class="tldr">Because Adam's second-moment estimate ŝ is built from almost no data in the
+    first few steps, so a full-size early step can land the model somewhere it never recovers from.</div>
+    <p>14.8's worked step used <span class="m">t = 1</span>, where bias correction makes
+    <span class="m">m̂</span> and <span class="m">ŝ</span> exactly equal to the single observed
+    gradient and its square. The correction fixes the <em>mean</em> but the estimate is still based on
+    one sample, so its variance is enormous. Warmup keeps <span class="m">η</span> near zero — well
+    inside the safe region from 14.5, nowhere near the diverging 0.09 — while enough steps accumulate
+    for <span class="m">ŝ</span> to be trustworthy.</p>
     <p>Two contributing factors specific to transformers: with post-LN, gradients through the deep
-    residual stack are badly scaled at initialisation, which is a large part of why pre-LN
-    architectures are more forgiving and need less warmup; and attention logits early in training can
-    be extreme, producing near-one-hot attention and correspondingly large gradients.</p>
-    <p>Typical practice: linear warmup over 1–2 % of total steps, then cosine decay to about 10 % of
-    the peak. The symptom when you skip it is characteristic — a loss spike in the first few hundred
-    steps that either recovers slowly or does not recover at all.</p>
+    residual stack are badly scaled at initialisation; and attention logits early in training can be
+    extreme, producing large gradients from near-one-hot attention.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>"So just use a smaller LR throughout?" That avoids the spike and then trains far too slowly
-      for the remaining 99 % of the run. Warmup lets you have a small step where you need one and a
-      large step everywhere else.</p></div>
+      <p>"So just use a smaller η throughout?" That avoids the early spike and then trains far too
+      slowly for the remaining run. Warmup gives you a small step exactly where you need one and a
+      larger step everywhere else.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>Explain Lagrange multipliers, and give a real ML example.</summary>
   <div class="a">
-    <div class="tldr">A Lagrange multiplier converts "minimise this subject to a rule" into
-    "minimise this plus λ times the rule" — an unconstrained problem. λ is the price of the
-    constraint: how much your objective would improve if you relaxed it by one unit.</div>
-    <p>The geometry: at the constrained optimum, the loss contour is tangent to the constraint
-    boundary, so ∇f and ∇g are parallel. λ is the ratio between them. Form
-    ℒ = f + λg, set the derivatives to zero, and the constraint enforces itself.</p>
-    <p><strong>The example I would give is ridge regression</strong>, because it reframes something
-    everyone already uses. "Minimise squared error subject to ‖w‖² ≤ t" has Lagrangian
-    MSE + λ‖w‖². That λ is your regularisation strength. Every time you tune a regularisation
-    coefficient you are choosing a Lagrange multiplier for a weight budget you never wrote down —
-    and the correspondence between t and λ is one-to-one and monotonic, so tuning either is the same
-    search.</p>
-    <p><strong>The one I would give second is PPO</strong>, because it shows the idea running live in
-    production: keep the updated policy within a KL ball of the reference model. Adaptive-KL PPO
-    tunes the multiplier online — KL too high, raise β; too low, lower it. That is dual ascent, being
-    run inside a training loop.</p>
+    <div class="tldr">A Lagrange multiplier converts "minimise this subject to a rule" into "minimise
+    this plus λ times the rule" — an unconstrained problem. λ is the price of the constraint: how
+    much the objective would improve if the rule were relaxed by one unit.</div>
+    <p>14.12 worked this on 10.11's own numbers: minimising <span class="m">½(w−a)²</span> subject to
+    <span class="m">w² ≤ t</span> gives <span class="m">w*(λ) = a/(1+2λ)</span>, and choosing
+    <span class="m">λ = 0.15</span> reproduces 10.11's Ridge answer, <span class="m">w = 0.2318</span>,
+    exactly — because every regularisation coefficient is quietly a Lagrange multiplier for a size
+    budget nobody wrote down explicitly.</p>
+    <p><strong>A second example worth having ready is PPO</strong>, because it shows the same idea
+    running live in production: keep the updated policy within a KL-divergence budget of a reference
+    model. Adaptive-KL PPO tunes its multiplier online — KL too high, raise it; too low, lower it —
+    which is dual ascent (14.13), running inside a training loop.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>The sign convention on λ trips people up. For inequality constraints λ ≥ 0 is required —
-      a constraint can push you back inside the feasible region but never pull you out of it.</p></div>
+      <p>The sign convention on λ trips people up. For a <span class="m">≤</span> constraint,
+      <span class="m">λ ≥ 0</span> is required — 14.14's dual feasibility condition. A constraint can
+      only push you back inside the feasible region, never pull you out of it.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>What are the KKT conditions, and what does complementary slackness buy you?</summary>
   <div class="a">
-    <div class="tldr">KKT generalises "set the gradient to zero" to problems with inequality
-    constraints. The condition that does the work is complementary slackness: λ·g(x) = 0 — either the
-    constraint is active or its multiplier is zero, never both non-zero.</div>
-    <p>The four: stationarity (∇ℒ = 0), primal feasibility (you obeyed the constraints), dual
-    feasibility (λ ≥ 0), and complementary slackness. For a convex problem satisfying a constraint
-    qualification, they are necessary <em>and</em> sufficient — a KKT point is the global optimum.</p>
-    <p><strong>What complementary slackness buys: sparsity, for free.</strong> In an SVM there is one
-    multiplier per training point. Complementary slackness says every point either sits exactly on
-    the margin, in which case its α is positive, or lies comfortably inside, in which case α = 0 and
-    it contributes nothing to the decision boundary. So the model is defined by a small subset of the
-    data — the support vectors. Delete every other training point and retrain: you get the identical
-    boundary.</p>
-    <p>That is a genuinely useful property, not just theory. It is why SVM inference cost scales with
-    the number of support vectors rather than the dataset size, and it is the same structural
-    argument as coresets and active learning: most of your data is not doing anything.</p>
+    <div class="tldr">KKT generalises "set the gradient to zero" to constrained problems. The
+    condition that does the work is complementary slackness — the multiplier times the constraint's
+    signed gap is zero, never both non-zero.</div>
+    <p>14.14 checked all four on the same weight-budget problem: stationarity, primal feasibility
+    (obeying the rule), dual feasibility (λ ≥ 0), and slackness. With a tight budget
+    (<span class="m">t = 0.0537</span>) the rule bites and <span class="m">λ = 0.15 &gt; 0</span>;
+    with a generous one (<span class="m">t = 0.10</span>) the rule never mattered and
+    <span class="m">λ</span> collapses to exactly 0. For a convex problem, all four together certify
+    the <em>global</em> optimum, not merely a stationary point.</p>
+    <p><strong>What slackness buys: sparsity, for free.</strong> An SVM has one multiplier per
+    training point; slackness says each point either sits exactly on the margin (multiplier positive,
+    a support vector) or comfortably inside (multiplier zero, contributing nothing). Delete every
+    other training point and retrain — identical boundary.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>KKT is only <em>sufficient</em> for convexity. On a neural network the conditions still
-      characterise stationary points, but a KKT point tells you nothing about global optimality — and
-      that is fine, because we do not expect global optimality there anyway.</p></div>
+      <p>KKT is only <em>sufficient</em> for the global optimum under convexity. On a neural network
+      the conditions still characterise stationary points, but satisfying them tells you nothing
+      about global optimality — and that is expected, since we never claim global optimality there
+      anyway (module 11).</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>What is the Laplace approximation and when would you actually reach for it?</summary>
   <div class="a">
-    <div class="tldr">Approximate the posterior with a Gaussian centred at the mode, with covariance
-    equal to the inverse Hessian there. It is the cheapest way to get uncertainty out of a network
-    you have already finished training.</div>
-    <p>Take the log-posterior, Taylor-expand it around the MAP estimate. The linear term vanishes
-    because you are at a stationary point, so the leading behaviour is quadratic — and a quadratic
-    log-density <em>is</em> a Gaussian. The curvature matrix is the precision; invert it for the
-    covariance.</p>
-    <p><strong>When I would reach for it:</strong> a model is already in production, someone asks for
+    <div class="tldr">Approximate the posterior with a Gaussian centred at the mode, with variance
+    equal to 1/curvature there. It is the cheapest way to get uncertainty out of a network you have
+    already finished training.</div>
+    <p>14.15 worked this on the bedrooms weight's own loss: the mode is <span class="m">w = 8</span>,
+    the curvature is <span class="m">H = 23.5</span>, and the approximate posterior is
+    <span class="m">Normal(8, 1/23.5) = Normal(8, 0.0426)</span>. In more than one dimension,
+    <span class="m">H</span> is module 11's Hessian, and the covariance is its inverse.</p>
+    <p><strong>When I would reach for it:</strong> a model is already in production, someone wants
     calibrated uncertainty or an out-of-distribution signal, and retraining five models for an
-    ensemble is not on the table. Last-layer Laplace is close to free and measurably improves
-    calibration.</p>
+    ensemble is not on the table. Last-layer Laplace is close to free.</p>
     <p><strong>When I would not:</strong> when the posterior is genuinely multimodal — which for a
     deep network it always is, given permutation symmetries alone — a single Gaussian at one mode is
-    a strong claim. Deep ensembles usually beat it on real OOD benchmarks precisely because they
-    capture several modes. And the exact Hessian is d×d, so anything at scale is diagonal, K-FAC, or
-    last-layer-only.</p>
-    <p>Worth knowing that BIC's <sup>k</sup>⁄<sub>2</sub>·log n penalty comes straight out of this
-    approximation applied to the marginal likelihood. Same mathematics, different use.</p>
+    a strong claim, and deep ensembles usually beat it on real OOD benchmarks by capturing several
+    modes.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>The Hessian must be positive-definite for this to give a valid Gaussian. At a real minimum
-      of a real network it frequently is not, numerically — implementations use the Gauss–Newton or
-      Fisher approximation, which is positive semi-definite by construction. Say that and you sound
-      like someone who has run it rather than read about it.</p></div>
+      <p>The curvature matrix must be positive-definite for this to give a valid Gaussian. At a real
+      minimum of a real network it frequently is not, numerically — implementations use the
+      Gauss–Newton or Fisher approximation instead, which is positive semi-definite by construction.
+      Say that, and you sound like someone who has run it rather than read about it.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip i">MID</span>Your loss suddenly spikes to NaN at step 40,000. Walk me through the debugging.</summary>
   <div class="a">
-    <div class="tldr">Check for a bad batch first, then numerical overflow in mixed precision, then
-    the learning rate. In that order, because that is the order of decreasing frequency.</div>
+    <div class="tldr">Check for a bad batch first, then numerical overflow, then the learning rate —
+    in that order, because that is the order of decreasing frequency.</div>
     <ol>
       <li><strong>Isolate.</strong> Restart from the last checkpoint with the same seed and data
           order. Reproduces at the same step → data. Does not → nondeterminism, likely numerical.</li>
-      <li><strong>The batch.</strong> Log the batch index. Corrupted sample, an all-padding sequence,
-          a label out of vocabulary range, a division by a zero-count feature. This is the most
-          common cause by a wide margin.</li>
-      <li><strong>Precision.</strong> In fp16, attention logits or a loss term can overflow to inf,
-          and inf − inf produces NaN. Check the loss scaler is not stuck at a huge value; bf16 — a
-          16-bit format that keeps fp32's range and gives up precision instead — makes this
-          class of bug mostly disappear.</li>
-      <li><strong>Gradients.</strong> Log the global gradient norm every step. If it climbs over
-          several steps before exploding, that is an optimisation instability rather than one bad
-          example — clip, and lower the LR.</li>
-      <li><strong>Adam's state.</strong> If v̂ has collapsed toward zero for some parameters, the
-          division blows up. Raising ε from 1e-8 to 1e-6 is a known mitigation for large models.</li>
-      <li><strong>Structural.</strong> A log or a sqrt of something that reached zero, or a
+      <li><strong>The batch.</strong> Corrupted sample, an all-padding sequence, a label out of
+          vocabulary range. Most common cause by a wide margin.</li>
+      <li><strong>Precision.</strong> In fp16, a logit or loss term can overflow to inf, and
+          inf − inf produces NaN. bf16 keeps fp32's range and gives up precision instead, which makes
+          this class of bug mostly disappear.</li>
+      <li><strong>Gradients.</strong> Log the global gradient norm — 14.9's ‖g‖ — every step. If it
+          climbs over several steps before exploding, that is an optimisation instability rather than
+          one bad example: clip (14.9), and lower η (14.5).</li>
+      <li><strong>Adam's state.</strong> If ŝ collapses toward zero for some parameters, the division
+          in 14.8's update blows up. Raising ε from 1e-8 to 1e-6 is a known mitigation.</li>
+      <li><strong>Structural.</strong> A log or sqrt of something that reached zero, or
           <code>log(softmax(x))</code> written by hand instead of <code>log_softmax</code>.</li>
     </ol>
-    <p>The prevention that costs nothing: gradient-norm logging on every run, gradient clipping on by
-    default, and frequent enough checkpoints that a restart costs minutes rather than a day.</p>
+    <p>The prevention that costs nothing: gradient-norm logging on every run, clipping on by default,
+    and checkpoints frequent enough that a restart costs minutes rather than a day.</p>
   </div>
 </details>
 
 <div class="checkpoint">
   <h4>Checkpoint — say these out loud, no notes</h4>
   <ul>
-    <li>The optimiser chain GD → SGD → momentum → RMSProp → Adam → AdamW, and the specific problem
-        each link fixes.</li>
-    <li>Why warmup exists, in terms of Adam's second moment.</li>
-    <li>Why decoupled weight decay is not cosmetic.</li>
-    <li>Lagrange multipliers in one sentence, plus the ridge example and the PPO example.</li>
-    <li>Complementary slackness → support vectors.</li>
-    <li>Laplace approximation: mode plus curvature, and one situation where you would use it.</li>
+    <li>Do the two-step gradient-descent update from w=5 toward w=8, by hand, with η=0.02.</li>
+    <li>Show the same loss diverging at η=0.09, and name the growth factor that decides it.</li>
+    <li>The optimiser chain GD → SGD → momentum → RMSProp → Adam → AdamW, and the one problem each link fixes.</li>
+    <li>Why Adam's first step moves by about η no matter how large the raw gradient was.</li>
+    <li>Turn 10.11's Ridge α into a Lagrange multiplier λ, and say what budget t it enforces.</li>
+    <li>Complementary slackness, in the tight-budget and generous-budget cases, and its SVM payoff.</li>
+    <li>Laplace approximation: mode plus curvature, using the bedrooms weight's own loss.</li>
   </ul>
 </div>
 
