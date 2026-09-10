@@ -10,294 +10,675 @@
 
 <p class="crumb">Part A · Maths · Module 11</p>
 <h1>Calculus &amp; minima
-  <span class="lede">Training a model is one question asked ten million times: <em>which way do I
-  turn this knob to make the error smaller?</em> Calculus is the machinery that answers it, and a
-  “minimum” is the place where the answer becomes “nowhere”.</span>
+  <span class="lede">Module 10 handed you a price rule that already fits four houses exactly, as if
+  it fell from the sky. Calculus is how you would actually go looking for it: start from a wrong
+  guess, measure which way the error tilts, and take a step. Same four houses, one new question —
+  <em>which way do I turn this knob to make the error smaller?</em></span>
 </h1>
+
+<div class="study-guide" aria-label="How to use this page">
+  <div><b>Scan</b>Read the three short answers and the interview line.</div>
+  <div><b>Work it</b>Follow the gradient-descent step on w₁, w₂ by hand.</div>
+  <div><b>Go deeper</b>Open any <span class="deep-q" aria-hidden="true">?</span> only when a step or term is unfamiliar.</div>
+</div>
 
 <h2 data-n="11.1">The problem this was invented to solve</h2>
 
-<p>Imagine you are on a hillside in thick fog. You want to get to the bottom of the valley. You
-cannot see the valley. All you can do is feel the ground under your feet and notice which way it
-tilts. So you take a step downhill, feel again, step again.</p>
+<p>Module 10 gave you a price rule out of nowhere: <span class="m">w = [3, 8, −0.4, −12]</span> — 3 k€
+per m², 8 k€ per bedroom, −0.4 k€ per year of age, −12 k€ per km from the centre. Plugged into house
+A's features <span class="m">x = [120, 3, 41, 4.2]</span>, it predicts exactly the 317.2 k€ house A
+sold for. Convenient, and unrealistic: nobody hands you <span class="m">w</span>. You have to search
+for it, starting from a guess that is almost certainly wrong.</p>
 
-<p>That is gradient descent, and it is the entire training algorithm of every model in this course.
-The fog is real: a model with 7 billion parameters lives on a 7-billion-dimensional hillside that
-nobody has ever seen or ever will. All we ever have is the local tilt.</p>
+<p>Call a candidate price list <span class="m">w</span> — it might be wrong in every slot. For any
+house, <span class="m">x·w</span> (the dot product from 10.3) is what that candidate predicts. Write
+<span class="m">ŷ = x·w</span> for the prediction, and let <span class="m">p</span> be the price the
+house actually sold for. The gap between them is the <strong>error</strong>:
+<span class="eq">e = p − ŷ</span></p>
 
-<p><strong>The derivative is the tilt.</strong> That is the whole of calculus for our purposes.
-Everything else is bookkeeping for when there are many knobs instead of one.</p>
+<p>Squaring the error keeps an overestimate and an underestimate equally bad, and — the property this
+whole page leans on — turns the result into a smooth curve with no kinks, so it always has a
+well-defined slope. Call that squared error the <strong>loss</strong>:</p>
 
-<h2 data-n="11.2">The terms</h2>
+<div class="eq">L = e² = (p − x·w)²</div>
 
-<div class="terms math-terms">
-
-  <div class="term">
-    <div class="t">Function <span class="tag">basic</span> <span class="sym">f(x)</span></div>
-    <p>A machine: put a number in, get a number out. In ML the machine is
-       <em>“given these parameter values, how wrong am I?”</em></p>
-    <p class="wh">Your loss function. Input = every weight in the model. Output = one number.</p>
-    <div class="viz" data-viz="fn-machine"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Slope <span class="tag">basic</span></div>
-    <p>Rise over run: how much the output changes per unit of input change. Positive = going up as
-       you move right. Negative = going down.</p>
-    <p class="an">On a road sign, “12 % gradient” is a slope of 0.12.</p>
-    <div class="viz" data-viz="slope"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Derivative <span class="tag">basic</span>
-        <span class="sym">f′(x), df/dx</span></div>
-    <p>The slope <em>at a single point</em>, obtained by measuring the average slope over a gap and
-       then shrinking the gap to nothing.</p>
-    <p class="an">Your speedometer. Average speed over an hour is rise/run; your speed <em>right
-       now</em> is the derivative of distance with respect to time.</p>
-    <p class="wh">Every number in <code>.grad</code> after <code>loss.backward()</code>.
-       Section 11.3 has the interactive version of the shrinking gap.</p>
-    <div class="viz" data-viz="deriv-mini"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Partial derivative <span class="tag">basic</span>
-        <span class="sym">∂f/∂x</span></div>
-    <p>The slope in one direction while every other input is held frozen. “If I nudge <em>only</em>
-       this knob, what happens?”</p>
-    <p class="wh">One weight's gradient. Seven billion of them per step.</p>
-    <div class="viz" data-viz="partial-mini"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Gradient <span class="tag">basic</span> <span class="sym">∇f</span></div>
-    <p>All the partial derivatives collected into one vector. It points in the direction of
-       <strong>steepest ascent</strong>, and its length says how steep.</p>
-    <p class="an">Standing on the hill, the gradient is the compass bearing straight <em>up</em> the
-       slope, with the needle length telling you how brutal the climb is.</p>
-    <div class="viz" data-viz="partial"></div>
-    <p class="wh">This is why the update is <span class="m">w ← w − lr·∇L</span>. The minus sign is
-       the entire reason: the gradient points uphill and we want down.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Stationary point <span class="tag">basic</span></div>
-    <p>Anywhere the gradient is exactly zero — flat ground. Could be a minimum, a maximum, a saddle,
-       or a plateau. Zero gradient alone does not tell you which.</p>
-    <p class="wh">Training “converging” means the gradient got small. It does not by itself mean
-       you arrived anywhere good.</p>
-    <div class="viz" data-viz="stationary"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Minimum <span class="tag">basic</span></div>
-    <p>A stationary point where the ground curves <em>upward</em> in every direction — step any way
-       you like and you go up. <strong>Local</strong>: the lowest point in its own neighbourhood.
-       <strong>Global</strong>: the lowest point anywhere.</p>
-    <p class="an">A puddle on a hillside is a local minimum. The lake at the bottom is the global one.
-       Water in the puddle has no local reason to move.</p>
-    <div class="viz" data-viz="minimum"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Saddle point <span class="tag">mid</span></div>
-    <p>Flat ground that goes <em>down</em> in some directions and <em>up</em> in others. Zero
-       gradient, but not a minimum.</p>
-    <p class="an">A horse's saddle, or a mountain pass: downhill to the two valleys, uphill to the
-       two peaks.</p>
-    <div class="viz" data-viz="saddle"></div>
-    <p class="wh">In high dimensions saddles vastly outnumber local minima, and they are the real
-       reason training stalls — this is the key insight below.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Second derivative <span class="tag">mid</span>
-        <span class="sym">f″(x)</span></div>
-    <p>The slope of the slope — how sharply the curve bends. Positive = bowl-shaped (minimum-like).
-       Negative = dome-shaped (maximum-like). Zero = flat or an inflection.</p>
-    <p class="an">Your speedometer is the first derivative; your <em>accelerator pedal</em> is the
-       second.</p>
-    <div class="viz" data-viz="second-deriv"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Hessian <span class="tag">senior</span> <span class="sym">H</span></div>
-    <p>The matrix of all second partial derivatives — curvature in every direction at once. Its
-       eigenvalues classify a stationary point: all positive ⇒ minimum, all negative ⇒ maximum,
-       mixed signs ⇒ saddle.</p>
-    <p class="wh">Its condition number (largest eigenvalue over smallest) is what makes a loss
-       surface a “ravine”, and is precisely what momentum and Adam exist to compensate for.</p>
-    <div class="viz" data-viz="hessian"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Jacobian <span class="tag">mid</span> <span class="sym">J</span></div>
-    <p>The matrix of first partial derivatives when the function takes many inputs <em>and</em>
-       returns many outputs. Row <em>i</em> is the gradient of output <em>i</em>.</p>
-    <p class="wh">Backprop never builds a Jacobian. It computes vector–Jacobian products, which is
-       why it costs about the same as a forward pass rather than N times more.</p>
-    <div class="viz" data-viz="jacobian"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Chain rule <span class="tag">basic</span>
-        <span class="sym">(f∘g)′ = f′(g)·g′</span></div>
-    <p>To get the sensitivity through a chain of steps, multiply the sensitivities of each step.</p>
-    <p class="an">Turn a dial that moves a lever that lifts a bucket. How much does the bucket rise
-       per turn of the dial? Multiply the three ratios.</p>
-    <p class="wh"><strong>Backpropagation is the chain rule.</strong> Not “uses”, not “is like” —
-       it <em>is</em> the chain rule, applied right to left so the shared work is done once.</p>
-    <div class="viz" data-viz="chain-mini"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Convex <span class="tag">mid</span></div>
-    <p>A function shaped like a single bowl: the straight line between any two points on the graph
-       lies on or above the graph. A convex function has exactly one minimum, and every local
-       minimum is global.</p>
-    <p class="an">A salad bowl is convex. An egg carton is not.</p>
-    <p class="wh">Linear regression, logistic regression, and SVMs are convex — one answer, always
-       reachable. Neural networks are wildly non-convex. That difference explains why the classical
-       models have closed-form or guaranteed solutions and deep ones need seeds, schedules and luck.</p>
-    <div class="viz" data-viz="convex"></div>
-  </div>
-
-  <div class="term">
-    <div class="t">Differentiable <span class="tag">mid</span></div>
-    <p>Smooth enough to have a slope everywhere. A sharp kink (like |x| at 0) has no single slope
-       there.</p>
-    <p class="wh">ReLU is not differentiable at exactly 0, and nobody cares: frameworks pick a
-       subgradient (usually 0) and the probability of landing precisely on the kink is nil. But it
-       is why you cannot backprop through <code>argmax</code> — and why Gumbel-softmax and
-       straight-through estimators exist.</p>
-    <div class="viz" data-viz="diffable"></div>
-  </div>
-
+<div class="concept-brief">
+  <div class="what"><b>What</b><span class="m">L</span> is a machine: put a candidate <span class="m">w</span> in, get one number out — how wrong that guess is.</div>
+  <div class="why"><b>Why</b>You cannot improve a guess you cannot measure. The loss is the single number every training step tries to shrink.</div>
+  <div class="when"><b>Where in ML</b>Every model has one: mean-squared error, cross-entropy, hinge loss. All are "how wrong am I", written as a function of the weights.</div>
 </div>
 
-<h2 data-n="11.3">What a derivative actually is</h2>
+<div class="viz" data-viz="fn-machine"></div>
 
-<p>Take two points on a curve and draw the straight line between them: that is the average slope
-over the gap, and it is a thing you can genuinely measure. Now slide the second point toward the
-first. The line pivots. As the gap goes to zero, the line settles on one particular tilt — the
-tangent. <strong>That settled value is the derivative.</strong></p>
+<p>Try it on house A with a guess that gets two of the four prices right and two wrong: keep the
+age-price and km-price at module 10's values (−0.4, −12), but guess 2 k€/m² for area (correct answer:
+3) and 5 k€/bedroom for bedrooms (correct answer: 8). Call this guess
+<span class="m">(w₁, w₂) = (2, 5)</span>, and leave <span class="m">w₃ = −0.4</span> and
+<span class="m">w₄ = −12</span> fixed for the rest of this page — <span class="m">w₁</span> and
+<span class="m">w₂</span> are the only two unknowns calculus has to find here, and
+<span class="m">(3, 8)</span> is the answer module 10 already found, sitting there to check against.</p>
+
+<div class="math-work" aria-label="Worked loss for house A at the starting guess">
+  <div class="step">ŷ = 120(2) + 3(5) + 41(−0.4) + 4.2(−12)</div>
+  <div class="step">= 240 + 15 − 16.4 − 50.4 = <strong>188.2</strong> k€</div>
+  <div class="step"><i>e</i> = <i>p</i> − ŷ = 317.2 − 188.2 = <strong>129</strong> k€</div>
+  <div class="step"><i>L</i> = <i>e</i>² = 129² = <strong>16 641</strong></div>
+  <div class="meaning">A guess that is 129 k€ too low on house A produces a loss of 16 641. That
+  number means nothing on its own — it only matters compared with the loss of a different guess,
+  which is exactly what the next section computes.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>x</i></b><span>house A's features — unchanged since module 10</span></span>
+    <span><b><i>w</i></b><span>the current guess: (2, 5, −0.4, −12)</span></span>
+    <span><b>ŷ</b><span>predicted price for this guess — "y hat"</span></span>
+    <span><b><i>p</i></b><span>the price house A actually sold for: 317.2 k€</span></span>
+    <span><b><i>e</i></b><span>error — how far the guess missed, in k€</span></span>
+    <span><b><i>L</i></b><span>loss — the squared error, the number we will shrink</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A loss function is not special — it is a function like any other, and the weights are its input. Training means searching that function's input space for a smaller output.</div>
+
+<h2 data-n="11.2">From two guesses to a slope</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Slope is rise over run: how much the loss changes per unit change in one weight.</div>
+  <div class="why"><b>Why</b>It tells you which direction to move a weight, and roughly how much difference that move makes.</div>
+  <div class="when"><b>Where in ML</b>The building block of every derivative and gradient on this page.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Freezing w₂ so w₁ has a single, plottable loss curve</summary>
+  <div class="deep-body">
+
+<p>Hold <span class="m">w₂</span> at its current guess, 5, and let only <span class="m">w₁</span>
+move. The loss becomes a function of one number instead of two:
+<span class="m">e(w₁) = 384 − 120w₁ − 15 = 369 − 120w₁</span>, so
+<span class="m">L(w₁) = (369 − 120w₁)²</span>. (The constant 384 is
+<span class="m">p + 16.4 + 50.4 = 317.2 + 66.8</span> — everything in the loss that does not depend on
+<span class="m">w₁</span> or <span class="m">w₂</span>, collected into one number.) Checking
+<span class="m">w₁ = 2</span> against this formula: <span class="m">369 − 240 = 129</span>, and
+<span class="m">129² = 16 641</span> — the same loss found in 11.1, as it must be.</p>
+  </div>
+</details>
+
+<p>Now guess a second value of <span class="m">w₁</span>, further from 2, and see how much the loss
+moved:</p>
+
+<div class="math-work" aria-label="Average slope between two guesses of w1">
+  <div class="step"><i>L</i>(2) = (369 − 240)² = 129² = 16 641</div>
+  <div class="step"><i>L</i>(2.5) = (369 − 300)² = 69² = 4 761</div>
+  <div class="step">average slope = <span class="m">(4 761 − 16 641) / (2.5 − 2)</span> = −11 880 / 0.5 = <strong>−23 760</strong></div>
+  <div class="meaning">Moving w₁ from 2 to 2.5 dropped the loss by 11 880 over a step of 0.5 — a
+  negative slope, because increasing w₁ toward its correct value of 3 makes the loss smaller.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>L</i>(2), <i>L</i>(2.5)</b><span>the loss at two different guesses for w₁</span></span>
+    <span><b>average slope</b><span>total change in <i>L</i> divided by the total change in w₁ — the secant line between the two points</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="slope"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>An average slope is a real, measurable quantity — no calculus required — but it depends on which two points you pick. Section 11.3 removes that dependence.</div>
+
+<h2 data-n="11.3">The derivative — shrinking the gap</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The slope at a single point, found by shrinking the gap between two guesses until it vanishes.</div>
+  <div class="why"><b>Why</b>An average slope depends on which second point you chose; the derivative does not — it is one number attached to one point.</div>
+  <div class="when"><b>Where in ML</b>Every number written into a gradient tensor after a framework's backward pass is one of these.</div>
+</div>
+
+<div class="viz" data-viz="deriv-mini"></div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Watch the secant settle as the gap shrinks</summary>
+  <div class="deep-body">
+
+<p>Pick the second guess closer and closer to <span class="m">w₁ = 2</span> and recompute the same
+average-slope calculation each time:</p>
+
+<div class="box mem">
+  <span class="lbl">The gap shrinking toward zero</span>
+  <div class="tw"><table>
+    <thead><tr><th>second guess</th><th>gap</th><th><i>L</i> at that guess</th><th>average slope</th></tr></thead>
+    <tbody>
+      <tr><td>2.5</td><td>0.5</td><td>4 761</td><td>−23 760</td></tr>
+      <tr><td>2.1</td><td>0.1</td><td>13 689</td><td>−29 520</td></tr>
+      <tr><td>2.01</td><td>0.01</td><td>16 332.84</td><td>−30 816</td></tr>
+      <tr><td>2.001</td><td>0.001</td><td>16 610.0544</td><td>−30 945.6</td></tr>
+    </tbody>
+  </table></div>
+  <p>The average slope is not wandering randomly — it is converging on one number. Shrink the gap all
+  the way to zero and it settles at <strong>−30 960</strong>. That settled value is the derivative,
+  written <span class="m">dL/dw₁</span> at <span class="m">w₁ = 2</span>.</p>
+</div>
+  </div>
+</details>
+
+<p>The same number falls straight out of algebra, with no shrinking required — confirmation that the
+table above was heading somewhere real. Expand the loss curve from 11.2:</p>
+
+<div class="math-work" aria-label="Derivative of the single-weight loss curve by expansion">
+  <div class="step"><i>L</i>(<i>w</i>₁) = (369 − 120<i>w</i>₁)² = 369² − 2(369)(120)<i>w</i>₁ + 120²<i>w</i>₁²</div>
+  <div class="step">= 136 161 − 88 560<i>w</i>₁ + 14 400<i>w</i>₁²</div>
+  <div class="step">d<i>L</i>/d<i>w</i>₁ = −88 560 + 28 800<i>w</i>₁</div>
+  <div class="step">at <i>w</i>₁ = 2: d<i>L</i>/d<i>w</i>₁ = −88 560 + 57 600 = <strong>−30 960</strong></div>
+  <div class="meaning">Same answer as the shrinking-gap table, found by ordinary polynomial
+  differentiation instead of a limit of secants. Both routes describe the same tangent line.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>d<i>L</i>/d<i>w</i>₁</b><span>the derivative of L with respect to w₁ — the exact slope at one point, not an average</span></span>
+    <span><b>−30 960</b><span>at the guess w₁ = 2, the loss is falling at 30 960 units per unit of w₁</span></span>
+  </div>
+</div>
 
 <div class="viz" data-viz="derivative"></div>
 
-<p>This matters practically because it is exactly how you would check a gradient implementation by
-hand. Perturb one weight by a tiny ε, see how much the loss changes, divide. If that number does not
-match what autograd reported, your backward pass is wrong. That is gradient checking, and it is
-still the fastest way to find a bug in a custom layer.</p>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why this is also how you would debug a gradient by hand</summary>
+  <div class="deep-body">
 
-<h2 data-n="11.4">So what <em>is</em> a minimum?</h2>
+<p>Nudge <span class="m">w₁</span> by a tiny amount <span class="m">ε</span>, see how much
+<span class="m">L</span> changes, divide by <span class="m">ε</span> — that is exactly the
+shrinking-gap table above, stopped at a very small gap instead of zero. If that number does not
+roughly match what a framework's automatic differentiation reports for the same point, the backward
+pass has a bug. That check is called <strong>gradient checking</strong>, and it is still the fastest
+way to catch a wrong derivative in a hand-written layer.</p>
+  </div>
+</details>
 
-<p>Two conditions, and interviewers want both:</p>
+<div class="interview-line"><b>Interview takeaway</b>A derivative is the limit of an average slope as the gap between two points shrinks to zero — a speedometer reading, not the average speed of the whole trip.</div>
 
-<ol>
-  <li><strong>First order:</strong> the gradient is zero. Flat ground. This alone is not enough — a
-      hilltop and a mountain pass are also flat.</li>
-  <li><strong>Second order:</strong> the curvature is positive in every direction. Whichever way you
-      step, you go up.</li>
-</ol>
+<h2 data-n="11.4">Partial derivatives — freezing every other knob</h2>
 
-<p>In one dimension that is “f′ = 0 and f″ &gt; 0”. In many dimensions it is “∇f = 0 and every
-eigenvalue of the Hessian is positive”. That second version is the answer to the interview question,
-because it hands you saddle points for free: a saddle is where the gradient is zero but the Hessian
-has both positive and negative eigenvalues.</p>
+<div class="concept-brief">
+  <div class="what"><b>What</b>The slope in one weight's direction while every other weight is held frozen at its current guess.</div>
+  <div class="why"><b>Why</b>The loss depends on several weights at once; you need to isolate one to ask "if I nudge only this one, what happens?"</div>
+  <div class="when"><b>Where in ML</b>One weight's entry in the gradient tensor — a model with a billion weights has a billion of these per step.</div>
+</div>
+
+<div class="viz" data-viz="partial-mini"></div>
+
+<p>Unfreeze <span class="m">w₂</span> and write the loss as a function of both unknowns:
+<span class="m">L(w₁, w₂) = (384 − 120w₁ − 3w₂)²</span>. The <strong>partial derivative</strong> with
+respect to <span class="m">w₁</span> asks: holding <span class="m">w₂</span> at its current value,
+how does <span class="m">L</span> change per unit of <span class="m">w₁</span>? Written
+<span class="m">∂L/∂w₁</span> — the curly ∂ is the signal that other variables are being held still.</p>
+
+<div class="math-work" aria-label="Partial derivatives of the two-weight loss">
+  <div class="step"><i>e</i>(<i>w</i>₁, <i>w</i>₂) = 384 − 120<i>w</i>₁ − 3<i>w</i>₂</div>
+  <div class="step">∂<i>L</i>/∂<i>w</i>₁ = 2<i>e</i>·(−120) = −240<i>e</i></div>
+  <div class="step">at (2, 5): <i>e</i> = 384 − 240 − 15 = 129, so ∂<i>L</i>/∂<i>w</i>₁ = −240(129) = <strong>−30 960</strong></div>
+  <div class="step">∂<i>L</i>/∂<i>w</i>₂ = 2<i>e</i>·(−3) = −6<i>e</i> = −6(129) = <strong>−774</strong></div>
+  <div class="meaning">Freezing w₂ at 5 and asking about w₁ alone reproduces the exact −30 960 found
+  in 11.3 by ordinary differentiation — a partial derivative is an ordinary derivative with a promise
+  attached: every other input stays put. The w₂ partial is a much smaller number, −774, because a
+  1-unit change in bedroom price moves the prediction by only 3 k€ per house, against 120 k€ per house
+  for a 1-unit change in area price.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>∂<i>L</i>/∂<i>w</i>₁</b><span>slope of the loss in the w₁ direction only</span></span>
+    <span><b>∂<i>L</i>/∂<i>w</i>₂</b><span>slope of the loss in the w₂ direction only</span></span>
+    <span><b>−120, −3</b><span>house A's own area and bedroom count, carried in from the dot product</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A partial derivative is a full derivative with everything else nailed down; collecting all of them for every weight is the very next section.</div>
+
+<h2 data-n="11.5">The gradient — all the partials at once</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>All the partial derivatives collected into one vector, written ∇L.</div>
+  <div class="why"><b>Why</b>One number per weight isn't a plan; one direction in weight-space, covering every weight at once, is.</div>
+  <div class="when"><b>Where in ML</b>The full contents of the gradient tensor after a backward pass — the input every optimizer (SGD, Adam, …) starts from.</div>
+</div>
+
+<div class="viz" data-viz="partial"></div>
+
+<p><span class="m">∇L</span> points in the direction of <strong>steepest ascent</strong> — the single
+direction in <span class="m">(w₁, w₂)</span> space that increases the loss fastest — and its length
+says how steep. Training wants the loss to go <em>down</em>, so the update subtracts it:</p>
+
+<div class="eq">w ← w − η·∇L</div>
+
+<p><span class="m">η</span> (eta) is the <strong>learning rate</strong> — how large a step to take
+along the negative-gradient direction, chosen by you rather than handed to you by the data.</p>
+
+<div class="math-work" aria-label="One gradient-descent step on both weights">
+  <div class="step">∇<i>L</i> = <span class="matrix vector"><span>−30 960</span><span>−774</span></span> at the guess <span class="matrix vector"><span>2</span><span>5</span></span></div>
+  <div class="step">pick η = 0.00003 (3×10⁻⁵) — small enough that the steep w₁ direction does not overshoot past its target of 3 in one step</div>
+  <div class="step"><i>w</i>₁ ← 2 − 0.00003(−30 960) = 2 + 0.9288 = <strong>2.9288</strong></div>
+  <div class="step"><i>w</i>₂ ← 5 − 0.00003(−774) = 5 + 0.02322 = <strong>5.02322</strong></div>
+  <div class="step">new loss: <i>e</i> = 384 − 120(2.9288) − 3(5.02322) ≈ 17.47, <i>L</i> ≈ 17.47² ≈ <strong>305</strong></div>
+  <div class="meaning">One step dropped the loss from 16 641 to about 305 — most of the way there.
+  But notice the asymmetry: w₁ moved by 0.93 toward its target of 3, while w₂ crept by only 0.02
+  toward its target of 8, even though both started equally wrong in relative terms. That is not a
+  fluke of this particular η — 11.11 explains exactly why.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>∇<i>L</i></b><span>the gradient — both partial derivatives, stacked as a vector</span></span>
+    <span><b>η</b><span>learning rate — the fraction of the gradient actually subtracted each step</span></span>
+  </div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why real training never computes the gradient from one house alone</summary>
+  <div class="deep-body">
+
+<p>This whole page uses house A on its own so every number stays checkable by hand. A real training
+step would sum (or average) the loss over every house in the batch before differentiating, because a
+single house's gradient is a noisy, biased estimate of the direction that helps every house — it
+happily drags an already-correct weight away from its fitted value just to explain one example
+better. Averaging over many houses (or a mini-batch of them) is what keeps that noise from dominating
+the step. This is the calculus behind why <strong>stochastic gradient descent</strong> uses random
+mini-batches instead of the whole dataset every time: cheaper per step, at the cost of a noisier
+gradient — a trade the sheer size of most datasets makes worthwhile.</p>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>The gradient is provably the direction of steepest ascent; the update subtracts it because training wants descent. The minus sign is the entire idea — everything else is bookkeeping.</div>
+
+<h2 data-n="11.6">Stationary points — where the gradient goes quiet</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Any point where the gradient is exactly zero — flat ground in every direction at once.</div>
+  <div class="why"><b>Why</b>Gradient descent stops changing the weights once the gradient vanishes, so this is where training would converge to.</div>
+  <div class="when"><b>Where in ML</b>"Training converged" means the gradient got small — it does not by itself mean the weights landed anywhere good.</div>
+</div>
+
+<div class="viz" data-viz="stationary"></div>
+
+<p>Both partial derivatives found in 11.4 are just <span class="m">e</span> multiplied by a constant
+(−240 and −6). They can only both be zero at once when <span class="m">e</span> itself is zero:</p>
+
+<div class="math-work" aria-label="Solving for the stationary points of house A's loss">
+  <div class="step">∇<i>L</i> = [0, 0] &nbsp;⇔&nbsp; <i>e</i> = 384 − 120<i>w</i>₁ − 3<i>w</i>₂ = 0</div>
+  <div class="step">⇔ 120<i>w</i>₁ + 3<i>w</i>₂ = 384</div>
+  <div class="step">check module 10's answer: 120(3) + 3(8) = 360 + 24 = <strong>384</strong> ✓</div>
+  <div class="meaning">Module 10's (3, 8) sits on this line, as it must — but so does every other
+  point on it. One house's loss gives one equation in two unknowns, so the gradient vanishes along an
+  entire line, not at one point. A stationary point is a necessary condition for a minimum; on its
+  own it does not say the answer is unique, or even that it is a minimum at all.</div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>"The gradient is zero" and "this is the answer" are not the same claim. Zero gradient is flat ground; whether it is a valley floor, a peak, or a whole flat trough still needs checking.</div>
+
+<h2 data-n="11.7">Minimum — and, here, a whole line of them</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A stationary point where the surface curves upward in every direction — step any way and the loss goes up. Local: lowest in its neighbourhood. Global: lowest anywhere.</div>
+  <div class="why"><b>Why</b>This is the actual target of training: not just flat ground, but flat ground with nowhere lower nearby.</div>
+  <div class="when"><b>Where in ML</b>What "the model has converged to a good solution" is supposed to mean.</div>
+</div>
+
+<div class="viz" data-viz="minimum"></div>
+
+<p>Every point on the line found in 11.6 has <span class="m">e = 0</span>, hence
+<span class="m">L = e² = 0</span> — and zero is the smallest a squared number can ever be. So every
+point on that line is a <strong>global</strong> minimum, tied with every other point on it: house A's
+loss cannot tell <span class="m">(3, 8)</span> apart from, say,
+<span class="m">(3.2, 0)</span> — check it: <span class="m">120(3.2) + 3(0) = 384</span>, also zero
+loss. One house's evidence pins down only <em>one</em> combination of the two weights, not both of
+them separately. Whether this trough collapses back to a single point once more houses are added is
+exactly the question the Hessian answers in 11.11.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>A minimum being global does not make it unique. With too few constraints relative to unknowns, "the minimum" can be an entire flat set rather than one point — the calculus mirror of module 10.8's rank-deficiency story.</div>
+
+<h2 data-n="11.8">Saddle points — flat ground that isn't a minimum</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Flat ground (zero gradient) that curves down in some directions and up in others.</div>
+  <div class="why"><b>Why</b>A stationary point is not automatically a minimum — descent can stall here even though there is a lower point nearby.</div>
+  <div class="when"><b>Where in ML</b>In high-dimensional networks, saddles vastly outnumber true local minima and are the more common reason training slows down.</div>
+</div>
+
+<div class="viz" data-viz="saddle"></div>
+
+<p>Could house A's own loss ever produce one? No. Section 11.15 shows this loss is convex — a single
+trough, curving up or staying flat in every direction, never down — so a genuine saddle (one direction
+curving up, another curving strictly down) is mathematically impossible here. Saddles need a function
+that stops being a simple squared linear combination — exactly what section 11.14's hypothetical
+deeper version of this model would introduce.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Zero gradient classifies into three outcomes — minimum, maximum, or saddle — and you need curvature, not just the gradient, to tell which. Squared-error linear regression only ever produces the first.</div>
+
+<h2 data-n="11.9">The second derivative — curvature in one direction</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The slope of the slope — how sharply a curve bends. Positive: bowl-shaped. Negative: dome-shaped.</div>
+  <div class="why"><b>Why</b>Zero gradient alone doesn't classify a stationary point; curvature is the second piece of evidence needed.</div>
+  <div class="when"><b>Where in ML</b>The one-dimensional version of the Hessian test that follows in 11.11.</div>
+</div>
+
+<div class="viz" data-viz="second-deriv"></div>
+
+<p>Reuse 11.3's single-weight curve: <span class="m">dL/dw₁ = −88 560 + 28 800w₁</span>. Differentiate
+once more.</p>
+
+<div class="math-work" aria-label="Second derivative of the single-weight loss curve">
+  <div class="step">d²<i>L</i>/d<i>w</i>₁² = d/d<i>w</i>₁ [ −88 560 + 28 800<i>w</i>₁ ] = <strong>28 800</strong></div>
+  <div class="meaning">A positive constant, unchanging wherever w₁ sits — this curve is a fixed
+  upward-bending parabola in the w₁ direction: no matter where you stand on it (with w₂ held at 5),
+  stepping either way increases the loss. That is the one-dimensional confirmation of a minimum. What
+  it cannot tell you is what happens in the w₂ direction at the same time — for that you need every
+  second partial derivative at once, which is exactly what the Hessian collects.</div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A positive second derivative confirms a bowl in one direction only. In more than one dimension, "positive in every direction" has to be checked all at once — that check is the Hessian.</div>
+
+<h2 data-n="11.10">What actually certifies a minimum</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Two conditions together: first order — the gradient is zero. Second order — the curvature is positive in every direction.</div>
+  <div class="why"><b>Why</b>First order alone cannot distinguish a minimum from a maximum or a saddle; both conditions together can.</div>
+  <div class="when"><b>Where in ML</b>The precise version of "did training converge to something good," in any number of dimensions.</div>
+</div>
 
 <div class="viz" data-viz="minima"></div>
 
+<p>In one dimension: <span class="m">f′ = 0</span> and <span class="m">f″ &gt; 0</span>. In
+<span class="m">d</span> dimensions: <span class="m">∇f = 0</span> and every eigenvalue of the Hessian
+(11.11 defines it) is positive. That second version hands you saddle points for free: a saddle is
+exactly a stationary point whose Hessian has mixed-sign eigenvalues.</p>
+
 <div class="box analogy">
-  <span class="lbl">Why local minima turned out not to be the problem</span>
-  <p>For twenty years the fear was that gradient descent would get trapped in bad local minima. It
-  mostly does not, and the reason is a counting argument. At a stationary point in <em>d</em>
-  dimensions you have <em>d</em> curvature directions, each independently positive or negative. For
-  a local minimum you need <strong>all d of them positive</strong>. If it were a coin flip, that is
-  2<sup>−d</sup> — and d is in the millions. Saddle points, where the signs are mixed, are
-  overwhelmingly more common.</p>
-  <p>So training does not get stuck in a hole; it gets <em>slowed down</em> crawling across nearly
-  flat saddle regions. And that is a very different problem, with a very different fix: momentum,
-  which keeps you moving through flat ground, and stochastic noise, which knocks you off the exact
-  saddle. This is the single best thing to say if asked “why does deep learning work despite
-  non-convexity”.</p>
+  <span class="lbl">Why local minima turned out not to be the main problem</span>
+  <p>At a stationary point in <span class="m">d</span> dimensions there are <span class="m">d</span>
+  curvature directions, each independently positive or negative. A local minimum needs
+  <strong>all</strong> <span class="m">d</span> of them positive. Treating the signs as a coin flip,
+  that probability is <span class="m">2⁻ᵈ</span> — and <span class="m">d</span> is in the millions for
+  a real network. Saddle points, which need only a mixture of signs, are overwhelmingly more likely.</p>
+  <p>So large-scale training does not get trapped in a bad hole; it gets <em>slowed down</em> crawling
+  across nearly flat saddle regions. That is a different problem with a different fix: momentum, which
+  carries velocity through flat ground, and the noise from mini-batch sampling, which knocks the
+  weights off an exact saddle. This is the standard answer to "why does deep learning work despite
+  non-convexity."</p>
 </div>
 
-<h2 data-n="11.5">The chain rule is backpropagation</h2>
+<div class="interview-line"><b>Interview takeaway</b>State the test as "gradient zero and Hessian positive definite," not just "gradient zero" — the second half is what tells a minimum apart from a saddle.</div>
 
-<p>A neural network is a chain: input → layer 1 → layer 2 → … → loss. You want ∂loss/∂w for a weight
-buried in layer 1. The chain rule says: multiply the sensitivity of the loss to layer 2's output, by
-layer 2's output's sensitivity to layer 1's output, by layer 1's output's sensitivity to w.</p>
+<h2 data-n="11.11">The Hessian — curvature in every direction at once</h2>
 
-<div class="eq">
-  <span class="frac"><span>∂L</span><span>∂w₁</span></span> =
-  <span class="frac"><span>∂L</span><span>∂a₃</span></span> ·
-  <span class="frac"><span>∂a₃</span><span>∂a₂</span></span> ·
-  <span class="frac"><span>∂a₂</span><span>∂a₁</span></span> ·
-  <span class="frac"><span>∂a₁</span><span>∂w₁</span></span>
-  <span class="note">Backprop computes this right to left, so the shared prefix is computed once for
-  every weight in the layer instead of once per weight.</span>
+<div class="concept-brief">
+  <div class="what"><b>What</b>The matrix of all second partial derivatives — curvature in every direction, collected in one object.</div>
+  <div class="why"><b>Why</b>Its eigenvalues classify a stationary point exactly: all positive is a minimum, all negative a maximum, mixed signs a saddle, a zero eigenvalue means a flat direction the test can't decide.</div>
+  <div class="when"><b>Where in ML</b>Its condition number — largest eigenvalue over smallest — is what makes a loss surface a "ravine," which is precisely what momentum and Adam exist to compensate for.</div>
 </div>
 
-<p>Written like that it looks like an incantation. It is not — it is one multiplication,
-repeated. Two functions in a row, real numbers, nothing hidden:</p>
+<div class="bridge"><strong>module 10.9</strong> → an eigenvector is a direction a matrix stretches without turning, and its eigenvalue is the stretch factor → apply that same lens to <strong>curvature</strong> instead of correlation → the Hessian's eigenvalues classify a stationary point</div>
+
+<p>Differentiate both of 11.4's partial derivatives one more time, with respect to both weights:</p>
+
+<div class="math-work" aria-label="Building and diagonalising the Hessian of house A's loss">
+  <div class="step">∂²<i>L</i>/∂<i>w</i>₁² = 28 800 &nbsp;&nbsp; ∂²<i>L</i>/∂<i>w</i>₁∂<i>w</i>₂ = 720 &nbsp;&nbsp; ∂²<i>L</i>/∂<i>w</i>₂² = 18</div>
+  <div class="step"><i>H</i> = <span class="matrix"><span>28 800</span><span>720</span><span>720</span><span>18</span></span></div>
+  <div class="step">det(<i>H</i>) = 28 800(18) − 720² = 518 400 − 518 400 = <strong>0</strong></div>
+  <div class="step">det(<i>H</i>−λ<i>I</i>) = λ² − 28 818λ + 0 = λ(λ − 28 818) = 0 &nbsp;⇒&nbsp; <strong>λ₁ = 28 818</strong>, <strong>λ₂ = 0</strong></div>
+  <div class="step"><i>v</i>₁ = <span class="matrix vector"><span>120</span><span>3</span></span>: <i>Hv</i>₁ = <span class="matrix vector"><span>28 800(120)+720(3)</span><span>720(120)+18(3)</span></span> = <span class="matrix vector"><span>3 458 160</span><span>86 454</span></span> = 28 818<i>v</i>₁</div>
+  <div class="step"><i>v</i>₂ = <span class="matrix vector"><span>3</span><span>−120</span></span>: <i>Hv</i>₂ = <span class="matrix vector"><span>28 800(3)+720(−120)</span><span>720(3)+18(−120)</span></span> = <span class="matrix vector"><span>0</span><span>0</span></span> = 0<i>v</i>₂</div>
+  <div class="meaning">One eigenvalue is a large positive number (28 818); the other is exactly zero.
+  The strongly curved direction, v₁ = (120, 3), is nothing exotic — it is house A's own feature pair
+  (area, bedrooms). That makes sense: this one-house loss only ever "sees" w₁ and w₂ through the
+  single combination 120w₁ + 3w₂, so it can only curve along that direction. The zero-curvature
+  direction, v₂ = (3, −120), is exactly the stationary line from 11.6 — flat because nothing about a
+  single house's loss resists sliding along it.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>H</i></b><span>the Hessian — every second partial derivative, arranged as a matrix</span></span>
+    <span><b>λ₁, λ₂</b><span>the eigenvalues — how much H stretches each invariant direction</span></span>
+    <span><b><i>v</i>₁, <i>v</i>₂</b><span>the eigenvectors — the two directions H does not turn</span></span>
+  </div>
+</div>
+
+<div class="box mem">
+  <span class="lbl">This is the same zero as module 10.8's</span>
+  <p><span class="m">det(H) = 0</span> here means exactly what
+  <span class="m">det(D) = 0</span> meant for the duplicate square-metre/square-foot column in 10.8:
+  one direction carries no independent information. There, one repeated <em>feature</em> collapsed a
+  direction; here, one house's worth of evidence collapses a direction in weight-space. Same signal,
+  same fix — more independent evidence. Summing the loss over all four houses A–D, instead of just A,
+  adds three more constraints; module 10.7 already showed that four independent house rows are enough
+  to solve for a unique <span class="m">w = X⁺p</span> — using the (XᵀX)⁻¹Xᵀp route.
+  In calculus terms, the combined four-house Hessian has no zero eigenvalue left, the trough from 11.7
+  collapses to the single point <span class="m">(3, 8, −0.4, −12)</span>, and gradient descent on
+  that combined loss converges to the exact weight module 10 solved for algebraically. Two different
+  routes, one destination.</p>
+</div>
+
+<p>The asymmetry from 11.5's update step — w₁ jumping 0.93, w₂ crawling 0.02 — is this same Hessian
+showing up as an ill-conditioned surface: 28 800 versus 18 on the diagonal is a thousand-times
+difference in curvature, caused by area (a large-scale feature, values near 120) sitting next to
+bedroom count (a small-scale feature, values near 3). That is exactly the raw-feature-scale trap
+module 10.4 flagged for distance calculations, reappearing here as the reason plain gradient descent
+zig-zags across a "ravine" instead of heading straight for the minimum.</p>
+
+<div class="viz" data-viz="hessian"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>The Hessian's condition number (largest eigenvalue over smallest) is why plain gradient descent struggles on ill-conditioned losses — the steepest direction points across the ravine, not along it, which is exactly what momentum and adaptive optimizers correct for.</div>
+
+<h2 data-n="11.12">The Jacobian — when the output is a vector too</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The matrix of first partial derivatives when a function takes many inputs <em>and</em> returns many outputs.</div>
+  <div class="why"><b>Why</b>A gradient is only defined for a function with one scalar output; predicting several houses at once returns a vector, and each output needs its own gradient.</div>
+  <div class="when"><b>Where in ML</b>Backprop never builds a full Jacobian — it computes vector–Jacobian products, which is why it costs about one extra forward pass rather than one pass per parameter.</div>
+</div>
+
+<p>Switch from "how wrong" (one loss number) back to "what price" (one number per house) — module
+10.6's <span class="m">p = Xw</span>, using the correct weight <span class="m">w = [3, 8, −0.4, −12]</span>
+and houses A and B:</p>
+
+<div class="math-work" aria-label="The Jacobian of the price predictions is the house table itself">
+  <div class="step"><i>X</i> = <span class="matrix four"><span>120</span><span>3</span><span>41</span><span>4.2</span><span>60</span><span>2</span><span>51</span><span>6</span></span>, &nbsp; <i>p</i> = <i>Xw</i> = <span class="matrix vector"><span>317.2</span><span>103.6</span></span></div>
+  <div class="step"><i>J</i> = ∂<i>p</i>/∂<i>w</i>, where <i>J</i><sub>ij</sub> = ∂<i>p</i><sub>i</sub>/∂<i>w</i><sub>j</sub> = <i>x</i><sub>ij</sub> because <i>p</i> is linear in <i>w</i></div>
+  <div class="step"><i>J</i> = <i>X</i> = <span class="matrix four"><span>120</span><span>3</span><span>41</span><span>4.2</span><span>60</span><span>2</span><span>51</span><span>6</span></span></div>
+  <div class="meaning">Row 1 of J is the gradient of house A's predicted price with respect to every
+  weight: [120, 3, 41, 4.2] — literally house A's own feature vector, because nudging w₁ by one unit
+  moves ŷ_A by exactly 120 (its area). Row 2 is house B's feature vector for the same reason. A
+  Jacobian is not a new object arithmetically: it is exactly what you get by stacking several outputs'
+  gradients as rows, the same way module 10.6 stacked several houses as rows of X.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>J</i></b><span>the Jacobian — row i is the gradient of output i</span></span>
+    <span><b><i>x</i><sub>ij</sub></b><span>house i's value for feature j — already familiar from module 10</span></span>
+  </div>
+</div>
+
+<div class="viz" data-viz="jacobian"></div>
+
+<div class="interview-line"><b>Interview takeaway</b>A Jacobian is a stack of gradients, one row per output. When the output collapses to a single number (a loss), the Jacobian collapses to the gradient you already know.</div>
+
+<h2 data-n="11.13">The chain rule — multiplying sensitivities</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>To find the sensitivity through a chain of steps, multiply the sensitivity of each step.</div>
+  <div class="why"><b>Why</b>The loss depends on a weight only through intermediate quantities (a prediction, an error); the chain rule is how a derivative passes through those intermediates.</div>
+  <div class="when"><b>Where in ML</b>Backpropagation <em>is</em> the chain rule, evaluated right to left so shared prefixes are computed once instead of once per weight.</div>
+</div>
+
+<div class="viz" data-viz="chain-mini"></div>
+
+<p>11.3's single-weight loss is already a two-step chain, whether or not it was named as one. Step
+one turns <span class="m">w₁</span> into a shortfall; step two turns that shortfall into a loss:</p>
+
+<div class="math-work" aria-label="Chain rule recovers 11.3's derivative by multiplying two sensitivities">
+  <div class="step">step 1 (inner): <i>u</i>(<i>w</i>₁) = 369 − 120<i>w</i>₁ &nbsp;&nbsp; step 2 (outer): <i>L</i>(<i>u</i>) = <i>u</i>²</div>
+  <div class="step">d<i>L</i>/d<i>u</i> = 2<i>u</i> &nbsp;&nbsp; d<i>u</i>/d<i>w</i>₁ = −120</div>
+  <div class="step">d<i>L</i>/d<i>w</i>₁ = (d<i>L</i>/d<i>u</i>)·(d<i>u</i>/d<i>w</i>₁) = 2<i>u</i>·(−120) = −240<i>u</i></div>
+  <div class="step">at <i>w</i>₁ = 2: <i>u</i> = 369 − 240 = 129, so d<i>L</i>/d<i>w</i>₁ = −240(129) = <strong>−30 960</strong></div>
+  <div class="meaning">Exactly the −30 960 found by direct expansion in 11.3 and by the partial
+  derivative in 11.4 — three routes to one number. Backpropagation is this same multiply, repeated
+  once per link in a longer chain: the sensitivity of the loss to a late quantity, times that
+  quantity's sensitivity to an earlier one, times the next link back, computed right to left so the
+  shared prefix — dL/du here — is reused instead of recomputed for every weight.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>u</i></b><span>the intermediate quantity — the shortfall between 369 and the scaled weight</span></span>
+    <span><b>d<i>L</i>/d<i>u</i>, d<i>u</i>/d<i>w</i>₁</b><span>the two link-by-link sensitivities being multiplied</span></span>
+  </div>
+</div>
 
 <div class="viz" data-viz="chain-rule"></div>
 
-<p>Two consequences fall straight out of that product, and both are interview answers:</p>
+<div class="interview-line"><b>Interview takeaway</b>Backpropagation is not "based on" or "similar to" the chain rule — it is the chain rule, applied right to left so the shared work is done once per layer instead of once per weight.</div>
 
+<h2 data-n="11.14">Vanishing and exploding gradients</h2>
+
+<div class="box analogy">
+  <span class="lbl">A hypothetical extension of this page's example</span>
+  <p>The house-price model is one linear layer, so its chain in 11.13 has exactly two links. A real
+  50-layer network doing the same job would be absurd overkill for four houses — but it is the
+  smallest way to see what a 50-link chain does that a 2-link chain cannot. Suppose each layer's local
+  derivative squashes its input by a roughly constant factor before passing it on, the way 11.13's
+  −120 scaled the shortfall. Chain fifty of those factors together, one multiply per link, exactly as
+  in 11.13.</p>
+</div>
+
+<div class="math-work" aria-label="Vanishing and exploding products of fifty per-layer factors">
+  <div class="step">factor 0.9 per layer (typical of a squashing activation): 0.9² = 0.81, 0.9⁵ = 0.59049</div>
+  <div class="step">0.9¹⁰ = (0.9⁵)² ≈ 0.3487 &nbsp;&nbsp; 0.9²⁵ = 0.9²⁰·0.9⁵ ≈ 0.0718 &nbsp;&nbsp; 0.9⁵⁰ = (0.9²⁵)² ≈ <strong>0.00515</strong></div>
+  <div class="step">factor 1.5 per layer: 1.5² = 2.25, 1.5⁵ = 7.59375, 1.5¹⁰ ≈ 57.67</div>
+  <div class="step">1.5²⁵ = 1.5²⁰·1.5⁵ ≈ 25 253 &nbsp;&nbsp; 1.5⁵⁰ = (1.5²⁵)² ≈ <strong>6.4×10⁸</strong></div>
+  <div class="meaning">With a typical factor under 1, fifty multiplications shrink the signal to about
+  half a percent of its size — the earliest layers receive almost no learning signal, which is
+  <strong>vanishing gradients</strong>. With a typical factor over 1, the same fifty multiplications
+  inflate the signal past six hundred million times its size — one catastrophic step and likely NaNs
+  on the next iteration, which is <strong>exploding gradients</strong>. (A commonly repeated version
+  of this example claims a small-enough factor, like sigmoid's derivative cap of 0.25, "underflows to
+  exactly zero in any float format" after fifty layers. That is not quite right: 0.25⁵⁰ ≈ 7.9×10⁻³¹,
+  which a 64-bit float still represents — it is only "effectively zero" in the sense of carrying no
+  useful learning signal, and it does genuinely underflow in the lower-precision float16 formats
+  common in large-scale training.)</div>
+</div>
+
+<p>Two of the standard fixes are one-line consequences of this same product. Writing a layer as
+<span class="m">x + f(x)</span> instead of <span class="m">f(x)</span> — a <strong>residual
+connection</strong> — makes its local derivative <span class="m">1 + f′(x)</span> instead of
+<span class="m">f′(x)</span>. That extra constant 1 is never multiplied down, so it gives the gradient
+a path straight back through the network regardless of how many layers deep it started. Clipping the
+gradient's overall length before the update (<strong>gradient clipping</strong>) treats the exploding
+side directly: it rescales the vector without changing its direction whenever it exceeds a chosen
+limit.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Vanishing and exploding gradients are the same fact — a long product of per-layer factors — read in two directions. Say the product explicitly; it is the difference between a memorised term and a derived one.</div>
+
+<h2 data-n="11.15">Convexity — one bowl or many</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A function shaped like a single bowl: the straight line between any two points on the graph lies on or above the graph.</div>
+  <div class="why"><b>Why</b>A convex function has no bad local minima to get stuck in — every local minimum is automatically global.</div>
+  <div class="when"><b>Where in ML</b>Linear regression, logistic regression and SVMs are convex — one guaranteed answer. Neural networks are not.</div>
+</div>
+
+<div class="viz" data-viz="convex"></div>
+
+<p>Equivalently, for a smooth function: convex means the Hessian is positive semi-definite
+<em>everywhere</em> — no eigenvalue is ever negative. House A's loss is a squared linear function,
+<span class="m">L = e²</span> with <span class="m">e</span> linear in <span class="m">(w₁, w₂)</span>,
+and its Hessian from 11.11 is the outer product
+<span class="m">H = 2[x₁, x₂]ᵀ[x₁, x₂]</span> — a form whose eigenvalues are always
+<span class="m">0</span> and <span class="m">2(x₁² + x₂²) ≥ 0</span>, for <em>any</em> weight guess,
+not only the one checked in 11.11. Both eigenvalues are non-negative everywhere, so this loss is
+convex — and that is precisely why 11.8 could rule out a saddle in advance: a saddle needs a strictly
+negative eigenvalue somewhere, and a positive semi-definite Hessian can never produce one. It also
+explains 11.7's tied minimum line: <em>semi</em>-definite, not strictly positive definite, because one
+eigenvalue sits at exactly zero.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Convex means "no eigenvalue of the Hessian is ever negative" — that single fact rules out saddles, rules out spurious local minima, and is why classical linear models get one guaranteed answer that deep networks don't.</div>
+
+<h2 data-n="11.16">Differentiability — where the slope stops existing</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Smooth enough to have a single well-defined slope everywhere. A sharp kink has no one slope at that point.</div>
+  <div class="why"><b>Why</b>Gradient descent needs a slope to follow at every point it visits; a kink is a point where that slope is undefined.</div>
+  <div class="when"><b>Where in ML</b>ReLU's kink at exactly zero, and why you cannot backpropagate through argmax at all.</div>
+</div>
+
+<div class="viz" data-viz="diffable"></div>
+
+<p>House A's squared-error loss, <span class="m">L = e²</span>, is a smooth polynomial in
+<span class="m">(w₁, w₂)</span> — differentiable everywhere, no kinks, which is exactly why every
+derivative on this page could be written down cleanly. That smoothness is a choice, not a law: had the
+loss instead been the absolute error, <span class="m">|e|</span>, it would have a sharp kink exactly
+where <span class="m">e = 0</span> — precisely 11.6 and 11.7's minimizing line. At a kink there is no
+single slope, only a left-hand slope and a right-hand slope that disagree; frameworks pick one value in
+between (a <strong>subgradient</strong>, usually 0) and move on.</p>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>When there is no gradient signal at all, not just an ambiguous one</summary>
+  <div class="deep-body">
+
+<p>A subgradient is still a usable, if slightly arbitrary, number. <strong>argmax</strong> — picking
+the index of the largest entry in a vector, used to turn model scores into a hard decision — is worse:
+its derivative is zero almost everywhere (nudging the scores by a hair almost never changes which
+index wins) and undefined exactly at a tie. Multiply zero into the chain rule from 11.13 and every
+weight upstream of that argmax receives no learning signal whatsoever.</p>
+
+<p>Two standard escapes, both used with real models:</p>
 <ul>
-  <li><strong>Vanishing gradients.</strong> Each factor in the product is typically less than 1.
-      Multiply fifty of them and you get something like 0.9⁵⁰ ≈ 0.005. The early layers receive
-      almost no signal and effectively stop learning. Sigmoid makes this much worse, because its
-      derivative maxes out at 0.25 — fifty layers of that is 0.25⁵⁰, which is zero in any float
-      format.</li>
-  <li><strong>Exploding gradients.</strong> Same product with factors above 1. Now you get 1.5⁵⁰,
-      which is about 6×10⁸, a single catastrophic step, and NaNs on the next iteration. Hence
-      gradient clipping.</li>
+  <li><strong>Gumbel-softmax</strong> — a smooth, temperature-controlled relaxation of argmax: sample
+      a hard choice on the forward pass, but use a soft, differentiable version of the same choice on
+      the backward pass, sharpening it toward a true argmax as training proceeds.</li>
+  <li><strong>Straight-through estimator</strong> — take the true hard argmax forward, and simply
+      pretend the backward pass was the identity function. It is a genuinely biased gradient, not an
+      approximation that improves with more compute, and it is how vector-quantised models like
+      VQ-VAE train their discrete codebooks anyway.</li>
 </ul>
+  </div>
+</details>
 
-<p>And this is why <strong>residual connections</strong> work. Writing a block as
-<span class="m">x + f(x)</span> instead of <span class="m">f(x)</span> makes the local derivative
-<span class="m">1 + f′(x)</span>. That constant 1 gives the gradient a path straight through the
-network that is never multiplied down. It is the single most important architectural idea of the
-last decade and it is a one-line consequence of the chain rule.</p>
+<div class="interview-line"><b>Interview takeaway</b>A kink costs you a unique slope, which a subgradient patches over. A step function like argmax costs you the slope entirely — that is a strictly worse problem, and it needs a genuinely different fix.</div>
 
-<h2 data-n="11.6">Questions</h2>
+<h2 data-n="11.17">One-minute recall</h2>
+
+<div class="tw"><table>
+  <thead><tr><th>question</th><th>operation</th><th>house form</th><th>use it for</th></tr></thead>
+  <tbody>
+    <tr><td>How wrong is this guess?</td><td>loss</td><td><span class="m">L = (p−x·w)²</span></td><td>the number every step shrinks</td></tr>
+    <tr><td>Which way does the loss tilt?</td><td>derivative</td><td><span class="m">dL/dw₁ = −30 960</span></td><td>one weight, gradient checking</td></tr>
+    <tr><td>How does one weight alone matter?</td><td>partial derivative</td><td><span class="m">∂L/∂w₁</span></td><td>one entry of a gradient tensor</td></tr>
+    <tr><td>Which way is steepest uphill?</td><td>gradient</td><td><span class="m">∇L = [−30 960, −774]</span></td><td>the direction every step subtracts</td></tr>
+    <tr><td>Where is flat ground?</td><td>stationary point</td><td><span class="m">∇L = 0 ⇔ e = 0</span></td><td>where training would stop moving</td></tr>
+    <tr><td>Is flat ground actually a minimum?</td><td>Hessian eigenvalues</td><td><span class="m">λ₁=28 818, λ₂=0</span></td><td>classify minimum / maximum / saddle</td></tr>
+    <tr><td>What if the output is a vector?</td><td>Jacobian</td><td><span class="m">J = X</span></td><td>multi-output functions</td></tr>
+    <tr><td>How do sensitivities compose?</td><td>chain rule</td><td><span class="m">dL/dw₁ = (dL/du)(du/dw₁)</span></td><td>backpropagation</td></tr>
+    <tr><td>One bowl, or many?</td><td>convexity</td><td>Hessian PSD everywhere</td><td>guaranteed vs. seed-dependent optima</td></tr>
+  </tbody>
+</table></div>
+
+<h2 data-n="11.18">Questions</h2>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>What is a derivative? Explain it without notation.</summary>
   <div class="a">
-    <div class="tldr">It is the steepness of a curve at one exact point — the reading on a
-    speedometer rather than the average speed over the whole trip.</div>
-    <p>The construction is: take two points, measure the average slope between them (rise over run),
-    then slide them together. As the gap shrinks the answer settles on one number, and that is the
+    <div class="tldr">It is the steepness of a curve at one exact point — a speedometer reading,
+    not the average speed over the whole trip.</div>
+    <p>Take two points on the loss curve, measure the average slope between them, then slide the
+    second point toward the first. Section 11.3 did this on house A's loss holding w₂ fixed at 5:
+    the average slope over [2, 2.5] was −23 760, over [2, 2.1] it was −29 520, over [2, 2.01] it was
+    −30 816, converging on −30 960 as the gap shrinks to nothing. That settled number is the
     derivative.</p>
-    <p>In machine learning the curve is “how wrong is my model”, plotted against a parameter. The
-    derivative tells me which way to turn that parameter and how urgently. Every entry in
-    <code>.grad</code> after a backward pass is one of these.</p>
+    <p>In machine learning, the curve is "how wrong is my model," plotted against one weight. The
+    derivative says which way to turn that weight and how urgently. Every entry a framework writes
+    into a gradient tensor after a backward pass is one of these.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>“So a zero derivative means we are at the best point?” No — a zero derivative means flat
-      ground, which is a minimum, a maximum, or a saddle. You need the second derivative to tell
-      which, and in high dimensions the flat point is a saddle far more often than a minimum.</p></div>
+      <p>"So a zero derivative means we're at the best point?" No — a zero derivative means flat
+      ground, which section 11.6 showed can be a minimum, a maximum, or a saddle. You need the second
+      derivative (11.9) or, in more than one dimension, the Hessian (11.11) to tell which.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>What is a gradient and why does the update subtract it?</summary>
   <div class="a">
-    <div class="tldr">The gradient is the vector of all the partial derivatives, and it points
-    straight uphill — so to go downhill you subtract it.</div>
-    <p>Each component answers “if I nudge only this one weight, how does the loss respond?”.
-    Assemble them and you get a direction in parameter space. That direction is provably the
-    steepest <em>ascent</em>; its negative is the steepest descent. Hence
-    <span class="m">w ← w − lr·∇L</span>.</p>
-    <p>The length matters too: a large gradient means a steep surface, so the same learning rate
-    produces a bigger step. That coupling is why an unscaled loss (say, summing instead of averaging
-    over a batch) silently changes your effective learning rate.</p>
+    <div class="tldr">The gradient is the vector of every partial derivative, and it points straight
+    uphill — so subtracting it is what moves downhill.</div>
+    <p>For house A's loss at the guess (2, 5), the gradient was
+    <span class="m">∇L = [−30 960, −774]</span> — each entry answers "if I nudge only this one weight,
+    how does the loss respond?" That vector is provably the direction of steepest <em>ascent</em>; its
+    negative is the steepest descent, hence <span class="m">w ← w − η·∇L</span>.</p>
+    <p>Length matters too: a large gradient means a steep surface, so the same learning rate produces
+    a bigger step. Section 11.5's update moved w₁ by 0.93 but w₂ by only 0.02 in the same step,
+    purely because their gradient components differed by a factor of forty.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>Steepest descent is only the best direction <em>locally</em>, and only when the axes are
-      comparably scaled. On an elongated ravine the steepest direction points across the valley, not
-      along it, so you zig-zag. That is exactly the failure momentum and Adam fix.</p></div>
+      <p>Steepest descent is only the best direction <em>locally</em>, and only when the weights are
+      comparably scaled. Section 11.11 showed exactly why an elongated, ill-conditioned loss makes the
+      steepest direction point across a ravine rather than along it — the failure momentum and Adam
+      exist to fix.</p></div>
   </div>
 </details>
 
@@ -306,23 +687,20 @@ last decade and it is a one-line consequence of the chain rule.</p>
   <div class="a">
     <div class="tldr">A saddle is a point with zero gradient that goes down in some directions and up
     in others — and in high dimensions it is overwhelmingly the more common kind of flat point.</div>
-    <p>The counting argument: at a stationary point in d dimensions you have d curvature directions.
-    A local minimum needs every single one positive. Treat the signs as roughly independent and the
-    probability is about 2<sup>−d</sup> — for a model with millions of parameters, effectively zero.
-    Saddles, which need only a mix, dominate.</p>
-    <p>This reframes what “stuck” means. Training is not trapped in a bad hole it can never escape;
-    it is crawling across an almost-flat region where the gradient is tiny in most directions. The
-    fixes follow directly: <strong>momentum</strong> carries velocity through flat ground,
-    <strong>stochastic noise</strong> from mini-batching knocks you off the exact saddle, and
-    <strong>adaptive methods</strong> rescale the tiny directions back up.</p>
-    <p>The empirical result that backs this up — Choromanska and LeCun's work, and Dauphin's
-    saddle-point paper — is that in large networks the local minima that exist are nearly all close
-    in value to the global one. Which minimum you land in matters much less than people assumed.</p>
+    <p>The counting argument from 11.10: at a stationary point in <span class="m">d</span> dimensions
+    there are <span class="m">d</span> curvature directions, and a local minimum needs every single
+    one positive. Treating signs as roughly independent coin flips, that probability is about
+    <span class="m">2⁻ᵈ</span> — for a model with millions of parameters, effectively zero. Saddles,
+    needing only a mixture of signs, dominate combinatorially.</p>
+    <p>This reframes what "stuck" means: training is not trapped in a bad hole, it is crawling across
+    an almost-flat region where the gradient is tiny in most directions. The fixes follow directly:
+    momentum carries velocity through flat ground, mini-batch noise knocks the weights off the exact
+    saddle, and adaptive methods rescale the tiny directions back up.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>“So local minima never matter?” They matter a great deal in <em>small</em> models and in
-      classical non-convex problems like k-means or GMM fitting, where the dimension is low and
-      restarts genuinely change the answer. The saddle argument is a large-d argument; do not
-      generalise it to your 8-cluster k-means.</p></div>
+      <p>"So local minima never matter?" They matter a great deal in <em>small</em>, low-dimensional
+      non-convex problems like k-means or GMM fitting, where restarts genuinely change the answer.
+      The saddle argument is a large-<span class="m">d</span> argument; do not generalise it to an
+      8-cluster k-means run.</p></div>
   </div>
 </details>
 
@@ -331,20 +709,19 @@ last decade and it is a one-line consequence of the chain rule.</p>
   <div class="a">
     <div class="tldr">Backpropagation <em>is</em> the chain rule, evaluated right to left so the
     shared factors are computed once instead of once per parameter.</div>
-    <p>The loss depends on a first-layer weight through a chain of intermediate activations, so its
-    derivative is a product of per-step sensitivities. You could evaluate that product left to right
-    (forward-mode) or right to left (reverse-mode).</p>
-    <p>Reverse-mode wins by an enormous margin for our shape of problem: one scalar output, millions
-    of inputs. Going backward from the single loss, every prefix of the product is shared across all
-    the parameters in a layer, so you compute it once. The total cost is roughly two forward passes
-    regardless of parameter count. Forward-mode would cost one pass <em>per parameter</em>.</p>
-    <p>The practical consequences: you must keep the forward activations in memory to compute the
-    backward pass, which is why activation memory dominates training and why gradient checkpointing
-    (recompute instead of store) trades compute for memory.</p>
+    <p>Section 11.13 showed the smallest possible version: house A's loss is a two-step chain — a
+    linear shortfall, then a square — and its derivative is the product of the two link
+    sensitivities, <span class="m">dL/du = 2u</span> and <span class="m">du/dw₁ = −120</span>,
+    multiplying to reproduce the same −30 960 found three other ways on this page. A real network is
+    the same idea over many more links.</p>
+    <p>Reverse-mode (right to left) wins by an enormous margin for our shape of problem: one scalar
+    loss, millions of weights. Going backward from the loss, every prefix of the product is shared
+    across all the weights in a layer, so it is computed once. The cost is roughly two forward passes
+    regardless of parameter count; forward-mode would cost one pass <em>per parameter</em>.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>“Is backprop an optimisation algorithm?” No. Backprop computes gradients. SGD, Adam and
-      friends are the optimisers that consume them. Conflating the two is a very common and very
-      visible slip.</p></div>
+      <p>"Is backprop an optimisation algorithm?" No — backprop computes gradients. SGD, Adam and
+      similar optimisers are what consume them to actually update the weights. Conflating the two is
+      a common and very visible slip.</p></div>
   </div>
 </details>
 
@@ -352,52 +729,53 @@ last decade and it is a one-line consequence of the chain rule.</p>
   <summary><span class="pip i">MID</span>Explain vanishing and exploding gradients in terms of calculus.</summary>
   <div class="a">
     <div class="tldr">The gradient reaching an early layer is a long product of per-layer
-    derivatives; if the typical factor is below 1 the product decays to zero, if above 1 it blows up.</div>
-    <p>Fifty layers with an average factor of 0.9 gives 0.9⁵⁰ ≈ 0.005 — the first layers get
-    essentially no learning signal. With 1.5 you get 1.5⁵⁰ ≈ 6×10⁸ and one step destroys the model.</p>
-    <p>Sigmoid was the classic culprit: its derivative peaks at 0.25 and is far smaller once the unit
-    saturates, so deep sigmoid stacks were untrainable. The fixes each attack one factor of the
-    product:</p>
-    <ul>
-      <li><strong>ReLU/GELU</strong> — derivative of 1 on the active side instead of ≤ 0.25.</li>
-      <li><strong>Residual connections</strong> — the block derivative becomes 1 + f′, giving the
-          gradient an unattenuated path all the way back. This is the big one.</li>
-      <li><strong>Normalisation layers</strong> — keep activations in the regime where derivatives
-          are healthy, which also flattens the loss surface.</li>
-      <li><strong>Careful init</strong> (He, Xavier) — set the initial factor near 1 by construction.</li>
-      <li><strong>Gradient clipping</strong> — a hard cap on the norm; treats the symptom, but it is
-          what actually saves a transformer run at 3 a.m.</li>
-    </ul>
+    derivatives; a typical factor below 1 makes the product decay toward zero, above 1 makes it
+    blow up.</div>
+    <p>Section 11.14 derived both directions by repeated squaring: fifty layers with a typical factor
+    of 0.9 gives <span class="m">0.9⁵⁰ ≈ 0.00515</span> — the earliest layers get almost no learning
+    signal. With a typical factor of 1.5 the same fifty layers give
+    <span class="m">1.5⁵⁰ ≈ 6.4×10⁸</span> — one catastrophic step and likely NaNs next iteration.</p>
+    <p>The standard fixes each attack one factor of that product: activation functions with a
+    derivative of 1 on their active side instead of a fraction; residual connections, which make a
+    block's local derivative <span class="m">1 + f′(x)</span> so the gradient always has an
+    unattenuated path straight through; careful initialisation, which sets the typical factor near 1
+    from the start; and gradient clipping, a hard cap on the gradient's length that treats the
+    exploding symptom directly.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>People say residuals “let gradients flow”. Be ready to say <em>why</em>: the identity path
-      contributes a derivative of exactly 1, so the product has a term that is never multiplied down
-      no matter how deep the stack. Without that sentence it sounds memorised.</p></div>
+      <p>People say residuals "let gradients flow." Be ready to say <em>why</em>: the identity path
+      contributes a derivative of exactly 1, a term that is never multiplied down no matter how deep
+      the stack. Without that sentence it sounds memorised rather than derived.</p></div>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>What does the Hessian tell you, and why don't we use second-order optimisers?</summary>
   <div class="a">
-    <div class="tldr">The Hessian is the curvature in every direction; we skip it because it has
-    N² entries and N is in the billions.</div>
-    <p>What it buys you: its eigenvalues classify stationary points (all positive = minimum, mixed =
-    saddle), and its <em>condition number</em> — largest eigenvalue over smallest — tells you how
-    elongated the loss ravine is. A high condition number is precisely why plain gradient descent
-    zig-zags: the steepest direction points across the ravine rather than along it. Newton's method
-    uses <span class="m">H⁻¹∇L</span>, which rescales every direction by its curvature and would
-    reach the minimum of a quadratic in a single step.</p>
-    <p>Why it is impractical: for a 7B-parameter model the Hessian has 4.9×10¹⁹ entries. Storing it
-    is impossible, inverting it far more so. Even a rank-limited approximation like L-BFGS wants
-    consistent gradients across steps, which mini-batch noise destroys.</p>
-    <p>So we use cheap surrogates, and this is the useful framing: <strong>Adam is a crude diagonal
-    approximation to the inverse Hessian.</strong> Dividing by √v (the running second moment of the
-    gradient) rescales each coordinate by an estimate of its own curvature. That is why Adam handles
-    badly conditioned surfaces so much better than SGD, and why it needs almost no learning-rate
-    tuning per layer.</p>
+    <div class="tldr">The Hessian is curvature in every direction at once; it is impractical at scale
+    because it has N² entries and N is in the billions.</div>
+    <p>What it buys you: section 11.11 built a real one — <span class="m">H = [[28 800, 720], [720, 18]]</span>
+    for house A's two-weight loss — and read off its eigenvalues, 28 818 and 0, to see that one
+    direction curves sharply and another is perfectly flat. In general, all-positive eigenvalues mean
+    a minimum, mixed signs mean a saddle, and the <em>condition number</em> (largest eigenvalue over
+    smallest) tells you how elongated the loss surface is. Newton's method uses
+    <span class="m">H⁻¹∇L</span>, rescaling every direction by its own curvature — for a clean
+    quadratic loss it would reach the minimum in a single step.</p>
+    <p>Why it is impractical at scale: a 7-billion-parameter model's Hessian has roughly
+    5×10¹⁹ entries. Storing it is impossible, inverting it far more so. Even a rank-limited
+    quasi-Newton approximation like <strong>L-BFGS</strong> — which estimates the Hessian's action
+    from a short history of recent gradients instead of forming it exactly — wants consistent
+    gradients from one step to the next, which mini-batch noise disrupts.</p>
+    <p>So training uses cheap surrogates instead, and this is the useful framing: <strong>Adam is a
+    crude diagonal approximation to the inverse Hessian.</strong> Dividing by the square root of the
+    running second moment of the gradient rescales each weight by an estimate of its own curvature —
+    exactly the kind of correction 11.11's ill-conditioned Hessian needed. That is why Adam handles
+    badly conditioned surfaces far better than plain SGD.</p>
     <div class="box trap"><span class="lbl">Trap</span>
       <p>Do not claim Adam <em>is</em> second order — it uses squared first derivatives, not second
-      derivatives. It approximates the Fisher information diagonal, which coincides with curvature
-      under some assumptions. Say “approximates”, and say which assumption.</p></div>
+      derivatives. It approximates the diagonal of the <strong>Fisher information matrix</strong> —
+      the expected curvature of the negative log-likelihood, a close statistical cousin of the
+      Hessian — which coincides with true curvature only under specific assumptions. Say
+      "approximates," and say which assumption.</p></div>
   </div>
 </details>
 
@@ -407,28 +785,30 @@ last decade and it is a one-line consequence of the chain rule.</p>
     <div class="tldr">Because in very high dimensions the bad local minima people feared are
     vanishingly rare, most flat points are saddles you can escape, and the many minima that do exist
     turn out to have similar loss.</div>
-    <p>Three strands, and a good answer touches all three:</p>
+    <p>House A's own loss (11.15) is the convex baseline to contrast against: a positive
+    semi-definite Hessian everywhere, no saddle possible, a whole tied line of global minima rather
+    than a maze of unequal local ones. A deep network's loss surface fails every one of those
+    properties. Three strands explain why that is survivable rather than fatal:</p>
     <ul>
-      <li><strong>Geometry.</strong> A local minimum requires all d Hessian eigenvalues positive.
-          Saddles need only a mixture, so they dominate combinatorially. Getting stuck in a hole is
-          not the failure mode; crawling across a plateau is.</li>
-      <li><strong>Empirical flatness.</strong> The minima that large networks actually reach cluster
-          tightly in loss value. Which one you land in barely changes test performance — a very
-          different situation from a small non-convex problem where restarts change the answer.</li>
-      <li><strong>Over-parameterisation.</strong> With more parameters than constraints the solution
-          set is a connected manifold rather than isolated points, and there is nearly always a
-          descent direction available.</li>
+      <li><strong>Geometry.</strong> A local minimum needs all <span class="m">d</span> Hessian
+          eigenvalues positive (11.10); saddles need only a mixture, so they dominate
+          combinatorially. Getting stuck in a hole is not the failure mode; crawling across a plateau
+          is.</li>
+      <li><strong>Empirical flatness.</strong> The minima large networks actually reach cluster
+          tightly in loss value — which one you land in barely changes test performance, unlike a
+          small non-convex problem where restarts change the answer.</li>
+      <li><strong>Over-parameterisation.</strong> With more parameters than constraints, the solution
+          set is closer to a connected manifold than isolated points, and a descent direction is
+          nearly always available — the high-dimensional cousin of 11.7's flat trough.</li>
     </ul>
-    <p>Where the honesty belongs: non-convexity does still cost you. There is no uniqueness
-    guarantee, so results depend on seed, initialisation and data order; you cannot certify
-    optimality; and reproducibility becomes an engineering discipline rather than a mathematical
-    fact. That is exactly why MLflow tracking seeds and data versions is not bureaucracy — with a
-    convex model you could re-derive the fit, and here you cannot.</p>
+    <p>Where the honesty belongs: non-convexity still costs you. There is no uniqueness guarantee, so
+    results depend on seed, initialisation and data order; you cannot certify optimality; and
+    reproducibility becomes an engineering discipline rather than a mathematical fact.</p>
     <div class="box trap"><span class="lbl">Trap</span>
-      <p>“Then convexity is irrelevant?” No. It is exactly why logistic regression is still the right
-      first model for a fraud baseline: one global optimum, reached deterministically, in seconds,
-      with coefficients a regulator can read. You should be able to say when you would <em>choose</em>
-      the convex model.</p></div>
+      <p>"Then convexity is irrelevant?" No — it is exactly why logistic regression is still the
+      right first model for a fraud baseline: one global optimum, reached deterministically, in
+      seconds, with coefficients a regulator can read. Know when you would <em>choose</em> the convex
+      model.</p></div>
   </div>
 </details>
 
@@ -437,26 +817,28 @@ last decade and it is a one-line consequence of the chain rule.</p>
   <div class="a">
     <div class="tldr">Because argmax is a step function — its derivative is zero almost everywhere
     and undefined at the jumps — so it transmits no gradient at all.</div>
-    <p>Nudge the logits by a hair and the winning index almost always stays the same, so the output
-    does not change: derivative zero. At the precise tie where the winner flips, the output jumps
-    discontinuously: derivative undefined. Multiply zero into the chain rule and everything upstream
-    receives nothing.</p>
-    <p>The three standard escapes:</p>
+    <p>Nudge the input scores by a hair and the winning index almost always stays the same, so the
+    output does not change: derivative zero. At the precise tie where the winner flips, the output
+    jumps discontinuously: derivative undefined. Multiply zero into the chain rule from 11.13 and
+    everything upstream of that argmax receives nothing — a strictly worse problem than 11.16's kink,
+    where at least a subgradient exists.</p>
+    <p>The standard escapes, from mildest to most drastic:</p>
     <ul>
-      <li><strong>Use softmax instead</strong> — a smooth relaxation of the same idea. This is why
-          training uses the full probability distribution and only <em>inference</em> takes an argmax.</li>
-      <li><strong>Gumbel-softmax / concrete relaxation</strong> — sample discretely in the forward
-          pass but use a temperature-controlled soft version in the backward pass. Anneal the
-          temperature down during training.</li>
-      <li><strong>Straight-through estimator</strong> — take the hard argmax forward and simply
-          pretend the backward pass was the identity. Biased, and it works anyway; it is how
-          vector-quantised models like VQ-VAE train their codebooks.</li>
+      <li><strong>Use softmax instead</strong> — a smooth relaxation of the same idea, differentiable
+          everywhere. This is why training uses the full probability distribution and only
+          <em>inference</em> takes a hard argmax.</li>
+      <li><strong>Gumbel-softmax</strong> — sample discretely on the forward pass but use a
+          temperature-controlled soft version on the backward pass, annealing the temperature down
+          during training.</li>
+      <li><strong>Straight-through estimator</strong> — take the hard argmax forward and pretend the
+          backward pass was the identity. Biased, and it works anyway; it is how vector-quantised
+          models like VQ-VAE train their codebooks.</li>
+      <li><strong>Reinforcement learning</strong> — when the discrete step genuinely cannot be
+          relaxed (sampling text, calling a tool, choosing an action), stop trying to differentiate
+          through it and use policy-gradient methods instead. This is exactly why RLHF and GRPO exist:
+          they optimise through a non-differentiable sampling step by treating it as an action to be
+          reinforced, not a function to be differentiated.</li>
     </ul>
-    <p>And the fourth option, which is the honest answer for LLMs: when the discrete step genuinely
-    cannot be relaxed — sampling text, calling a tool, choosing an action — stop trying to
-    differentiate and use reinforcement learning instead. That is exactly why RLHF and GRPO exist:
-    they optimise through a non-differentiable sampling step using policy gradients rather than
-    backprop through the choice.</p>
     <div class="box trap"><span class="lbl">Trap</span>
       <p>Straight-through is not an approximation that gets better with more compute — it is a
       genuinely biased gradient. It works because the bias points roughly the right way, not because
@@ -467,13 +849,16 @@ last decade and it is a one-line consequence of the chain rule.</p>
 <div class="checkpoint">
   <h4>Checkpoint — say these out loud, no notes</h4>
   <ul>
-    <li>Derivative in one sentence, with the speedometer analogy.</li>
-    <li>The two conditions for a minimum, and how they classify a saddle.</li>
-    <li>The counting argument for why saddles beat local minima in high dimensions.</li>
-    <li>Backprop = the chain rule right-to-left, and <em>why</em> right-to-left is cheaper.</li>
-    <li>Vanishing gradients as a product of factors, and the one-sentence reason residuals fix it.</li>
+    <li>Compute house A's loss from a wrong guess, then find dL/dw₁ by shrinking the gap between two guesses.</li>
+    <li>State the two conditions for a minimum, and explain why house A's own stationary line has one zero eigenvalue instead of two positive ones.</li>
+    <li>Build the 2×2 Hessian for w₁, w₂ by hand and read off its eigenvalues and eigenvectors.</li>
+    <li>Explain why the Jacobian of Xw is just the house table X itself.</li>
+    <li>Take one gradient-descent step on w₁ and w₂ and explain why they moved by such different amounts.</li>
+    <li>Say why house A's loss is convex, and what would have to change for a saddle to become possible.</li>
   </ul>
 </div>
+
+<span data-completion-prompt hidden></span>
 
 <div class="partnav">
   <a href="../index.html#10" target="_top"><span class="k">Back</span>← 10 · Linear algebra</a>
