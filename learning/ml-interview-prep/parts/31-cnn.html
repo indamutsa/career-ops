@@ -13,135 +13,357 @@
   <span class="lede">The architecture that started the deep-learning era. For an LLM-focused role this
   is background rather than the main event — but the ideas in it (parameter sharing, inductive bias,
   receptive fields, the 1×1 bottleneck) recur constantly, and "why did transformers beat CNNs" is a
-  question you should be able to answer properly.</span>
+  question you should be able to answer properly. The running example is a scanned ID photo going
+  through account-opening verification — the same kind of image a CNN forgery detector scores in a
+  real KYC (know-your-customer) pipeline.</span>
 </h1>
 
 <div class="box note">
   <span class="lbl">How to read this module</span>
   <p>One of the two modules you may legitimately skim if time is short (the other is 33). Read
-  31.1–31.4 and the questions on equivariance and CNN-vs-ViT; the architecture timeline is
-  recognition-level knowledge.</p>
+  through the convolution and channel arithmetic and the questions on equivariance and CNN-vs-ViT;
+  the architecture timeline is recognition-level knowledge.</p>
 </div>
 
-<h2 data-n="31.1">Why a dense layer is the wrong tool for an image</h2>
+<h2 data-n="31.1">Why a dense layer is the wrong tool for a document image</h2>
 
-<p>Take a modest 224×224 colour image. Flattened, that is 150,528 numbers. A single dense hidden
-layer of 1,000 units needs 150 million weights — for one layer — and it would treat the pixel at
-(0,0) and the pixel at (0,1) as entirely unrelated inputs, learning their relationship from scratch
-if at all.</p>
+<p>A bank opening a new account asks a scanned ID photo one question: is this a genuine capture of a
+real ID, or has it been photographed off a screen, printed and rescanned, or edited to swap in a
+different face or a different birth date? That question is answered by looking for small, local
+give-aways — a moiré pattern, a pasted-photo seam, a mismatched font — wherever they happen to sit in
+the image. A dense (fully-connected) layer is the wrong tool for that job.</p>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A convolutional layer slides a small set of learned weights across an
+  image, producing one output value per position, instead of connecting every input pixel to every
+  output unit.</div>
+  <div class="why"><b>Why</b>A dense layer on a modest image needs hundreds of millions of weights
+  for one layer, and it treats the pixel at (0,0) and the pixel at (0,1) as unrelated inputs it must
+  learn to relate from scratch.</div>
+  <div class="when"><b>Where in ML</b>Any input with spatial structure — photos, scanned ID or check
+  images, spectrograms — where a local pattern (an edge, a seam, a signature stroke) means the same
+  thing wherever it appears.</div>
+</div>
+
+<div class="math-work" aria-label="Dense layer parameter cost on a scanned ID photo">
+  <div class="step">image = <span class="m">224 × 224 × 3</span> (a modest colour scan of the ID, 3
+  channels for red/green/blue)</div>
+  <div class="step">flattened length = <span class="m">224 × 224 × 3 = 150,528</span> numbers</div>
+  <div class="step">dense layer to 1,000 hidden units: weights = <span class="m">150,528 × 1,000 =
+  150,528,000 ≈ 150 million</span></div>
+  <div class="meaning">150 million weights for one layer, on one modest image — and the layer still
+  has no notion that two neighbouring pixels are related. It would have to learn "these two pixels
+  sit next to each other" independently for every one of the 150,528 input positions.</div>
+</div>
 
 <p>Convolution encodes two assumptions that fix both problems at once:</p>
 
 <ul>
-  <li><strong>Locality.</strong> A meaningful feature — an edge, a corner — is made of pixels that are
-      near each other. So a unit only needs to look at a small window.</li>
-  <li><strong>Translation equivariance via parameter sharing.</strong> An edge detector that works in
+  <li><strong>Locality.</strong> A meaningful feature — a pasted-photo seam, a font mismatch — is made
+      of pixels that are near each other. So a unit only needs to look at a small window.</li>
+  <li><strong>Translation equivariance via parameter sharing.</strong> A seam detector that works in
       the top-left works in the bottom-right, so use the <em>same</em> weights everywhere. One 3×3
       filter is 9 weights regardless of image size.</li>
 </ul>
 
-<p>That is the inductive bias from module 20, stated concretely: the architecture asserts something
-true about images before any data arrives, and gets enormous sample efficiency in return.</p>
+<div class="bridge"><strong>images have local structure</strong> → assume locality + share weights
+across positions → orders of magnitude fewer weights than a dense layer → an <strong>inductive
+bias</strong> (module 20): the architecture asserts something true about images before any data
+arrives, and gets sample efficiency in return.</div>
 
-<h2 data-n="31.2">The convolution, seen</h2>
+<div class="interview-line"><b>Interview takeaway</b>State the two assumptions by name — locality and
+parameter sharing — and be ready to show the parameter-count arithmetic that follows from them.</div>
+
+<h2 data-n="31.2">The convolution operation, computed by hand</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Multiply a small grid of learned weights (the kernel) against a
+  matching patch of the input, sum the products into one number, then slide the kernel to the next
+  position and repeat.</div>
+  <div class="why"><b>Why</b>This is the concrete arithmetic behind locality and parameter sharing —
+  one small set of weights, reused at every position, produces a whole map of where its pattern
+  occurs.</div>
+  <div class="when"><b>Where in ML</b>Every convolutional layer, from the first layer that sees raw
+  pixels to the last one before the classification head.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>The vocabulary: kernel, feature map, stride, padding</summary>
+  <div class="deep-body">
+    <p><strong>Kernel / filter:</strong> the small grid of learned weights — usually 3×3 — that slides
+    across the input. A rubber stamp pressed at every position, recording how well the pattern under
+    it matches the pattern on the stamp.</p>
+    <p><strong>Feature map:</strong> the output of one filter across the whole input — a map of where
+    that filter's pattern occurs. A layer with 64 filters produces 64 feature maps.</p>
+    <p><strong>Stride:</strong> how far the window moves per step. Stride 1 moves one pixel at a time;
+    stride 2 moves two, which roughly halves the output's spatial size.</p>
+    <p><strong>Padding:</strong> <em>valid</em> means no padding, so the output shrinks a little at
+    every layer; <em>same</em> means pad the border with zeros so the output keeps the input's size.
+    Without padding, a deep stack of 3×3 layers would eventually run out of image.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="Worked convolution over a 3x3 patch of the scanned ID">
+  <div class="step">patch <span class="m">P</span> (grayscale brightness, 0–255, from a corner of the
+  ID photo where a replacement photo may have been pasted over the original):
+  <span class="matrix"><span>10</span><span>12</span><span>200</span><span>8</span><span>15</span><span>205</span><span>11</span><span>9</span><span>198</span></span>
+  kernel <span class="m">K</span> (a vertical-edge detector — negative on the left, positive on the
+  right):
+  <span class="matrix"><span>−1</span><span>0</span><span>1</span><span>−1</span><span>0</span><span>1</span><span>−1</span><span>0</span><span>1</span></span></div>
+  <div class="step">row 1: <span class="m">10(−1) + 12(0) + 200(1) = −10 + 0 + 200 = 190</span></div>
+  <div class="step">row 2: <span class="m">8(−1) + 15(0) + 205(1) = −8 + 0 + 205 = 197</span></div>
+  <div class="step">row 3: <span class="m">11(−1) + 9(0) + 198(1) = −11 + 0 + 198 = 187</span></div>
+  <div class="step">output at this position = <span class="m">190 + 197 + 187 = <strong>574</strong></span></div>
+  <div class="meaning">Nine multiplications and one sum — exactly the multiply-then-add pattern of
+  the dot product from module 10.3, just applied to a 3×3 patch instead of a 4-number house vector.
+  A large positive output means the left side of the patch is dark and the right side is bright: a
+  sharp intensity jump, which is what a pasted-photo edge looks like. Slide this same 9-weight kernel
+  to every position in the image and the collection of outputs is the feature map.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>P</i></b><span>the image patch under the kernel right now — nine pixel brightness values</span></span>
+    <span><b><i>K</i></b><span>the kernel — nine learned weights, the same nine at every position in the image</span></span>
+    <span><b>574</b><span>the feature-map value at this one position — how strongly this patch matches "dark-to-light edge"</span></span>
+  </div>
+</div>
 
 <div class="viz" data-viz="conv"></div>
 
-<h2 data-n="31.3">The terms</h2>
+<div class="interview-line"><b>Interview takeaway</b>Convolution is the dot product from module 10,
+applied to a small local patch instead of a whole vector, with the same nine weights reused at every
+position.</div>
 
-<div class="terms">
+<h2 data-n="31.3">Channels, and what a "3×3 filter" really costs</h2>
 
-  <div class="term">
-    <div class="t">Kernel / filter <span class="tag">basic</span></div>
-    <p>The small grid of learned weights — usually 3×3 — that slides across the input.</p>
-    <p class="an">A rubber stamp you press at every position, recording how well the pattern under it
-       matches the pattern on the stamp.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Feature map <span class="tag">basic</span></div>
-    <p>The output of one filter across the whole input: a map of where that filter's pattern occurs.</p>
-    <p class="wh">A layer with 64 filters produces 64 feature maps — 64 channels for the next layer.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Channels <span class="tag">basic</span></div>
-    <p>The depth of a tensor. 3 at the input for RGB; hundreds in the middle of a network.</p>
-    <p class="warn-inline">A kernel spans <em>all</em> input channels. A "3×3" filter over 64 input
-       channels really has 3×3×64 = 576 weights.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Stride <span class="tag">basic</span></div>
-    <p>How far the window moves per step. Stride 2 halves the output's spatial size.</p>
-    <p class="wh">The modern alternative to pooling for downsampling — a strided convolution learns
-       how to reduce rather than applying a fixed rule.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Padding <span class="tag">basic</span></div>
-    <p><em>valid</em> = no padding, output shrinks. <em>same</em> = pad with zeros so the output keeps
-       the input's size.</p>
-    <p class="wh">Without padding, a 3×3 conv shrinks each side by 2 per layer, so a deep stack would
-       run out of image. It also under-uses the border pixels.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Pooling <span class="tag">basic</span></div>
-    <p>Downsample by taking the max (or mean) of each small region.</p>
-    <p class="an">Squinting. Detail disappears, the overall arrangement survives.</p>
-    <p class="wh">Max pooling adds a little translation <em>invariance</em>: shift the input by one
-       pixel and the max over a 2×2 window frequently does not change.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Receptive field <span class="tag">mid</span></div>
-    <p>The region of the original input that influences one particular unit deep in the network.</p>
-    <p class="wh">It grows with depth: two stacked 3×3 layers see 5×5, three see 7×7. A unit cannot
-       use information outside its receptive field, so a network that must reason about the whole
-       image needs enough depth (or dilation, or global pooling) to see it.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Equivariance vs invariance <span class="tag">senior</span></div>
-    <p><strong>Equivariant:</strong> move the input, the output moves the same way. <strong>Invariant:
-       </strong> move the input, the output does not change.</p>
-    <p class="wh">Convolution is equivariant. Pooling and global average pooling convert that
-       gradually into invariance. Getting this distinction right is a common senior-level check.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">1×1 convolution <span class="tag">senior</span></div>
-    <p>A convolution with no spatial extent. It mixes <em>channels</em> at each position and nothing
-       else.</p>
-    <p class="wh">The cheap way to change channel count — the bottleneck in ResNet and Inception. It
-       is exactly a per-position dense layer, which is also what a transformer's FFN is.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Depthwise separable conv <span class="tag">senior</span></div>
-    <p>Split a convolution into a spatial pass per channel, then a 1×1 pass to mix channels.</p>
-    <p class="wh">Roughly 8–9× fewer operations than a full 3×3 conv for similar accuracy. The core of
-       MobileNet, and the reason on-device vision works at all.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Dilated / atrous conv <span class="tag">mid</span></div>
-    <p>A kernel with gaps, so it covers a wider area with the same number of weights.</p>
-    <p class="wh">Grows the receptive field without losing resolution — used in segmentation and in
-       WaveNet-style audio models.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Global average pooling <span class="tag">mid</span></div>
-    <p>Average each feature map down to a single number, giving one vector per image.</p>
-    <p class="wh">Replaced the enormous dense layers at the end of AlexNet/VGG. Far fewer parameters,
-       and it makes the network accept any input size.</p>
-  </div>
-
+<div class="concept-brief">
+  <div class="what"><b>What</b>Channels are the depth of a tensor — 3 at the input for RGB, hundreds
+  in the middle of a network — and a kernel spans <em>all</em> of the input channels, not just one.</div>
+  <div class="why"><b>Why</b>The true weight count of a convolutional layer depends on the channel
+  depth, not just the kernel's spatial size, and this is a standard place interviewers probe.</div>
+  <div class="when"><b>Where in ML</b>Sizing a model, estimating memory and compute, and comparing
+  architectures.</div>
 </div>
 
-<h2 data-n="31.4">The architecture timeline — what each one contributed</h2>
+<div class="math-work" aria-label="Parameter count of a 3x3 conv layer over the ID photo's 3 colour channels">
+  <div class="step">rule: weights per layer = <span class="m">k × k × C<sub>in</sub> × C<sub>out</sub></span>
+  (kernel area × input channels × output filters), plus one bias per output filter</div>
+  <div class="step">substitute: <span class="m">k = 3</span> (3×3 kernel), <span class="m">C<sub>in</sub> = 3</span>
+  (the ID photo's red/green/blue channels), <span class="m">C<sub>out</sub> = 64</span> (64 filters
+  in this layer)</div>
+  <div class="step"><span class="m">3 × 3 × 3 × 64 = 1,728</span> weights, plus <span class="m">64</span>
+  biases = <strong>1,792</strong> parameters total</div>
+  <div class="meaning">A "3×3 filter" over 3 input channels is really a 3×3×3 volume — 27 weights, not
+  9 — and there are 64 such filters. Against the dense layer's 150 million from 31.1, this is five
+  orders of magnitude fewer, and it works on any input resolution: a 224×224 scan and a 512×512 scan
+  use the exact same 1,792 numbers.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>k</b><span>the kernel's spatial size — 3, for a 3×3 kernel</span></span>
+    <span><b>C<sub>in</sub></b><span>input channels — 3 for the RGB scan at this first layer</span></span>
+    <span><b>C<sub>out</sub></b><span>output filters — 64, chosen when the layer is designed</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Multiply in the channel dimension: a kernel's
+real weight count is <span class="m">k × k × C<sub>in</sub> × C<sub>out</sub></span>, and it does not
+grow with image resolution.</div>
+
+<h2 data-n="31.4">Downsampling: stride, padding and pooling</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Pooling downsamples a feature map by taking the max (or mean) of each
+  small region, shrinking its spatial size without adding any learned weights.</div>
+  <div class="why"><b>Why</b>A network needs to reduce spatial resolution as it goes deeper, both to
+  cut compute and to start discarding exact position in favour of "is this pattern present at all".</div>
+  <div class="when"><b>Where in ML</b>Classic CNNs (LeNet, AlexNet, VGG) between convolutional blocks;
+  modern networks often use a strided convolution instead, so the reduction itself is learned rather
+  than fixed.</div>
+</div>
+
+<div class="math-work" aria-label="Max pooling over the bright corner of the ID photo patch">
+  <div class="step">bottom-right 2×2 block of the patch from 31.2:
+  <span class="matrix"><span>15</span><span>205</span><span>9</span><span>198</span></span></div>
+  <div class="step">max(15, 205, 9, 198) = <strong>205</strong></div>
+  <div class="step">now shift the whole block one pixel to the right, so the block becomes
+  <span class="matrix"><span>205</span><span>206</span><span>198</span><span>199</span></span> —
+  still centred on the same bright region</div>
+  <div class="step">max(205, 206, 198, 199) = <strong>206</strong> — nearly unchanged</div>
+  <div class="meaning">The exact pixel that produced the maximum moved, but the reported value barely
+  did: a one-pixel shift in where the bright region sits made almost no difference to the pooled
+  output. That is the beginning of translation <em>invariance</em> — squinting at the feature map so
+  detail disappears and the overall "is something bright here" survives. Section 31.6 makes the
+  invariance-vs-equivariance distinction precise.</div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Stride and pooling both downsample; a strided
+convolution learns how to reduce, while pooling applies a fixed rule and adds a little translation
+invariance for free.</div>
+
+<h2 data-n="31.5">Receptive field — how far one unit can see</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The receptive field of a unit is the region of the original input that
+  can influence its value.</div>
+  <div class="why"><b>Why</b>A unit cannot use information outside its receptive field, so a network
+  that must reason about a whole ID photo — not just one 3×3 corner — needs enough depth (or dilation,
+  or global pooling) to see all of it.</div>
+  <div class="when"><b>Where in ML</b>Choosing network depth, kernel size, and dilation rate for a
+  task that needs long-range context, such as checking whether a signature on page one matches a name
+  printed on page two.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Deriving the receptive-field growth</summary>
+  <div class="deep-body">
+    <div class="math-work" aria-label="Receptive field growth across stacked 3x3 layers">
+      <div class="step">rule (stride 1 throughout): <span class="m">RF<sub>L</sub> = RF<sub>L−1</sub> + (k − 1)</span></div>
+      <div class="step">layer 1, a single 3×3 kernel: <span class="m">RF<sub>1</sub> = 3</span></div>
+      <div class="step">layer 2: <span class="m">RF<sub>2</sub> = 3 + (3 − 1) = 5</span></div>
+      <div class="step">layer 3: <span class="m">RF<sub>3</sub> = 5 + (3 − 1) = 7</span></div>
+      <div class="meaning">Two stacked 3×3 layers see a 5×5 region of the original image; three see
+      7×7. Each additional 3×3 layer adds 2 pixels of receptive field on every side. To let one unit
+      see a 51×51 region — large enough to compare a photo corner against a signature elsewhere on the
+      same ID — a stack of plain 3×3 layers needs roughly 25 layers, which is exactly the pressure that
+      motivates dilation (31.9) and the very deep residual stacks of module 30.6.</div>
+    </div>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>Receptive field grows with depth, roughly 2 pixels
+per side per stacked 3×3 layer; state the arithmetic, don't just gesture at "it gets bigger".</div>
+
+<h2 data-n="31.6">Equivariance vs invariance</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b><strong>Equivariant:</strong> move the input, the output moves the same
+  way — <span class="m">f(shift(x)) = shift(f(x))</span>. <strong>Invariant:</strong> move the input,
+  the output does not change — <span class="m">f(shift(x)) = f(x)</span>.</div>
+  <div class="why"><b>Why</b>A classifier deciding "genuine or forged" wants invariance — it should not
+  matter where on the photo the tamper seam sits. A model reporting <em>where</em> the seam is (for a
+  reviewer to look at) wants equivariance.</div>
+  <div class="when"><b>Where in ML</b>Image classification heads (invariance), segmentation and object
+  detection (equivariance).</div>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">Back to the tamper seam</span>
+  <p>If a forger shifts the pasted-in photo a few pixels to hide the seam near the edge instead of the
+  centre, the convolution in 31.2 still fires — its output feature map shows the same 574-style edge
+  response, just relocated by the same few pixels. That is <strong>equivariance</strong>: the
+  detection moved with the tamper. But the account-opening decision only needs "is there a seam
+  somewhere on this ID", not "exactly which pixel". Pooling (31.4), stacked repeatedly, and then a
+  global average pooling layer (31.9) at the very end collapse that shifted response down to one
+  yes/no signal that no longer depends on position. That is where <strong>invariance</strong> comes
+  from — it is built, not automatic.</p>
+</div>
+
+<div class="box trap">
+  <span class="lbl">Trap</span>
+  <p>"CNNs are translation invariant" is the wrong claim. Convolution itself is equivariant.
+  Invariance is approximated afterward, by pooling and especially by global average pooling at the
+  head — a classification CNN is equivariant in its body and invariant at its head, by construction,
+  and only approximately even then.</p>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Convolution is equivariant, not invariant;
+invariance is built afterward by pooling. Getting this distinction right is a common senior-level
+check.</div>
+
+<h2 data-n="31.7">The 1×1 convolution</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A convolution with no spatial extent — a 1×1 kernel. It mixes
+  <em>channels</em> at each position and touches no neighbouring pixels.</div>
+  <div class="why"><b>Why</b>It is the cheap way to change channel count, and it is exactly a
+  per-position dense layer.</div>
+  <div class="when"><b>Where in ML</b>The bottleneck in ResNet and Inception; the channel-mixing step
+  in depthwise separable convolutions (31.8).</div>
+</div>
+
+<div class="bridge"><strong>at one pixel position</strong>, the C<sub>in</sub>-channel vector there
+→ multiply by a <span class="m">C<sub>in</sub> × C<sub>out</sub></span> weight matrix
+→ a C<sub>out</sub>-channel vector at that same position. That is exactly module 10.6's
+<span class="m">p = Xw</span> matrix multiply — <span class="m">X</span> the channel vector,
+<span class="m">w</span> the 1×1 kernel's weights — run once per pixel instead of once per house.</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A 1×1 convolution over C channels is a dense
+layer applied independently at every position with shared weights — the same operation as module
+10's matrix multiply, just per-pixel instead of per-row. (Module 32's transformer feed-forward
+network — a small dense layer applied independently at each token position — is the identical idea
+on a sequence instead of a grid; worth noting now, even before module 32 defines it in full.)</div>
+
+<h2 data-n="31.8">Depthwise separable convolutions</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Split an ordinary convolution into two cheaper passes: a spatial
+  convolution applied to each channel separately (depthwise), then a 1×1 convolution to mix channels
+  (pointwise).</div>
+  <div class="why"><b>Why</b>A full 3×3 convolution mixes space and channels in one expensive step;
+  splitting the two jobs apart removes most of the redundant computation for similar accuracy.</div>
+  <div class="when"><b>Where in ML</b>MobileNet and on-device vision generally, where compute and
+  battery are the binding constraint.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Deriving the ~8× saving</summary>
+  <div class="deep-body">
+    <div class="math-work" aria-label="Depthwise separable convolution cost vs a full 3x3 convolution">
+      <div class="step">same layer as 31.3's larger example: <span class="m">k = 3</span>,
+      <span class="m">C<sub>in</sub> = 64</span>, <span class="m">C<sub>out</sub> = 128</span></div>
+      <div class="step">standard 3×3 convolution: <span class="m">k × k × C<sub>in</sub> × C<sub>out</sub>
+      = 3 × 3 × 64 × 128 = 73,728</span> weights</div>
+      <div class="step">depthwise pass (one 3×3 kernel per input channel, no mixing):
+      <span class="m">k × k × C<sub>in</sub> = 3 × 3 × 64 = 576</span> weights</div>
+      <div class="step">pointwise pass (a 1×1 convolution mixing the 64 channels into 128):
+      <span class="m">C<sub>in</sub> × C<sub>out</sub> = 64 × 128 = 8,192</span> weights</div>
+      <div class="step">depthwise separable total: <span class="m">576 + 8,192 = 8,768</span> weights</div>
+      <div class="step">ratio: <span class="m">73,728 / 8,768 ≈ 8.4×</span> fewer weights (and roughly
+      the same ratio in multiply-adds)</div>
+      <div class="meaning">The depthwise pass is nearly free (576 weights) because it never mixes
+      channels; almost the entire cost of the separable version is the 1×1 pointwise pass. That
+      matches the commonly quoted "roughly 8–9× fewer operations" and is the core trick behind
+      MobileNet.</div>
+    </div>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>Depthwise separable = a depthwise spatial pass
+(cheap) plus a 1×1 pointwise pass (does the mixing, and most of the cost) — roughly 8–9× fewer
+operations than one full 3×3 convolution over the same channels.</div>
+
+<h2 data-n="31.9">Two more building blocks: dilation and global average pooling</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A <strong>dilated (atrous) convolution</strong> spreads a kernel's
+  weights apart with gaps between them, so it covers a wider area without adding weights.
+  <strong>Global average pooling (GAP)</strong> averages an entire feature map down to a single
+  number.</div>
+  <div class="why"><b>Why</b>Dilation grows the receptive field from 31.5 without the depth (and
+  resolution loss) that stacking more layers would cost. GAP replaces the huge dense layers that used
+  to sit at the end of a CNN, and is what finally makes the head fully translation-invariant (31.6).</div>
+  <div class="when"><b>Where in ML</b>Dilation: segmentation, WaveNet-style audio models. GAP: the
+  classification head of nearly every modern CNN.</div>
+</div>
+
+<div class="math-work" aria-label="Dilation widening the effective kernel">
+  <div class="step">effective size = <span class="m">k + (k − 1)(r − 1)</span>, where <span class="m">r</span>
+  is the dilation rate</div>
+  <div class="step"><span class="m">k = 3</span>, <span class="m">r = 2</span> (one gap inserted between
+  each weight): <span class="m">3 + (3 − 1)(2 − 1) = 5</span></div>
+  <div class="meaning">Still only 9 learned weights, but they now sample a 5×5 area of the input
+  instead of a solid 3×3 — the same jump the two-stacked-layers arithmetic in 31.5 needed two layers
+  to reach, done in one.</div>
+</div>
+
+<p>Global average pooling does the arithmetic you would expect: take one feature map (say, the
+64th filter's output across the whole ID photo) and report the single number that is the mean of
+every value in it. One feature map in, one number out; 64 feature maps in, a 64-number vector out —
+far fewer parameters than a dense layer over every pixel, and the network now accepts any input size,
+since averaging works the same way regardless of how many pixels are being averaged.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Dilation buys receptive field without extra
+depth or extra weights; global average pooling replaces the classic end-of-network dense layers and
+supplies most of a CNN's translation invariance.</div>
+
+<h2 data-n="31.10">The architecture timeline — what each one contributed</h2>
 
 <div class="tw">
 <table>
@@ -168,7 +390,16 @@ true about images before any data arrives, and gets enormous sample efficiency i
 </table>
 </div>
 
-<h2 data-n="31.5">Questions</h2>
+<div class="box note">
+  <span class="lbl">Back to the account-opening pipeline</span>
+  <p>Any of the backbones above can end in a single sigmoid output: a forgery score for the scanned ID
+  photo. That score is one more signal into the same fraud pipeline from module 12 — where the base
+  rate of fraud among applications was <span class="m">P(fraud) = 0.005</span> — feeding the action
+  bands from module 12.1: block above 0.9, review between 0.3 and 0.9, allow below 0.3. The CNN does
+  not replace that pipeline; it supplies one more number for it to threshold.</p>
+</div>
+
+<h2 data-n="31.11">Questions</h2>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>What does a convolutional layer do that a dense layer does not?</summary>
@@ -176,13 +407,14 @@ true about images before any data arrives, and gets enormous sample efficiency i
     <div class="tldr">It looks at small local windows and reuses the same weights at every position.
     That gives it a fraction of the parameters and a built-in assumption that a pattern means the same
     thing wherever it appears.</div>
-    <p>The arithmetic makes it vivid. A dense layer connecting a 224×224×3 image to 1,000 units needs
-    about 150 million weights. A 3×3 convolution with 64 filters over 3 input channels needs
-    3×3×3×64 = 1,728 — five orders of magnitude fewer, and it works on any input size.</p>
-    <p>The two assumptions that buy that: <strong>locality</strong>, since an edge is made of adjacent
-    pixels, so a unit does not need to see the whole image; and <strong>parameter sharing</strong>,
-    since a vertical-edge detector is useful everywhere, so the same nine weights apply at every
-    position.</p>
+    <p>The arithmetic makes it vivid, and it is the same arithmetic from 31.1 and 31.3. A dense layer
+    connecting a 224×224×3 scanned ID to 1,000 units needs about 150 million weights. A 3×3
+    convolution with 64 filters over the photo's 3 colour channels needs 3×3×3×64 = 1,728 — five
+    orders of magnitude fewer, and it works on any input size.</p>
+    <p>The two assumptions that buy that: <strong>locality</strong>, since a tamper seam is made of
+    adjacent pixels, so a unit does not need to see the whole image; and <strong>parameter
+    sharing</strong>, since a seam detector is useful everywhere, so the same nine weights apply at
+    every position.</p>
     <p>And the consequence worth stating: with far fewer parameters and a correct prior, a CNN
     generalises from far less data than a dense network could. That is the inductive-bias argument in
     its most concrete form.</p>
@@ -194,18 +426,20 @@ true about images before any data arrives, and gets enormous sample efficiency i
   <div class="a">
     <div class="tldr">3 × 3 × 64 × 128 + 128 = 73,856 — kernel area times input channels times output
     channels, plus one bias per output channel.</div>
-    <p>The step people miss is that each filter spans <em>all</em> input channels. A "3×3 filter" here
-    is really a 3×3×64 volume, so it has 576 weights; there are 128 such filters; plus 128 biases.</p>
+    <p>This extends the 31.3 formula to a deeper layer of the same network, where the running channel
+    count has grown from 3 (the raw RGB scan) to 64. Each filter here spans all 64 input channels, so
+    a "3×3 filter" is really a 3×3×64 volume — 576 weights; there are 128 such filters; plus 128
+    biases.</p>
     <p>Two things worth adding, because they are what the question is really probing:</p>
     <ul>
       <li><strong>Parameter count is independent of input resolution.</strong> The same layer applies
-          to a 32×32 or a 512×512 image. What changes with resolution is the compute and the
+          to a 32×32 or a 512×512 scan. What changes with resolution is the compute and the
           activation memory, not the parameters — and activation memory is usually what actually
           limits your batch size.</li>
       <li><strong>FLOPs are a different question.</strong> Roughly output positions × 3 × 3 × 64 × 128
           multiply-adds. At 56×56 output that is around 231 million MACs for this one layer. Parameters
           and compute must be reasoned about separately, which is exactly the point behind depthwise
-          separable convolutions.</li>
+          separable convolutions in 31.8.</li>
     </ul>
   </div>
 </details>
@@ -214,7 +448,7 @@ true about images before any data arrives, and gets enormous sample efficiency i
   <summary><span class="pip i">MID</span>Why stack two 3×3 convolutions instead of using one 5×5?</summary>
   <div class="a">
     <div class="tldr">Same receptive field, fewer parameters, and an extra non-linearity in between.</div>
-    <p>Two stacked 3×3 layers see a 5×5 region of the input, so their receptive field matches. But
+    <p>Two stacked 3×3 layers see a 5×5 region of the input (31.5), so their receptive field matches. But
     per channel pair, two 3×3s cost 18 weights against a 5×5's 25 — about 28 % fewer — and the gap
     widens for 7×7, where three stacked 3×3s cost 27 against 49.</p>
     <p>The more interesting benefit is the <strong>non-linearity between them</strong>. A 5×5 layer is
@@ -223,25 +457,22 @@ true about images before any data arrives, and gets enormous sample efficiency i
     finding and it is why 3×3 became the universal default.</p>
     <p>The boundary I would add: this is not unconditional. Very large kernels came back in ConvNeXt
     and RepLKNet, where 7×7 depthwise convolutions work well — because a depthwise kernel's cost grows
-    much more slowly with area, so the parameter argument that killed large kernels no longer applies.
-    The rule was a consequence of the cost model, and the cost model changed.</p>
+    much more slowly with area (31.8), so the parameter argument that killed large kernels no longer
+    applies. The rule was a consequence of the cost model, and the cost model changed.</p>
   </div>
 </details>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>Is a CNN translation invariant?</summary>
   <div class="a">
-    <div class="tldr">No — convolution is <em>equivariant</em>, not invariant. Shift the input and the
-    feature map shifts identically. Invariance is approximated later, by pooling and by global
-    average pooling.</div>
-    <p>The distinction matters and it is a common trap: equivariant means f(shift(x)) = shift(f(x)) —
-    the information moves with the input. Invariant means f(shift(x)) = f(x) — the output does not care
-    where the thing is. A classifier wants invariance; a segmentation model wants equivariance, since
-    it must report <em>where</em>.</p>
-    <p>How invariance actually gets built: max pooling gives a little, since the max over a 2×2 window
-    often survives a one-pixel shift. Stacking many of those accumulates more. Global average pooling
-    at the head gives full invariance to translation by collapsing all spatial positions. So a
-    classification CNN is equivariant in its body and invariant at its head, by construction.</p>
+    <div class="tldr">No — convolution is <em>equivariant</em>, not invariant (31.6). Shift the input
+    and the feature map shifts identically. Invariance is approximated later, by pooling and by
+    global average pooling.</div>
+    <p>How invariance actually gets built, concretely: max pooling gives a little, since the max over
+    a 2×2 window often survives a one-pixel shift, as in 31.4's worked example. Stacking many of those
+    accumulates more. Global average pooling at the head gives full invariance to translation by
+    collapsing all spatial positions. So a classification CNN is equivariant in its body and invariant
+    at its head, by construction.</p>
     <p><strong>The important caveat</strong>, from Azulay and Weiss and from Zhang's work on
     anti-aliasing: modern CNNs are much <em>less</em> shift-invariant than people assume. Strided
     convolutions and pooling violate the Nyquist criterion, so shifting an image by one pixel can
@@ -258,7 +489,7 @@ true about images before any data arrives, and gets enormous sample efficiency i
   <summary><span class="pip i">MID</span>What is a 1×1 convolution for?</summary>
   <div class="a">
     <div class="tldr">It mixes channels at each spatial position without touching the neighbourhood —
-    a cheap way to change channel count, and exactly a per-position dense layer.</div>
+    a cheap way to change channel count, and exactly a per-position dense layer (31.7).</div>
     <p>Three jobs it does:</p>
     <ul>
       <li><strong>Dimensionality reduction.</strong> The bottleneck pattern in ResNet: 1×1 down to 64
@@ -266,14 +497,15 @@ true about images before any data arrives, and gets enormous sample efficiency i
           of the channels, which is where most of the saving comes from.</li>
       <li><strong>Channel mixing.</strong> A depthwise convolution processes each channel separately
           and never combines them; the 1×1 that follows is what does the combining. That two-step split
-          is the whole of depthwise separable convolution.</li>
+          is the whole of depthwise separable convolution (31.8).</li>
       <li><strong>Adding non-linearity cheaply.</strong> Each 1×1 comes with an activation, so it
           increases depth and expressiveness for very little compute.</li>
     </ul>
     <p>The connection worth drawing: a 1×1 convolution over C channels <em>is</em> a dense layer applied
-    independently at every position with shared weights. Which means a transformer's position-wise FFN
-    is the same operation on a sequence instead of a grid. Noticing that unification is the kind of
-    thing that reads as real understanding rather than memorisation.</p>
+    independently at every position with shared weights — module 10.6's <span class="m">Xw</span> run
+    per pixel. Which means a transformer's position-wise feed-forward network is the same operation on
+    a sequence instead of a grid. Noticing that unification is the kind of thing that reads as real
+    understanding rather than memorisation.</p>
   </div>
 </details>
 
@@ -286,12 +518,13 @@ true about images before any data arrives, and gets enormous sample efficiency i
     <p><strong>The empirical shape,</strong> from the original ViT paper: trained on ImageNet-1k alone,
     ViT <em>underperforms</em> a comparable ResNet. Pretrained on ImageNet-21k it draws level. On
     JFT-300M it wins clearly. The architecture did not change; the data did.</p>
-    <p><strong>Why:</strong> a CNN has locality and translation equivariance hard-coded. Those are true
-    facts about images, given for free, and they save an enormous amount of data. A ViT assumes almost
-    nothing — self-attention lets any patch attend to any other from layer 1 — so it must learn that
+    <p><strong>Why:</strong> a CNN has locality and translation equivariance hard-coded (31.1, 31.6).
+    Those are true facts about images, given for free, and they save an enormous amount of data. A ViT
+    assumes almost nothing — self-attention (a mechanism, covered in full in module 32, that lets any
+    image patch attend directly to any other patch from the first layer) — so it must learn that
     locality matters. With enough data it learns something better than the hand-coded prior, including
-    long-range relationships a CNN can only reach after many layers of receptive-field growth. With too
-    little data it never gets there.</p>
+    long-range relationships a CNN can only reach after many layers of receptive-field growth (31.5).
+    With too little data it never gets there.</p>
     <p><strong>The complication that makes this a good answer rather than a neat one:</strong>
     ConvNeXt took a plain ResNet and applied the training recipe that came with transformers — AdamW,
     heavy augmentation, long schedules, LayerNorm, larger depthwise kernels — and matched ViT
@@ -310,10 +543,12 @@ true about images before any data arrives, and gets enormous sample efficiency i
   <h4>Checkpoint — say these out loud, no notes</h4>
   <ul>
     <li>Locality and parameter sharing, and the parameter-count comparison against a dense layer.</li>
-    <li>Compute a conv layer's parameter count including the channel dimension.</li>
-    <li>Why two 3×3s beat one 5×5 — and why that stopped being unconditional.</li>
-    <li>Equivariance vs invariance, and where each one comes from in a CNN.</li>
-    <li>The three jobs of a 1×1 convolution, and its equivalence to a transformer FFN.</li>
+    <li>Compute a convolution output by hand over a small patch, and a conv layer's parameter count
+    including the channel dimension.</li>
+    <li>Derive the receptive-field growth across stacked 3×3 layers.</li>
+    <li>Equivariance vs invariance, and where invariance actually comes from in a CNN.</li>
+    <li>The three jobs of a 1×1 convolution, and its equivalence to module 10's matrix multiply.</li>
+    <li>The ~8× depthwise-separable saving, worked through the arithmetic.</li>
     <li>The ViT data-threshold argument, plus the ConvNeXt caveat.</li>
   </ul>
 </div>

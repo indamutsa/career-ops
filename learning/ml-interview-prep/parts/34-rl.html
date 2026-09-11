@@ -12,7 +12,9 @@
 <h1>Reinforcement learning
   <span class="lede">Do not skim this one. Every modern LLM is post-trained with RL — RLHF, then DPO,
   then RLVR and GRPO. Module 44 assumes you know what a policy, an advantage, and a KL penalty are.
-  This is where you learn them, in the clean setting, before they arrive wearing LLM clothes.</span>
+  This is where you learn them, in a setting you already own: the fraud decision from modules 12 and
+  25. Then, once the machinery is solid, the page pivots to the domain that is the actual reason you
+  need any of this — language models.</span>
 </h1>
 
 <h2 data-n="34.1">What makes RL a different problem</h2>
@@ -42,80 +44,282 @@ data, RL training is a feedback loop — a bad policy explores badly, collects b
 Nothing in supervised learning behaves like this, and it is why RL is unstable in ways that surprise
 people arriving from the supervised world.</p>
 
-<h2 data-n="34.2">The vocabulary, in dependency order</h2>
+<h2 data-n="34.2">The fraud decision as a decision process</h2>
 
-<div class="terms">
+<div class="concept-brief">
+  <div class="what"><b>What</b>A Markov decision process (MDP) is the formal frame for sequential
+      decisions: a state, a set of actions, a reward for each state–action pair, and — when decisions
+      chain together — a rule for how one state leads to the next.</div>
+  <div class="why"><b>Why</b>Modules 12 and 25 already gave you a state (a fraud probability), a set
+      of actions (allow / review / block) and a cost matrix. RL is what you get when you stop hand-
+      picking a threshold and instead let an agent <em>learn</em> the action that maximises reward.</div>
+  <div class="when"><b>Where in ML</b>Any system that repeatedly chooses an action under uncertainty
+      and only later finds out how it paid off: fraud triage, ad bidding, recommendation, robotics,
+      and — from 34.9 onward — next-token generation.</div>
+</div>
+
+<p>Module 12.1 gave you naive action bands from the fraud probability alone: block above 0.9, review
+between 0.3 and 0.9, allow below 0.3. Module 25.3 then derived a <em>cost-optimal</em> threshold from
+the actual cost matrix — a missed fraud costs €200, a false alarm costs €2 of analyst time and customer
+friction — and that threshold came out near 0.01, far below the naive 0.3 cut-off. RL is the framework
+that makes that second calculation the whole policy, for every action, not just a single yes/no
+threshold. Here is the MDP, term by term, with the fraud numbers already in it:</p>
+
+<div class="tw">
+<table>
+<tr><th>MDP term</th><th>What it is in general</th><th>What it is for fraud triage</th></tr>
+<tr><td>State <span class="m">s</span></td><td>Everything the agent is allowed to see before deciding</td>
+    <td>The transaction's fraud probability <span class="m">p</span> from the module 12 model, plus its
+    features</td></tr>
+<tr><td>Action <span class="m">a</span></td><td>One choice from a fixed set</td>
+    <td><span class="m">{allow, review, block}</span></td></tr>
+<tr><td>Reward <span class="m">R(s,a)</span></td><td>A scalar telling the agent how that choice turned
+    out</td><td>Minus the module 25 cost of that action, given whether the transaction was actually
+    fraud or legitimate</td></tr>
+<tr><td>Episode</td><td>One self-contained run, start to end</td><td>One transaction: state arrives,
+    action is taken, true label resolves, reward is paid, episode ends</td></tr>
+</table>
+</div>
+
+<p>Build the reward directly from the €200/€2 cost matrix. <strong>Allow</strong> pays the full €200
+loss if the transaction turns out to be fraud, and costs nothing if it was legitimate. <strong>Block</strong>
+always spends €2 of friction — a legitimate customer who gets blocked is annoyed, and even a genuine
+fraud attempt costs a little analyst overhead to close out — but if the transaction really was fraud, it
+avoids the €200 loss. <strong>Review</strong> spends the same €2 of analyst time regardless of outcome,
+and — because a human is now looking, not a fixed rule — catches only roughly half of the fraud that
+reaches it, avoiding half of the €200 loss on average. That "half" is a deliberately concrete stand-in
+for "review is imperfect but better than nothing"; a real system would measure its own analyst
+catch-rate.</p>
+
+<div class="tw">
+<table>
+<tr><th>Action</th><th>Reward if fraud</th><th>Reward if legitimate</th></tr>
+<tr><td>allow</td><td>−200 (the full loss)</td><td>0 (no cost)</td></tr>
+<tr><td>review</td><td>+98&nbsp;&nbsp;(½×200 loss avoided − €2 analyst cost)</td>
+    <td>−2 (analyst time spent on a transaction that needed none)</td></tr>
+<tr><td>block</td><td>+198&nbsp;&nbsp;(200 loss avoided − €2 friction)</td>
+    <td>−2 (false-alarm friction cost)</td></tr>
+</table>
+</div>
+
+<div class="box mem">
+  <span class="lbl">Read the table as a policy problem, not a lookup table</span>
+  <p>Nobody hands the agent this table at run time — it only ever sees <span class="m">p</span>, takes
+  an action, and is told a reward. Learning which action is best for which <span class="m">p</span>,
+  purely from that reward signal, is the entire content of this module.</p>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>An MDP is a cost matrix (state, action, reward)
+that an agent has to <em>learn</em> to act on, rather than one you hand-derive once and hard-code as a
+threshold.</div>
+
+<h2 data-n="34.3">The policy π, and exploration vs exploitation</h2>
+
+<div class="bridge"><strong>state</strong> (fraud probability p) → <strong>action set</strong>
+{allow, review, block} → a rule for choosing among them → <strong>policy π</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The policy π is the thing being learned: a mapping from state to
+      action, usually written as a probability the agent assigns to each action in that state.</div>
+  <div class="why"><b>Why</b>A fixed threshold rule (module 12/25) is a policy with probability 1 on
+      one action and 0 on the others. RL generalises that to a policy the agent adjusts from
+      experience, and — while training — one that is deliberately not fully certain.</div>
+  <div class="when"><b>Where in ML</b>Every RL algorithm in 34.7 is a different way of improving π.
+      For an LLM (34.9), the policy <em>is</em> the model: state = tokens so far, action = the next
+      token.</div>
+</div>
+
+<p>Write the fraud policy as <span class="m">π(a | s)</span> — the probability of taking action
+<span class="m">a</span> given state <span class="m">s</span>. Early in training, before the agent has
+learned anything, a reasonable starting policy for a borderline transaction (say <span class="m">p</span>
+around 0.5) might spread its probability across all three actions rather than commit:</p>
+
+<div class="eq">π(allow | s) = 0.30&nbsp;&nbsp;&nbsp;&nbsp;π(review | s) = 0.50&nbsp;&nbsp;&nbsp;&nbsp;π(block | s) = 0.20<span class="note">a deliberately uncertain policy, before training has told it which action pays best at this p</span></div>
+
+<div class="box analogy">
+  <span class="lbl">Exploration vs exploitation</span>
+  <p>Always taking the action the agent currently believes is best (<strong>exploit</strong>) is your
+  regular restaurant: reliable, but you never learn whether the new place two doors down is better.
+  Occasionally trying an action you are not sure about (<strong>explore</strong>) is ordering something
+  new — sometimes it is worse, but it is the only way to find out. A fraud agent that always allows
+  every transaction below 0.488 will never learn what would have happened had it reviewed one instead;
+  it needs some exploration to discover that review's expected reward at that <span class="m">p</span>
+  beats allow's.</p>
+</div>
+
+<p>Section 34.6 will compute exactly which action is best at <span class="m">p ≈ 0.488</span>, and 34.8
+will show the concrete probabilities <span class="m">π(block | s)</span> takes as training moves toward
+that answer.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>A policy is a distribution over actions per state,
+and deliberately keeping it non-degenerate during training (exploration) is what lets the agent ever
+discover an action it is not already taking.</div>
+
+<h2 data-n="34.4">Return, discount, and the value functions V and Q</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Return is the total reward an episode pays out, with rewards further in
+      the future multiplied by a discount factor γ &lt; 1 so the sum stays meaningful. V(s) is the
+      expected return from a state under the current policy; Q(s,a) is the expected return from taking
+      a specific action in that state, then following the policy after.</div>
+  <div class="why"><b>Why</b>You cannot compare "allow" and "block" by their reward alone once decisions
+      chain together — you need the expected total payoff each one leads to, not just its immediate
+      number.</div>
+  <div class="when"><b>Where in ML</b>Every value-based and actor–critic algorithm in 34.7 is built on
+      estimating V or Q from data.</div>
+</div>
+
+<p>Our fraud episode is deliberately the simplest case: one transaction, one action, the true label
+resolves immediately, episode over. There is no "next state" inside the episode, so before adding
+anything new, note what that simplification buys: <span class="m">Q(s,a) = R(s,a)</span> exactly — the
+expected return from taking action <span class="m">a</span> is just its expected immediate reward,
+because there is nothing left to follow. This is not a separate rule; it is the general recursive
+definition of Q with a zero contribution from "what comes after," because there is no after.</p>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Where discount γ actually earns its keep</summary>
+  <div class="deep-body">
+
+<p>Real fraud systems are not always this clean. A transaction that was <em>allowed</em> can turn into
+a confirmed chargeback weeks later — a delayed reward, several steps after the decision that caused it.
+Suppose a review decision today sometimes triggers a follow-up investigation three transactions later
+on the same account, worth an extra +50 in avoided-loss reward if it catches something the original
+review missed. With discount <span class="m">γ = 0.9</span> per step, that future reward is worth, from
+today's point of view:</p>
+
+<div class="math-work">
+  <div class="step">discounted value = γ³ × 50</div>
+  <div class="step">γ³ = 0.9 × 0.9 × 0.9 = 0.729</div>
+  <div class="step">discounted value = 0.729 × 50 = <strong>36.45</strong></div>
+  <div class="meaning">A reward three steps away is worth 36.45, not the full 50 — the agent should
+  still prefer a sure, smaller reward now over a heavily discounted, distant one, unless the distant
+  one is large enough to outweigh the discount.</div>
+</div>
+
+<p>γ close to 1 makes the agent patient (it plans far ahead); γ close to 0 makes it myopic (only the
+next reward matters). Our worked example below stays inside one episode, where this never bites — but
+Bellman's equation in 34.5 is written for the general, multi-step case on purpose.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="Expected value of allow vs block vs review for a real transaction">
+  <div class="step">p = 0.488 &nbsp;—&nbsp; module 12.9's flagged transaction, P(fraud | flagged) ≈ 0.488</div>
+  <div class="step">Q(s, allow) = p×(−200) + (1−p)×0</div>
+  <div class="step">= 0.488×(−200) = <strong>−97.6</strong></div>
+  <div class="step">Q(s, block) = p×(198) + (1−p)×(−2)</div>
+  <div class="step">= 0.488×198 + 0.512×(−2) = 96.624 − 1.024 = <strong>95.6</strong></div>
+  <div class="step">Q(s, review) = p×(98) + (1−p)×(−2)</div>
+  <div class="step">= 0.488×98 + 0.512×(−2) = 47.824 − 1.024 = <strong>46.8</strong></div>
+  <div class="meaning">Block has the highest expected reward at this p — even though module 12's naive
+  bands (review between 0.3 and 0.9) would have routed this exact transaction to review. Weighing the
+  actual €200/€2 asymmetry, rather than a hand-picked band, changes the answer.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>p</b><span>the transaction's fraud probability — the state</span></span>
+    <span><b>Q(s,a)</b><span>expected reward of taking action a in state s (no future step to add, per
+        above)</span></span>
+    <span><b>0.488, 0.512</b><span>P(fraud | flagged) and its complement, from module 12.9</span></span>
+  </div>
+</div>
+
+<p>The <strong>value of the state</strong>, <span class="m">V(s)</span>, is the expected return under
+whichever policy the agent is actually following. For a policy that has converged to taking the best
+action, <span class="m">V(s) = max<sub>a</sub> Q(s,a)</span> — here, <span class="m">V(s) = Q(s, block) = 95.6</span>.
+That number is what 34.6's advantage calculation subtracts from.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>V is "how good is this state under my policy";
+Q is "how good is this specific action from this state." When an episode ends immediately after one
+action, Q reduces to the expected immediate reward — the general definition still holds, there is just
+nothing left to discount.</div>
+
+<h2 data-n="34.5">The Bellman equation</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Value decomposes recursively: the value of being in a state now equals
+      the immediate reward plus the discounted value of whatever state comes next.</div>
+  <div class="why"><b>Why</b>It turns "compute the value of every possible future" — intractable — into
+      a one-step relationship you can estimate and update from data.</div>
+  <div class="when"><b>Where in ML</b>Every value-based algorithm (Q-learning, DQN, and their
+      descendants) is some way of turning this identity into an update rule.</div>
+</div>
+
+<div class="eq">V(s) = E[ R(s,a) + γ·V(s′) ]<span class="note">s′ is the state one step after s; the
+whole return is the immediate reward plus the (discounted) value of everything that follows</span></div>
+
+<p>In our one-decision fraud episode, <span class="m">s′</span> is terminal — the episode is over once
+the reward is paid, so <span class="m">V(s′) = 0</span> and Bellman's equation collapses to
+<span class="m">V(s) = E[R(s,a)]</span>, exactly the calculation in 34.4. The multi-step version earns
+its keep the moment an account is monitored across several transactions: the value of reviewing this
+transaction then includes the discounted value of whatever happens on the next one, recursively, all
+the way to the end of the account's history.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Say it in one line: "now's value is what you get
+right now, plus a discounted share of what you get next" — and know that every value-based method is
+a way of enforcing that identity from sampled data.</div>
+
+<h2 data-n="34.6">The advantage function A(s,a)</h2>
+
+<div class="bridge"><strong>Q(s,a)</strong> (34.4) → subtract <strong>V(s)</strong> (34.4) →
+remove "is this state good" → leave "was this action good" → <strong>advantage A(s,a)</strong></div>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A(s,a) = Q(s,a) − V(s): how much better (or worse) a specific action is
+      than the state's average, under the current policy.</div>
+  <div class="why"><b>Why</b>Q(s,a) mixes two things: "is this a promising state at all" and "was this
+      particular action a good choice." Subtracting V(s) removes the first and leaves only the second
+      — which is what you actually want a gradient to push on, and it sharply lowers gradient
+      variance.</div>
+  <div class="when"><b>Where in ML</b>The core quantity in policy-gradient methods, including PPO
+      (34.8) and, in simplified form, GRPO (34.9).</div>
+</div>
+
+<div class="math-work" aria-label="Advantage of each fraud action at p = 0.488">
+  <div class="step">V(s) = 95.6 &nbsp;—&nbsp; from 34.4: the value of the best action, block</div>
+  <div class="step">A(s, block) = Q(s, block) − V(s) = 95.6 − 95.6 = <strong>0</strong></div>
+  <div class="step">A(s, review) = Q(s, review) − V(s) = 46.8 − 95.6 = <strong>−48.8</strong></div>
+  <div class="step">A(s, allow) = Q(s, allow) − V(s) = −97.6 − 95.6 = <strong>−193.2</strong></div>
+  <div class="step">A(s, block) − A(s, allow) = 0 − (−193.2) = <strong>193.2</strong></div>
+  <div class="meaning">The best action always has advantage exactly 0 by construction — it defines
+  V(s). Every other action's advantage says precisely how many expected euros worse it is. The gap
+  between block and allow, 193.2, is the size of the mistake a policy that still allows this
+  transaction is making.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>A(s,a)</b><span>how much better action a is than the state's average return</span></span>
+    <span><b>0</b><span>the advantage of whichever action the value V(s) itself is built from</span></span>
+    <span><b>−193.2</b><span>expected euros lost, in this state, by allowing instead of blocking</span></span>
+  </div>
+</div>
+
+<div class="eq">∇J = E[ ∇log π(a|s) · A(s,a) ]<span class="note">the policy gradient: push up the
+log-probability of actions with positive advantage, push down the ones with negative advantage — for
+this transaction, push π(allow|s) down hard (A = −193.2) and π(review|s) down more gently (A = −48.8)</span></div>
+
+<div class="interview-line"><b>Interview takeaway</b>Advantage answers "was this action a good
+<em>choice</em>," not "was this a good state" — and every policy-gradient method is pushing
+probability mass toward positive-advantage actions using exactly this quantity.</div>
+
+<h2 data-n="34.7">On-policy vs off-policy, and the algorithm families</h2>
+
+<div class="terms two">
 
   <div class="term">
-    <div class="t">MDP — Markov decision process <span class="tag">basic</span></div>
-    <p>The formal frame: states, actions, transition probabilities, rewards, discount. "Markov" means
-       the current state contains everything needed to decide — history adds nothing.</p>
-    <p class="wh">Real problems are rarely Markov, which is why state design (stacking frames, adding
-       history) is half the practical work.</p>
+    <div class="t">On-policy <span class="tag">mid</span></div>
+    <p>Learns only from data the current policy generated. REINFORCE and PPO are on-policy: once the
+       policy updates, yesterday's transactions were labelled by a policy that no longer exists, so
+       they are discarded.</p>
+    <p class="wh">Throws data away after one update — costly, but keeps the value/advantage estimates
+       honest for the policy actually being evaluated.</p>
   </div>
 
   <div class="term">
-    <div class="t">Policy π <span class="tag">basic</span></div>
-    <p>The thing you are learning: a mapping from state to action, usually a probability distribution
-       over actions.</p>
-    <p class="wh">For an LLM, the policy <em>is</em> the model — state = tokens so far, action = the
-       next token. Say that sentence in an interview and the whole of RLHF becomes legible.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Return and discount γ <span class="tag">basic</span></div>
-    <p>Return = the sum of future rewards, each discounted by γ per step into the future.</p>
-    <p class="an">γ is how much you care about next year versus today. γ = 0 is pure impulse; γ = 0.99
-       plans far ahead.</p>
-    <p class="wh">Discounting is not only a preference — it also keeps the sum finite for infinite
-       episodes and reduces variance. Typical values 0.9–0.999.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Value functions V and Q <span class="tag">basic</span></div>
-    <p>V(s) = expected return from state s under the current policy. Q(s,a) = expected return from
-       taking action a in s, then following the policy.</p>
-    <p class="an">V is "how good is this position". Q is "how good is this move from this position".</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Bellman equation <span class="tag">mid</span></div>
-    <p>Value decomposes recursively: the value of now is the immediate reward plus the discounted value
-       of what comes next.</p>
-    <p class="wh">Every value-based algorithm is some way of turning this identity into an update rule.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Advantage A(s,a) <span class="tag">mid</span></div>
-    <p>A = Q(s,a) − V(s): how much better this action is than the state's average.</p>
-    <p class="wh">The single most useful quantity in policy-gradient methods, because it removes the
-       "was this a good state" component and leaves only "was this a good <em>choice</em>" —
-       dramatically lowering gradient variance. It reappears in PPO and, in simplified form, in GRPO.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">Exploration vs exploitation <span class="tag">basic</span></div>
-    <p>Take the best known action, or try something else to learn more?</p>
-    <p class="an">Your regular restaurant versus the new one. Always exploiting means you never find
-       anything better; always exploring means you rarely eat well.</p>
-    <p class="wh">ε-greedy, softmax/temperature sampling, optimism under uncertainty, entropy bonuses.
-       Temperature in LLM sampling is literally this dial.</p>
-  </div>
-
-  <div class="term">
-    <div class="t">On-policy vs off-policy <span class="tag">mid</span></div>
-    <p><strong>On-policy</strong> learns only from data the current policy generated (REINFORCE, PPO).
-       <strong>Off-policy</strong> can learn from data any policy generated (Q-learning, DQN).</p>
-    <p class="wh">Off-policy is far more sample-efficient — you can reuse a replay buffer — but less
-       stable. On-policy throws data away after one update, which is why PPO's few extra epochs per
-       batch, made safe by clipping, were such a practical win.</p>
+    <div class="t">Off-policy <span class="tag">mid</span></div>
+    <p>Can learn from data any policy generated. Q-learning and DQN are off-policy: a replay buffer of
+       old fraud decisions, made under an older policy, is still valid training data for today's
+       Q-estimate.</p>
+    <p class="wh">Far more sample-efficient, but less stable — the data was not generated by the policy
+       you are currently evaluating, so the estimate is an extrapolation.</p>
   </div>
 
 </div>
-
-<div class="eq">∇J = E[ ∇log π(a|s) · A(s,a) ]<span class="note">the policy gradient: push up the log-probability of actions that beat average, push down the ones that don't</span></div>
-
-<h2 data-n="34.3">The algorithm families</h2>
 
 <div class="tw">
 <table>
@@ -131,20 +335,46 @@ people arriving from the supervised world.</p>
 </table>
 </div>
 
-<p><strong>DQN's two stabilisers</strong> are worth remembering by name because they show what breaks
-when a neural network meets the Bellman update. The <strong>replay buffer</strong> breaks the temporal
-correlation between consecutive samples, restoring something closer to i.i.d. The <strong>target
-network</strong> — a frozen copy of Q updated periodically — stops the network chasing its own moving
-prediction. Without either, training diverges.</p>
+<p>Our fraud policy has three discrete actions, which value-based methods (learn <span class="m">Q(s,a)</span>
+for each of the three, act greedily) handle comfortably — <span class="m">argmax</span> over three
+numbers is trivial. That is exactly why value-based methods struggle for an LLM: the "action space" is
+the vocabulary, 100k or more discrete choices per step, and a stochastic policy is required for
+sampling. That mismatch is why LLM post-training is policy-gradient, not value-based — the thread 34.9
+picks back up.</p>
 
-<h2 data-n="34.4">PPO, and why it is the one you must know</h2>
+<div class="box mem">
+  <span class="lbl">DQN's two stabilisers, by name</span>
+  <p>Worth remembering because they show what breaks when a neural network meets the Bellman update.
+  The <strong>replay buffer</strong> breaks the temporal correlation between consecutive samples,
+  restoring something closer to i.i.d. The <strong>target network</strong> — a frozen copy of Q updated
+  periodically — stops the network chasing its own moving prediction. Without either, training
+  diverges.</p>
+</div>
 
-<p>Policy gradients have one dangerous failure mode: a single large update can destroy the policy, and
-unlike supervised learning there is no fixed dataset to recover from — the broken policy now collects
-broken data. TRPO fixed this with a hard constraint on the KL between old and new policy, solved with
-second-order machinery. PPO gets nearly the same effect with a first-order trick.</p>
+<div class="interview-line"><b>Interview takeaway</b>Off-policy reuses old data but estimates a moving
+target; on-policy discards data but estimates the policy you actually have. The action space's shape
+(few discrete actions vs. a huge vocabulary) usually decides the family for you.</div>
 
-<div class="eq">L = E[ min( r·A , clip(r, 1−ε, 1+ε)·A ) ]&nbsp;&nbsp;where r = π<sub>new</sub>/π<sub>old</sub><span class="note">ε ≈ 0.2 — beyond that ratio, the objective flattens and the gradient vanishes</span></div>
+<h2 data-n="34.8">PPO: the clipped objective</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>PPO bounds how far one gradient update can move the policy, by
+      flattening the objective once the new/old probability ratio for an action leaves a band around
+      1.</div>
+  <div class="why"><b>Why</b>A policy-gradient update is only valid locally, near the policy that
+      generated the data. A single large step can move the policy somewhere the advantage estimate
+      says nothing meaningful — and because RL generates its own data (34.1), a broken policy now
+      collects broken data with no way back.</div>
+  <div class="when"><b>Where in ML</b>The training loop behind PPO-based RLHF and most production
+      policy-gradient systems.</div>
+</div>
+
+<p>TRPO fixed the large-step problem with a hard constraint on the <strong>KL divergence</strong> — a
+non-negative number measuring how different two probability distributions are, zero only when they are
+identical — between the old and new policy, solved with second-order machinery: principled, and painful
+to implement. PPO gets nearly the same effect with a first-order trick: clip the ratio itself.</p>
+
+<div class="eq">L = E[ min( r·A , clip(r, 1−ε, 1+ε)·A ) ]&nbsp;&nbsp;where r = π<sub>new</sub>(a|s) / π<sub>old</sub>(a|s)<span class="note">ε ≈ 0.2 — beyond that ratio, the clipped branch is constant, so its gradient is zero</span></div>
 
 <div class="box analogy">
   <span class="lbl">The analogy</span>
@@ -152,14 +382,51 @@ second-order machinery. PPO gets nearly the same effect with a first-order trick
   leash goes taut and pulling harder achieves nothing. The clip is the leash; ε is its length.</p>
 </div>
 
-<p>The <em>min</em> is the subtle part: it makes the bound <em>pessimistic</em>. For a good action (A &gt; 0)
-it caps the upside so you cannot over-commit; for a bad action (A &lt; 0) it does <em>not</em> cap the
-correction, so the policy can always move away from a mistake. Constraint where it protects you,
-freedom where it saves you.</p>
+<p>Continue the fraud policy from 34.3, where an update raised the probability of blocking a borderline
+transaction:</p>
 
-<h2 data-n="34.5">The bridge to RLHF</h2>
+<div class="math-work" aria-label="Worked PPO ratio and clipped objective for the block action">
+  <div class="step">π<sub>old</sub>(block | s) = 0.20&nbsp;&nbsp;&nbsp;&nbsp;π<sub>new</sub>(block | s) = 0.30</div>
+  <div class="step">r = π<sub>new</sub>/π<sub>old</sub> = 0.30 / 0.20 = <strong>1.5</strong></div>
+  <div class="step">ε = 0.2 &nbsp;⇒&nbsp; band = [1−0.2, 1+0.2] = [0.8, 1.2]</div>
+  <div class="step">1.5 &gt; 1.2 &nbsp;⇒&nbsp; clip(r, 0.8, 1.2) = <strong>1.2</strong></div>
+  <div class="meaning">The ratio moved 50% in one update — outside the trust region — so the clip
+  activates. Now use that clipped ratio inside the full objective, for a positive-advantage instance
+  (suppose blocking this particular state carries A = +40, a smaller illustrative advantage than
+  34.6's, chosen only to show the arithmetic):</div>
+  <div class="step">r·A = 1.5 × 40 = <strong>60</strong></div>
+  <div class="step">clip(r)·A = 1.2 × 40 = <strong>48</strong></div>
+  <div class="step">L = min(60, 48) = <strong>48</strong></div>
+  <div class="meaning">Without clipping, the objective would credit the full 60 and keep pushing
+  π(block|s) even higher. Clipping caps the credit at 48 — the gradient beyond r = 1.2 is zero, so this
+  one batch cannot push the policy further in that direction.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>r</b><span>how much more likely the new policy makes this action than the old policy did</span></span>
+    <span><b>clip(r, 1−ε, 1+ε)</b><span>r, forced into the trust-region band before multiplying by A</span></span>
+    <span><b>min(·,·)</b><span>take whichever term is smaller, so the objective never rewards drifting
+        further than the band allows</span></span>
+  </div>
+</div>
 
-<p>Every term above maps onto LLM post-training, and this mapping is the payoff for the whole module:</p>
+<p>The <em>min</em> is the subtle part: it makes the bound <em>pessimistic</em>. For a good action
+(A &gt; 0, as just shown) it caps the upside so you cannot over-commit off one batch of data. For a bad
+action (A &lt; 0) it does <em>not</em> cap the correction — increasing the probability of a
+known-mistake action keeps being penalised without a ceiling, so the policy can always move decisively
+away from it. Constraint where it protects you, freedom where it saves you.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>Compute the ratio, compare it to the ε-band, and
+know that the clip only ever removes credit — it never adds gradient signal that was not already
+there.</div>
+
+<h2 data-n="34.9">The bridge to RLHF</h2>
+
+<p>Everything above was taught on a three-action, single-step fraud decision because it makes every
+number computable by hand. That was never really the destination — the reason this module exists in an
+ML interview course is that <strong>every modern LLM is post-trained with RL</strong>, and the mapping
+from what you just learned onto that setting is the actual payoff. From here the running example
+switches from fraud triage to language modelling, deliberately: forcing an LLM-specific reward signal
+into the fraud domain would misrepresent what RLHF is actually optimising, so this table maps the
+<em>machinery</em> — state, action, reward, value, KL — onto its real target instead.</p>
 
 <div class="tw">
 <table>
@@ -172,23 +439,30 @@ freedom where it saves you.</p>
 <tr><td>Episode</td><td>One prompt → one complete response</td></tr>
 <tr><td>Value/critic</td><td>A value head predicting the reward mid-generation</td></tr>
 <tr><td>The KL penalty</td><td>KL(π ‖ π<sub>reference</sub>) subtracted from the reward, keeping the
-    policy near the SFT model — module 13.6</td></tr>
+    policy near the SFT (supervised-fine-tuned) model it started from — module 13.6</td></tr>
 </table>
 </div>
 
+<p>Notice the fraud episode and the RLHF episode share the same shape: one state, one chosen action (or
+sequence of them), one terminal reward, computed exactly the way 34.4–34.6 computed Q, V and A. The
+difference is scale — a vocabulary instead of three actions, and a learned reward model instead of a
+hand-derived cost matrix — not the underlying machinery.</p>
+
 <p>The KL penalty is doing two jobs at once and both are worth naming: it is <strong>PPO's trust
-region</strong> re-expressed as a reward term, and it is <strong>the defence against reward
-hacking</strong> — the reward model is only accurate near the distribution it was trained on, so
-wandering far from the reference policy means optimising a reward model that no longer knows what it
-is scoring.</p>
+region</strong> re-expressed as a reward term (compare 34.8 — bounding how far one update can move the
+policy), and it is <strong>the defence against reward hacking</strong> — the reward model is only
+accurate near the distribution it was trained on, so wandering far from the reference policy means
+optimising a reward model that no longer knows what it is scoring. The fraud analogue: a reward model
+scoring transactions would only be trustworthy near the transactions it saw in training, and a policy
+free to drift arbitrarily would eventually find the score's blind spots too.</p>
 
 <p><strong>GRPO</strong> — the variant behind DeepSeek-R1 — deletes the critic entirely. Sample a group
 of responses to the same prompt, and use the group's mean reward as the baseline: advantage becomes
-"how much better than my siblings was this answer". That halves the memory (no separate value network)
+"how much better than my siblings was this answer." That halves the memory (no separate value network)
 and works well when the reward is verifiable — a maths answer that is right or wrong — which is what
 RLVR means. Detail in module 44.</p>
 
-<h2 data-n="34.6">Questions</h2>
+<h2 data-n="34.10">Questions</h2>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>How does RL differ from supervised learning?</summary>
@@ -198,11 +472,13 @@ RLVR means. Detail in module 44.</p>
     training data by acting.</div>
     <p>Three differences that each cause a distinct problem:</p>
     <ul>
-      <li><strong>Evaluative, not instructive feedback.</strong> "Score 7/10" does not tell you which
-          action to have taken instead. You must infer that by trying alternatives.</li>
-      <li><strong>Delayed reward → credit assignment.</strong> A reward at step 100 must be attributed
-          across the preceding 99 decisions. Discounting and advantage estimation are the machinery for
-          doing that.</li>
+      <li><strong>Evaluative, not instructive feedback.</strong> A reward number does not tell you
+          which action to have taken instead — the fraud reward table only tells you what block <em>
+          did</em> pay off, not what allow would have paid. You must infer that by trying alternatives
+          or, as in 34.4, computing every action's expected value directly.</li>
+      <li><strong>Delayed reward → credit assignment.</strong> A chargeback confirming fraud weeks
+          after the "allow" decision must be attributed back to that one choice. Discounting (34.4) and
+          advantage estimation (34.6) are the machinery for doing that.</li>
       <li><strong>The data distribution depends on the policy.</strong> This breaks the i.i.d.
           assumption everything in module 20 rests on, and creates a feedback loop where a bad policy
           collects bad data and degrades further. It is why RL is unstable in ways supervised learning
@@ -221,15 +497,16 @@ RLVR means. Detail in module 44.</p>
     <div class="tldr">Value-based when actions are discrete and samples are expensive; policy-gradient
     when the action space is continuous or the policy must be stochastic. In practice most systems are
     actor–critic and use both.</div>
-    <p><strong>Value-based</strong> learns Q(s,a) and acts greedily. Off-policy, so it can reuse a
-    replay buffer and is far more sample-efficient. But greedy action selection needs an argmax over
-    actions, which is intractable for continuous control, and the learned policy is deterministic.</p>
+    <p><strong>Value-based</strong> learns Q(s,a) and acts greedily — exactly what 34.4's fraud table
+    does for three actions. Off-policy, so it can reuse a replay buffer of old transactions and is far
+    more sample-efficient. But greedy action selection needs an argmax over actions, which is
+    intractable for continuous control, and the learned policy is deterministic.</p>
     <p><strong>Policy-gradient</strong> optimises π directly, so continuous actions are natural and a
     stochastic policy comes for free — which matters in partially observable settings and in games
     where being predictable loses. The cost is high variance and on-policy sample inefficiency.</p>
     <p><strong>Actor–critic</strong> is the synthesis: the actor is the policy, the critic estimates
-    value and supplies the advantage, which cuts the actor's gradient variance sharply. PPO and SAC are
-    both in this family and cover most of what people actually deploy.</p>
+    value and supplies the advantage (34.6), which cuts the actor's gradient variance sharply. PPO and
+    SAC are both in this family and cover most of what people actually deploy.</p>
     <p><strong>For LLMs</strong> the choice is forced. The action space is the vocabulary — 100k+
     discrete actions per step — and you need a stochastic policy for sampling. Q-learning over that is
     hopeless, so post-training is policy-gradient, i.e. PPO, or a method like DPO that sidesteps the RL
@@ -251,14 +528,16 @@ RLVR means. Detail in module 44.</p>
     properly — conjugate gradient, Fisher-vector products, a line search. Principled, and painful to
     implement and scale.</p>
     <p><strong>What PPO does instead:</strong> take the ratio r = π<sub>new</sub>(a|s) /
-    π<sub>old</sub>(a|s) and optimise min(r·A, clip(r,1−ε,1+ε)·A). Once r drifts outside the band, the
-    clipped branch is constant in the parameters, so its gradient is zero and there is no incentive to
-    push further. First-order, a few lines of code, and it enables several epochs of updates on the same
-    batch — which is where the sample-efficiency gain over vanilla policy gradient comes from.</p>
-    <p><strong>The <em>min</em> asymmetry is the detail that shows understanding.</strong> For A &gt; 0 the
-    upside is capped, so you cannot over-exploit a single good sample. For A &lt; 0 the correction is
-    <em>not</em> capped — the policy can always move decisively away from a bad action. Cautious about
-    good news, unconstrained about bad news.</p>
+    π<sub>old</sub>(a|s) and optimise min(r·A, clip(r,1−ε,1+ε)·A). 34.8 worked this arithmetic for
+    r = 1.5, A = 40: unclipped credit would be 60, clipped credit is 48, and the objective takes the
+    smaller value. Once r drifts outside the band, the clipped branch is constant in the parameters, so
+    its gradient is zero and there is no incentive to push further. First-order, a few lines of code,
+    and it enables several epochs of updates on the same batch — which is where the sample-efficiency
+    gain over vanilla policy gradient comes from.</p>
+    <p><strong>The <em>min</em> asymmetry is the detail that shows understanding.</strong> For A &gt; 0
+    the upside is capped, so you cannot over-exploit a single good sample. For A &lt; 0 the correction
+    is <em>not</em> capped — the policy can always move decisively away from a bad action. Cautious
+    about good news, unconstrained about bad news.</p>
     <p><strong>The honest caveat:</strong> clipping bounds the ratio per sample, not the KL over the
     batch, so it is a heuristic rather than a guarantee — implementations still monitor KL and often add
     an explicit penalty or early-stop. And the well-known reproducibility work (Engstrom et al.) found a
@@ -277,10 +556,12 @@ RLVR means. Detail in module 44.</p>
     <p>The failure it prevents is <strong>reward hacking</strong>, and it is empirically dramatic:
     without the penalty, policies find degenerate outputs — repeated flattering phrases, particular
     formatting tics, excessive length — that score extremely well and are useless. The reward model
-    never saw such text in its training pairs, so its score there is extrapolation.</p>
+    never saw such text in its training pairs, so its score there is extrapolation. The fraud analogue
+    from 34.9: a reward model trained on typical transactions would be just as unreliable if a policy
+    drifted into inputs unlike anything it was scored on.</p>
     <p>Formally the objective is E[r(x,y)] − β·KL(π ‖ π<sub>ref</sub>). Two readings, both correct:</p>
     <ul>
-      <li><strong>As a trust region</strong> — the same job PPO's clipping does, expressed in the
+      <li><strong>As a trust region</strong> — the same job PPO's clipping does (34.8), expressed in the
           reward instead of the objective, keeping updates in the region where estimates are valid.</li>
       <li><strong>As a Bayesian prior</strong> — the solution to that objective is provably
           π*(y|x) ∝ π<sub>ref</sub>(y|x)·exp(r/β): the reference policy reweighted by exponentiated
@@ -310,7 +591,9 @@ RLVR means. Detail in module 44.</p>
     <p><strong>Why it is structural, not a bug.</strong> Any reward is a proxy for an unstated true
     objective, and optimisation pressure finds every place the proxy and the objective diverge. This is
     Goodhart's law with a gradient behind it — the harder you optimise, the more reliably you end up in
-    the divergence.</p>
+    the divergence. Even the fraud reward table in 34.2 is a proxy: it is only as good as the €200/€2
+    estimates behind it, and a policy that found a way to game the review action's assumed 50% catch
+    rate would be hacking exactly this way.</p>
     <p><strong>Detection in practice:</strong></p>
     <ul>
       <li>Track proxy reward against a <em>held-out</em> signal — human eval, a different reward model,
@@ -334,10 +617,14 @@ RLVR means. Detail in module 44.</p>
   <h4>Checkpoint — say these out loud, no notes</h4>
   <ul>
     <li>The three structural differences from supervised learning, and the problem each causes.</li>
-    <li>Policy, value, Q, advantage — and why the advantage cuts variance.</li>
-    <li>The policy-gradient expression in words.</li>
-    <li>PPO's clipped objective, the leash analogy, and the <em>min</em> asymmetry.</li>
-    <li>The full RL→RLHF mapping table, from memory.</li>
+    <li>The fraud MDP: state, actions, and how each reward in the table traces back to €200/€2.</li>
+    <li>Compute Q(s, allow) and Q(s, block) at p = 0.488, and say which action wins and why.</li>
+    <li>Bellman's equation in words, and why it collapses to V(s) = E[R(s,a)] for a one-step episode.</li>
+    <li>A(s, block) − A(s, allow) for the fraud example, and why the best action's advantage is always 0.</li>
+    <li>PPO's clipped objective, the leash analogy, the min asymmetry, and the ratio arithmetic for
+        r = 1.5.</li>
+    <li>The full RL→RLHF mapping table, from memory, and why the module deliberately switches domains
+        to teach it.</li>
     <li>The two readings of the KL penalty, and what it cannot fix.</li>
   </ul>
 </div>

@@ -13,46 +13,170 @@
   <span class="lede">This module exists to make the transformer inevitable. Attention was not invented
   in 2017 — it was invented in 2014 as a <em>patch</em> for a specific failure in sequence-to-sequence
   models. If you can tell that story, "why transformers?" stops being a memorised answer and becomes
-  an argument.</span>
+  an argument. One running example carries it: a single customer's own transaction history, the case
+  from module 70 where "the pattern of the last N events" is the fraud signal a single transaction's
+  features cannot see.</span>
 </h1>
 
 <h2 data-n="32.1">The problem sequences pose</h2>
 
-<p>A feed-forward network takes a fixed-size input. A sentence is not fixed-size, and its meaning
-depends on order — "the dog bit the man" and "the man bit the dog" are the same bag of words and
-different events.</p>
+<div class="concept-brief">
+  <div class="what"><b>What</b>A feed-forward fraud model scores one transaction using only that transaction's own features. A sequence model scores it using that transaction plus a memory of every earlier transaction from the same customer.</div>
+  <div class="why"><b>Why</b>Some fraud patterns only exist <em>across</em> rows — module 70 names this directly as a "sequence" feature: "a small-value test transaction followed by a large one." No single row contains that pattern.</div>
+  <div class="when"><b>Where in ML</b>Any data with order and cross-step dependence — transaction histories, sentences, audio, click streams.</div>
+</div>
 
-<p>The recurrent answer: process one element at a time, and carry a <strong>hidden state</strong>
-forward that summarises everything seen so far.</p>
+<p>Take one customer's last four transactions, in order:</p>
+
+<div class="tw"><table>
+  <thead><tr><th>#</th><th>amount</th><th>merchant category</th><th>gap since previous</th><th>note</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>€40</td><td>groceries</td><td>— (window start)</td><td>ordinary spend</td></tr>
+    <tr><td>2</td><td>€35</td><td>groceries</td><td>3 days</td><td>ordinary spend, same category</td></tr>
+    <tr><td>3</td><td>€20</td><td>electronics</td><td>5 hours</td><td>new category, unusually small amount</td></tr>
+    <tr><td>4</td><td>€900</td><td>electronics</td><td>12 minutes</td><td>same new category, 45× transaction 3's amount, arrives fast</td></tr>
+  </tbody>
+</table></div>
+
+<p>Transaction 4 in isolation is not obviously fraud — plenty of legitimate €900 electronics purchases
+exist, and module 12's base rate already says <span class="m">P(fraud) = 0.005</span> for any
+transaction picked at random. What makes this sequence suspicious is transaction 3: a small "test"
+charge in a category this customer has never used, followed minutes later by a large charge in that
+same new category. That is exactly the pattern module 70 names — a cheap probe, then the real charge —
+and it is invisible to a model that looks at transaction 4 alone. Seeing it requires <strong>carrying
+information from row 3 into the scoring of row 4.</strong></p>
+
+<div class="box analogy">
+  <span class="lbl">The analyst with one index card</span>
+  <p>You are a fraud analyst reading this customer's transaction log one line at a time, and you are
+  allowed to keep only one index card of running notes. After every line you may rewrite the card, but
+  you can never flip back to earlier lines. By transaction 50 the card holds an increasingly blurry
+  compression of transactions 1–49, and the details of transaction 2 are simply gone.</p>
+  <p>That index card is the <strong>hidden state</strong>. Its finite size is the entire story of this
+  module — and, later, the entire reason attention had to be invented.</p>
+</div>
+
+<p>The recurrent answer to "carry information forward": process one transaction at a time, and keep a
+hidden state vector that summarises everything seen so far. 32.2 makes that arithmetic concrete on
+these same four rows.</p>
+
+<h2 data-n="32.2">The hidden-state recurrence</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>At each step, combine the previous hidden state with the current input through the same weights, then squash with tanh.</div>
+  <div class="why"><b>Why</b>It gives the model exactly one number line's worth of "memory" that updates every row, instead of no memory at all.</div>
+  <div class="when"><b>Where in ML</b>The core update of every RNN, LSTM and GRU — everything in this module through 32.4 is a variation on this one line.</div>
+</div>
 
 <div class="eq">h<sub>t</sub> = tanh(W<sub>h</sub> h<sub>t−1</sub> + W<sub>x</sub> x<sub>t</sub> + b)<span class="note">the same weights at every timestep — parameter sharing across time, exactly as convolution shares across space</span></div>
 
-<div class="box analogy">
-  <span class="lbl">The analogy</span>
-  <p>Reading a novel while allowed to keep only one index card of notes. After every sentence you may
-  rewrite the card, but you can never look back at the book. By chapter 30 the card holds an
-  increasingly blurry compression of chapters 1–29, and the details of chapter 2 are simply gone.</p>
-  <p>That index card is the hidden state, and its finite size is the entire story of this module.</p>
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>What each symbol is before we substitute numbers</summary>
+  <div class="deep-body">
+    <p><span class="m">x<sub>t</sub></span> is transaction t turned into numbers. <span class="m">h<sub>t−1</sub></span>
+    is the index card as it stood before this transaction — everything the model has retained about
+    transactions before t. <span class="m">W<sub>h</sub></span> and <span class="m">W<sub>x</sub></span>
+    are the same two learned weights reused at every single step; <span class="m">b</span> is a learned
+    offset. <span class="m">tanh</span> squashes the result into (−1, 1) so the hidden state cannot grow
+    without bound as more transactions arrive.</p>
+  </div>
+</details>
+
+<p>For this worked example, use two features per transaction: the amount scaled to
+<span class="m">amount ÷ 1000</span> (purely so the numbers stay in the range tanh responds to, the same
+reasoning behind standardising features in module 10.9 — it changes no information, only the units),
+and a flag <span class="m">category_changed</span> that is 1 when the merchant category differs from
+the previous transaction and 0 otherwise. Suppose training has already converged to small weights
+<span class="m">W<sub>h</sub> = 0.5</span>, <span class="m">W<sub>x</sub> = [2, 1.5]</span> (one weight
+per feature), <span class="m">b = 0</span>, and the index card starts empty:
+<span class="m">h<sub>0</sub> = 0</span>.</p>
+
+<div class="math-work" aria-label="Worked hidden-state recurrence over the four transactions">
+  <div class="step"><i>x</i><sub>1</sub> = <span class="matrix vector"><span>0.04</span><span>0</span></span> (€40, no category change)</div>
+  <div class="step">h<sub>1</sub> = tanh(0.5(0) + 2(0.04) + 1.5(0) + 0) = tanh(0.0800) = <strong>0.0798</strong></div>
+  <div class="step"><i>x</i><sub>2</sub> = <span class="matrix vector"><span>0.035</span><span>0</span></span> (€35, still groceries)</div>
+  <div class="step">h<sub>2</sub> = tanh(0.5(0.0798) + 2(0.035) + 1.5(0) + 0) = tanh(0.1099) = <strong>0.1095</strong></div>
+  <div class="step"><i>x</i><sub>3</sub> = <span class="matrix vector"><span>0.02</span><span>1</span></span> (€20, groceries → electronics)</div>
+  <div class="step">h<sub>3</sub> = tanh(0.5(0.1095) + 2(0.02) + 1.5(1) + 0) = tanh(1.5948) = <strong>0.9209</strong></div>
+  <div class="step"><i>x</i><sub>4</sub> = <span class="matrix vector"><span>0.9</span><span>0</span></span> (€900, still electronics)</div>
+  <div class="step">h<sub>4</sub> = tanh(0.5(0.9209) + 2(0.9) + 1.5(0) + 0) = tanh(2.2605) = <strong>0.9785</strong></div>
+  <div class="meaning">h barely moves across the two ordinary grocery transactions (0.08 → 0.11), then jumps at the
+  category switch (0.11 → 0.92) and stays near its ceiling once the large same-category charge follows
+  (0.92 → 0.98). The hidden state is tracking exactly the two-step pattern module 70 names, without ever
+  being told "test transaction" or "large follow-up" as a rule.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>h<sub>t</sub></b><span>the index card after transaction t — one number, bounded between −1 and 1</span></span>
+    <span><b>x<sub>t</sub></b><span>transaction t as two numbers: scaled amount, category-changed flag</span></span>
+    <span><b>W<sub>h</sub>, W<sub>x</sub></b><span>the same two weights reused at every step — nothing is relearned per transaction</span></span>
+    <span><b>tanh</b><span>squashes any real number into (−1, 1), so h stays bounded no matter how many transactions arrive</span></span>
+  </div>
 </div>
 
-<h2 data-n="32.2">Why plain RNNs fail: the gradient over time</h2>
+<p><strong>Interpretation:</strong> the recurrence lets transaction 4's score depend on transaction 3,
+without transaction 4's own features ever encoding "was there a small test charge recently." That
+dependency lives entirely in <span class="m">h<sub>3</sub></span>, carried forward into the computation
+of <span class="m">h<sub>4</sub></span>.</p>
+
+<p><strong>When to use it:</strong> whenever a row's correct label depends on what came before it for
+the same entity, and a fixed-size per-row feature vector cannot encode "before." <strong>The honest
+limit</strong> is exactly the index-card analogy: this h is one number here, and even at realistic
+sizes (dozens to hundreds of numbers) it is still a fixed-size summary that has to compress an
+arbitrarily long history. 32.3 shows what that compression costs over long distances.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>An RNN turns "remember everything relevant so far" into "compress everything so far into one fixed-size vector, updated with the same weights every step."</div>
+
+<div class="bridge"><strong>hidden-state recurrence</strong> → same weight matrix multiplied every step → backpropagation through time multiplies that same matrix once per step → repeated multiplication is exponential → <strong>vanishing or exploding gradients</strong></div>
+
+<h2 data-n="32.3">Why plain RNNs fail: the gradient over time</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Training an RNN backpropagates through every timestep, and the same weight matrix gets multiplied in at each one.</div>
+  <div class="why"><b>Why</b>Repeated multiplication by the same quantity is exponential, so the learning signal for a distant dependency can vanish before it reaches the weights that need it.</div>
+  <div class="when"><b>Where in ML</b>Any RNN trained on sequences longer than a few dozen steps; the reason LSTM/GRU exist.</div>
+</div>
 
 <p>Training uses <strong>backpropagation through time</strong> — unroll the network across timesteps
 and apply the chain rule, exactly as in module 30.5. But now the depth is the sequence length, and
 crucially <em>the same matrix</em> W<sub>h</sub> is multiplied in at every step.</p>
 
-<div class="eq">∂h<sub>t</sub>/∂h<sub>k</sub> = ∏ W<sub>h</sub><sup>⊤</sup> diag(tanh′)<span class="note">a product of t−k nearly identical terms</span></div>
+<div class="math-work" aria-label="Gradient of the hidden state across t minus k steps">
+  <div class="step">∂h<sub>t</sub>/∂h<sub>k</sub> = ∏ W<sub>h</sub>ᵀ diag(tanh′)</div>
+  <div class="meaning">a product of t−k nearly identical terms, one per step between k and t</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>∏</b><span>multiply one term per timestep between k and t</span></span>
+    <span><b>W<sub>h</sub>ᵀ</b><span>the same recurrent weight matrix from 32.2, transposed for the chain rule</span></span>
+    <span><b>diag(tanh′)</b><span>a diagonal matrix holding the tanh derivative computed at that step's h — how much that step's squashing shrinks or preserves a gradient passing through it</span></span>
+  </div>
+</div>
 
 <p>Repeated multiplication by the same thing is exponential. If the relevant eigenvalue of
 W<sub>h</sub> is below 1, gradients decay to nothing over 20–30 steps — <strong>vanishing</strong>. If
-above 1, they explode. So a plain RNN cannot learn a dependency spanning a paragraph: the gradient
-signal linking "the answer depends on the name in sentence 1" simply never arrives.</p>
+above 1, they explode. Make this concrete on the customer's history: if the effective shrink factor per
+step here is 0.9, and the transaction that actually explains today's fraud judgment sits 50 transactions
+back — the same "by transaction 50" distance from the index-card analogy in 32.1 — the surviving
+gradient is</p>
 
-<p>Exploding gradients have a cheap fix — <strong>gradient clipping</strong>, rescale the gradient
-whenever its norm exceeds a threshold. Vanishing has no such fix, which is what LSTM was designed
-for.</p>
+<div class="eq">0.9⁵⁰ ≈ 0.005<span class="note">the same order of magnitude as module 12's fraud base rate itself — a coincidence worth sitting with</span></div>
 
-<h2 data-n="32.3">LSTM and GRU: gates as an additive path</h2>
+<p>A gradient of 0.005 is not a weak nudge toward learning that transaction 1 mattered; it is
+indistinguishable from the noise floor. The model would need a gradient at that distance strong enough
+to overrule the prior that any given transaction is fraud with probability 0.005 — and 0.9⁵⁰ has already
+shrunk to roughly that same size before it even reaches the relevant weights. The signal is not weak, it
+is functionally absent.</p>
+
+<p>Two distinct failure modes with very different remedies: <strong>exploding</strong> gradients have a
+cheap fix — <strong>gradient clipping</strong>, rescale the gradient whenever its norm exceeds a
+threshold. <strong>Vanishing</strong> has no such fix, which is what LSTM was designed for.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>The exponential comes from multiplying the same matrix once per timestep — state the product form, not just "gradients vanish," and be ready to say why clipping only rescues the exploding side.</div>
+
+<h2 data-n="32.4">LSTM and GRU: gates as an additive path</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A second state — the cell state — updated by addition and gated multiplication instead of a fresh matrix multiply every step.</div>
+  <div class="why"><b>Why</b>Addition does not compound exponentially the way repeated matrix multiplication does, so a signal can survive far more steps.</div>
+  <div class="when"><b>Where in ML</b>Any RNN task where the relevant history is longer than a few dozen steps — which, per 32.3, is most of them.</div>
+</div>
 
 <div class="terms">
 
@@ -60,8 +184,8 @@ for.</p>
     <div class="t">Cell state <span class="tag">mid</span></div>
     <p>A second state vector that runs along the sequence and is modified by <em>addition</em>, not by
        repeated matrix multiplication.</p>
-    <p class="an">A conveyor belt running the length of the factory. Gates drop things on and take
-       things off, but the belt itself just keeps moving.</p>
+    <p class="an">A conveyor belt running the length of the customer's transaction log. Gates drop
+       things on and take things off, but the belt itself just keeps moving.</p>
     <p class="wh">This is the same trick as a residual connection: create a path where the gradient is
        multiplied by roughly 1, so it survives many steps.</p>
   </div>
@@ -86,14 +210,6 @@ for.</p>
   </div>
 
   <div class="term">
-    <div class="t">GRU <span class="tag">mid</span></div>
-    <p>A simplification: merges the cell and hidden state, and the forget and input gates, into one
-       update gate plus a reset gate.</p>
-    <p class="wh">Roughly 25 % fewer parameters, often equal accuracy. Which one wins is empirical —
-       there is no theoretical answer, and interviewers who claim otherwise are wrong.</p>
-  </div>
-
-  <div class="term">
     <div class="t">Bidirectional RNN <span class="tag">basic</span></div>
     <p>Run one RNN forward and another backward, concatenate the states.</p>
     <p class="warn-inline">Only valid when the whole sequence is available. Useless for generation or
@@ -102,10 +218,71 @@ for.</p>
 
 </div>
 
-<p>LSTMs pushed usable dependency length from tens of steps to hundreds. They did not remove the
-bottleneck; they widened it.</p>
+<p>Carry the fraud story into the gates. Say that at transaction 3 — the category-switch, small "test"
+charge — the LSTM's cell state already registers mild suspicion on one dimension:
+<span class="m">c<sub>3</sub> = 0.7</span>. At transaction 4, the gates (already trained, values chosen
+here small and hand-computable) read forget <span class="m">f = 0.9</span> (keep most of that
+suspicion), input <span class="m">i = 0.8</span>, candidate value
+<span class="m">c̃ = 0.95</span> (a strong new signal from the large, fast follow-up charge), and output
+<span class="m">o = 0.85</span>.</p>
 
-<h2 data-n="32.4">Seq2seq, and the bottleneck that broke it</h2>
+<div class="math-work" aria-label="Worked LSTM cell-state update at the large follow-up transaction">
+  <div class="step">c<sub>4</sub> = f ⊙ c<sub>3</sub> + i ⊙ c̃ = 0.9(0.7) + 0.8(0.95) = 0.63 + 0.76 = <strong>1.39</strong></div>
+  <div class="meaning">the cell state is not squashed by tanh the way the hidden state is, so it can exceed 1 — it is a running accumulator of evidence, not a bounded summary.</div>
+  <div class="step">h<sub>4</sub> = o ⊙ tanh(c<sub>4</sub>) = 0.85 × tanh(1.39) = 0.85 × 0.883 = <strong>0.751</strong></div>
+  <div class="meaning">only now, at the output gate, does the accumulated suspicion get squashed and exposed as the hidden state actually used downstream.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>c<sub>t</sub></b><span>the cell state — the conveyor belt's contents, unbounded</span></span>
+    <span><b>f, i, o</b><span>forget, input and output gates — each a number in (0,1) deciding how much passes through</span></span>
+    <span><b>c̃</b><span>the candidate value this step proposes to add</span></span>
+    <span><b>⊙</b><span>elementwise multiplication — one gate value per dimension of the state</span></span>
+  </div>
+</div>
+
+<p>Differentiating <span class="m">c<sub>t</sub> = f ⊙ c<sub>t−1</sub> + i ⊙ c̃</span> with respect to
+<span class="m">c<sub>t−1</sub></span> gives the forget gate <span class="m">f</span>, not a weight
+matrix. A gate near 1 passes a gradient through almost unattenuated — no exponential product of
+identical matrices, because the update is additive.</p>
+
+<div class="terms two">
+  <div class="term">
+    <div class="t">LSTM</div>
+    <p><strong>What:</strong> separate cell state and hidden state, three independent gates.</p>
+    <p><strong>Effect:</strong> most expressive gating, most parameters.</p>
+    <p class="wh"><strong>Use when:</strong> the extra parameters are affordable and you want the
+       store/expose split explicit.</p>
+  </div>
+  <div class="term">
+    <div class="t">GRU</div>
+    <p><strong>What:</strong> merges cell and hidden state, and merges the forget and input gates into
+       one update gate plus a reset gate.</p>
+    <p><strong>Effect:</strong> roughly 25% fewer parameters, often equal accuracy.</p>
+    <p class="wh"><strong>Use when:</strong> a smaller model is preferred and the store/expose split is
+       not needed. Which one wins is empirical — there is no theoretical answer, and interviewers who
+       claim otherwise are wrong.</p>
+  </div>
+</div>
+
+<p>LSTMs pushed usable dependency length from tens of steps to hundreds. <strong>The honest limit:</strong>
+this mitigates the 32.3 problem, it does not remove it — gradients still decay, just polynomially rather
+than exponentially. And it does nothing about a second, separate problem: encoding an entire sequence
+into one fixed-size vector for another network to consume. That is 32.5.</p>
+
+<div class="interview-line"><b>Interview takeaway</b>The forget gate turns "multiply by a weight matrix" into "multiply by a number near 1" — the same idea as a residual connection, just inside a recurrent cell.</div>
+
+<h2 data-n="32.5">Seq2seq, and the bottleneck that broke it</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>An encoder RNN reads a whole input sequence into one final hidden state; a decoder RNN generates the output from that single vector.</div>
+  <div class="why"><b>Why</b>This was the architecture that made neural machine translation work in 2014 — and the one whose failure mode motivated attention.</div>
+  <div class="when"><b>Where in ML</b>Translation, summarisation, and any sequence-to-sequence task before attention.</div>
+</div>
+
+<p>This section switches domain deliberately: seq2seq and its bottleneck are genuinely a machine-translation
+story from 2014, and attention's original motivation belongs to that history, not to fraud scoring.
+Forcing the fraud table into "translate this transaction sequence" would manufacture a coincidence that
+never happened. 32.6 returns to the fraud table once the mechanism itself — score, softmax, weighted
+sum — is on the table, because that mechanism does transfer.</p>
 
 <p>Machine translation circa 2014: an <strong>encoder</strong> RNN reads the source sentence and its
 final hidden state — one fixed vector, say 512 numbers — is handed to a <strong>decoder</strong> RNN
@@ -118,11 +295,19 @@ that generates the translation.</p>
   as sentences got longer. The model was not running out of capability; it was running out of vector.</p>
 </div>
 
-<h2 data-n="32.5">Attention as the fix</h2>
+<div class="interview-line"><b>Interview takeaway</b>The bottleneck is not "RNNs are weak at translation" — it is one specific design choice, squeezing an entire sequence through one fixed-size handoff vector.</div>
+
+<h2 data-n="32.6">Attention as the fix</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Instead of one fixed vector, keep every encoder hidden state and let the decoder compute a weighted average over all of them, with weights it decides on the fly.</div>
+  <div class="why"><b>Why</b>It removes the fixed-size bottleneck from 32.5 and, as a side effect, gives every output a direct path back to every input.</div>
+  <div class="when"><b>Where in ML</b>Translation originally; now the core operation inside every transformer layer (module 40).</div>
+</div>
 
 <p>Bahdanau's 2014 idea, stated plainly: <strong>stop forcing everything through one vector.</strong>
 Keep every encoder hidden state, and let the decoder, at each output step, compute a weighted average
-over all of them — with weights it decides on the fly.</p>
+over all of them.</p>
 
 <ol>
   <li>Score the current decoder state against every encoder state: e<sub>i</sub> = score(s, h<sub>i</sub>).</li>
@@ -137,10 +322,38 @@ over all of them — with weights it decides on the fly.</p>
   glancing pattern is learned, not fixed.</p>
 </div>
 
+<p>The mechanism generalises directly to the fraud table from 32.1 — a decoder attending over encoder
+states maps onto a fraud judgment attending over a customer's own transaction history, which is exactly
+what module 70 calls a "sequence" feature. Reuse the hidden states already computed in 32.2:
+<span class="m">h<sub>1</sub> = 0.0798</span>, <span class="m">h<sub>2</sub> = 0.1095</span>,
+<span class="m">h<sub>3</sub> = 0.9209</span>, <span class="m">h<sub>4</sub> = 0.9785</span>. Let the
+"query" be the final judgment state <span class="m">s = h<sub>4</sub></span>, and score it against all
+four transactions (here just a product, since each h is a single number):</p>
+
+<div class="math-work" aria-label="Worked attention over the four transactions">
+  <div class="step">e<sub>1</sub> = s·h<sub>1</sub> = 0.9785 × 0.0798 = 0.0781 &nbsp;·&nbsp;
+    e<sub>2</sub> = 0.9785 × 0.1095 = 0.1071</div>
+  <div class="step">e<sub>3</sub> = s·h<sub>3</sub> = 0.9785 × 0.9209 = 0.9011 &nbsp;·&nbsp;
+    e<sub>4</sub> = 0.9785 × 0.9785 = 0.9575</div>
+  <div class="step">softmax: divide each exp(e<sub>i</sub>) by their sum
+    (1.0812 + 1.1130 + 2.4623 + 2.6052 = 7.2617)</div>
+  <div class="step">α = <span class="matrix vector"><span>0.149</span><span>0.153</span><span>0.339</span><span>0.359</span></span></div>
+  <div class="step">c = Σ α<sub>i</sub>h<sub>i</sub> = 0.149(0.0798) + 0.153(0.1095) + 0.339(0.9209) + 0.359(0.9785) = <strong>0.692</strong></div>
+  <div class="meaning">69.8% of the attention weight (0.339 + 0.359) lands on transactions 3 and 4 — the
+  category switch and the large follow-up — with almost nothing on the two ordinary grocery
+  transactions. The weights are inspectable evidence for exactly which rows the judgment leaned on.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>e<sub>i</sub></b><span>the raw score between the query and encoder state i</span></span>
+    <span><b>α<sub>i</sub></b><span>the softmax-normalised weights — non-negative, sum to 1</span></span>
+    <span><b>c</b><span>the context vector — a custom weighted summary of the four transactions</span></span>
+  </div>
+</div>
+
 <p>Two properties made this more than a performance patch. It gave a <strong>direct path of length 1
-</strong> between any output and any input — so gradients no longer decay over distance. And the
-attention weights were <strong>inspectable</strong>: plot α as a heatmap and you see a rough word
-alignment emerge without ever having been supervised.</p>
+</strong> between any output and any input — so gradients no longer decay over distance, unlike 32.3's
+exponential product. And the attention weights were <strong>inspectable</strong>: plot α as a heatmap
+(or, here, read the four numbers directly) and a rough alignment emerges without ever having been
+supervised — though 32.7's last question is a hard caution against over-trusting that inspectability.</p>
 
 <p>Vaswani's 2017 move was the deletion, not the addition. If attention gives every position direct
 access to every other, the recurrence is doing nothing that attention does not already do — <em>and
@@ -162,7 +375,9 @@ parallel. That is the sentence the entire transformer follows from, and it is pi
 inference and position for free. Those losses are exactly what modules 41 (positional encodings) and
 45 (KV cache) spend their time managing.</p>
 
-<h2 data-n="32.6">Questions</h2>
+<div class="interview-line"><b>Interview takeaway</b>Attention was a patch for one fixed-size vector; the transformer's actual insight was that the patch made the recurrence redundant, not that attention itself was new in 2017.</div>
+
+<h2 data-n="32.7">Questions</h2>
 
 <details class="q">
   <summary><span class="pip b">BASIC</span>Why does a plain RNN struggle with long sequences?</summary>
@@ -171,9 +386,9 @@ inference and position for free. Those losses are exactly what modules 41 (posit
     timestep, so the gradient shrinks or grows exponentially with distance. Long-range dependencies get
     no learning signal.</div>
     <p>Concretely: the gradient linking step t to step k contains a product of (t−k) nearly identical
-    Jacobians. Repeated multiplication by the same quantity is exponential — an effective factor of
-    0.9 per step leaves you at 0.9<sup>50</sup> ≈ 0.005 after fifty steps. The signal is not weak, it
-    is absent.</p>
+    W<sub>h</sub>ᵀ diag(tanh′) terms from 32.3. Repeated multiplication by the same quantity is exponential — an effective factor
+    of 0.9 per step leaves you at 0.9⁵⁰ ≈ 0.005 after fifty steps, the same order of magnitude as module
+    12's fraud base rate. The signal is not weak, it is absent.</p>
     <p>Two distinct failure modes with very different remedies: <strong>exploding</strong> gradients
     are loud (you see NaNs) and fixed cheaply by clipping the gradient norm. <strong>Vanishing</strong>
     gradients are silent — training proceeds, loss goes down, the model simply never learns anything
@@ -192,11 +407,12 @@ inference and position for free. Those losses are exactly what modules 41 (posit
     time.</div>
     <p>The update is c<sub>t</sub> = f ⊙ c<sub>t−1</sub> + i ⊙ c̃. Differentiating with respect to
     c<sub>t−1</sub> gives the forget gate f, not a weight matrix. If the model learns f ≈ 1 for a
-    dimension it wants to preserve, the gradient passes through that dimension essentially unattenuated
-    for hundreds of steps.</p>
+    dimension it wants to preserve — such as "this customer probed a new category recently" — the
+    gradient passes through that dimension essentially unattenuated for hundreds of steps.</p>
     <p>The three gates divide the labour: <strong>forget</strong> chooses what to drop, <strong>input
     </strong> what to write, <strong>output</strong> what to expose. The store/expose split matters —
-    the LSTM can carry a fact silently and use it much later.</p>
+    the LSTM can carry a fact silently and use it much later, exactly as in the worked 32.4 example
+    where the cell state held suspicion from transaction 3 until it was exposed at transaction 4.</p>
     <p><strong>The honest limit:</strong> this mitigates, it does not solve. Gradients still decay,
     just polynomially rather than exponentially, so LSTMs reach hundreds of steps rather than thousands.
     And nothing here touches the second problem — encoding an entire sequence into one fixed vector.
@@ -221,7 +437,8 @@ inference and position for free. Those losses are exactly what modules 41 (posit
     <p>Two consequences beyond the score. The gradient now has a <strong>direct path</strong> from any
     output to any input, so distance stops attenuating learning. And the α weights are
     <strong>interpretable</strong> — the published heatmaps showed a soft word alignment emerging with
-    no alignment supervision at all.</p>
+    no alignment supervision at all, the same property the 32.6 fraud worked example shows on four
+    transactions instead of words.</p>
     <p><strong>The framing that makes this a good answer:</strong> attention was a patch bolted onto
     recurrence. The 2017 insight was subtractive — if attention already connects everything to
     everything, recurrence contributes nothing except the constraint that forces sequential
@@ -239,9 +456,10 @@ inference and position for free. Those losses are exactly what modules 41 (posit
     knowing about.</div>
     <p><strong>Where recurrence still wins:</strong> inference memory. A transformer's KV cache grows
     linearly with context, so a long conversation costs more per token as it goes; an RNN's state is
-    constant-size regardless of history. On a microcontroller, in a streaming audio pipeline, or under
-    a hard memory ceiling, that is decisive. Attention's O(n²) also stops being free when n is very
-    large.</p>
+    constant-size regardless of history. This is precisely why module 70 frames a sequence model over a
+    customer's history as a second, asynchronous-path model rather than something bolted onto the fast
+    100ms scoring path — the constant-memory property matters under a latency budget. Attention's O(n²)
+    also stops being free when n is very large.</p>
     <p><strong>What is actually happening now:</strong> Mamba and the S4/S6 line of state-space models
     are recurrent at inference — constant state, linear-time scan — but reformulated so training can be
     parallelised, which is precisely what plain RNNs could not do. RWKV takes a similar route from the
@@ -264,16 +482,17 @@ inference and position for free. Those losses are exactly what modules 41 (posit
     <p><strong>The arguments against:</strong> Jain and Wallace showed you can often find alternative
     attention distributions that produce the same prediction, so the observed weights are not the
     unique cause. Attention weights are only the first step of a value-weighted sum inside one head of
-    one layer, and there are dozens of layers of mixing afterwards — a large weight on a token whose
-    value vector carries little signal explains nothing. And in a deep model, representations at layer
-    20 are already mixtures of many tokens, so "attends to token 5" no longer means "uses word 5".</p>
+    one layer, and there are dozens of layers of mixing afterwards — a large weight on a transaction
+    whose value vector carries little signal explains nothing. In the 32.6 worked example, the 69.8%
+    weight on transactions 3 and 4 is suggestive, but it is not, by itself, proof that those transactions
+    caused the fraud score rather than merely correlating with the hidden state that produced it.</p>
     <p><strong>The counter,</strong> from Wiegreffe and Pinter: it depends what you want. Attention is
     not a faithful explanation, but it is useful evidence, and the adversarial-distribution result does
     not show the actual learned weights are meaningless.</p>
     <p><strong>What I would do instead:</strong> for a faithful attribution, use gradient×input,
-    integrated gradients, or an ablation — remove the token and measure the effect on the output. Those
-    answer the causal question attention weights only gesture at. For mechanistic work, attention
-    patterns are a hypothesis-generation tool, then activation patching tests the hypothesis.</p>
+    integrated gradients, or an ablation — remove the transaction and measure the effect on the fraud
+    score. Those answer the causal question attention weights only gesture at. For mechanistic work,
+    attention patterns are a hypothesis-generation tool, then activation patching tests the hypothesis.</p>
     <p>This connects straight back to module 26: the same discipline applies to SHAP. A method that
     produces a confident-looking picture is not thereby faithful, and knowing which question a method
     actually answers is the difference between interpretability and decoration.</p>
@@ -283,11 +502,12 @@ inference and position for free. Those losses are exactly what modules 41 (posit
 <div class="checkpoint">
   <h4>Checkpoint — say these out loud, no notes</h4>
   <ul>
-    <li>The exponential-product argument for vanishing gradients, and why clipping helps only one side.</li>
-    <li>The LSTM cell-state update, and why differentiating it gives the forget gate.</li>
-    <li>The seq2seq bottleneck and the sentence-length evidence.</li>
-    <li>Bahdanau attention in three steps: score, softmax, weighted sum.</li>
-    <li>Why removing recurrence — not adding attention — is the transformer's key move.</li>
+    <li>Compute h<sub>1</sub> through h<sub>4</sub> on the four-transaction table, and say why h jumps at the category switch.</li>
+    <li>The exponential-product argument for vanishing gradients, and why 0.9⁵⁰ ≈ 0.005 is the same order as the fraud base rate.</li>
+    <li>The LSTM cell-state update, and why differentiating it gives the forget gate rather than a weight matrix.</li>
+    <li>The seq2seq bottleneck and the sentence-length evidence — and why that section stays in translation, not fraud.</li>
+    <li>Bahdanau attention in three steps — score, softmax, weighted sum — worked on the four transactions.</li>
+    <li>Why removing recurrence, not adding attention, is the transformer's key move.</li>
   </ul>
 </div>
 
