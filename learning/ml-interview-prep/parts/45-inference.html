@@ -17,6 +17,36 @@
 
 <h2 data-n="45.1">The one distinction everything else hangs off</h2>
 
+<div class="concept-brief">
+  <div class="what"><b>What</b>Inference is the process of turning an input prompt into generated output tokens with a trained model.</div>
+  <div class="why"><b>Why</b>The prompt and output use hardware differently, so one undifferentiated latency number hides the actual bottleneck.</div>
+  <div class="when"><b>Use</b>Separate prefill from decode whenever you size, profile or optimise an autoregressive serving system.</div>
+</div>
+
+<div class="bridge"><strong>request arrives</strong> → prefill the prompt in parallel → cache its keys and values → decode one token at a time → schedule the next request</div>
+
+<div class="box mem">
+  <span class="lbl">Running example · the support assistant</span>
+  <p>The camera-shop assistant receives a 1,000-token troubleshooting history and produces a
+  100-token answer. The user experiences time to first token, then the cadence of the remaining
+  tokens. Every technique below improves one of those two phases or lets more such requests share
+  the same GPU.</p>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>FLOPs, bandwidth, HBM and arithmetic intensity</summary>
+  <div class="deep-body">
+    <p><strong>FLOP:</strong> one floating-point arithmetic operation. A compute-bound phase waits for
+    arithmetic units to finish.</p>
+    <p><strong>Memory bandwidth:</strong> bytes transferred per second. A bandwidth-bound phase waits
+    for data, even when arithmetic units are available.</p>
+    <p><strong>HBM:</strong> high-bandwidth memory attached to an accelerator. Model weights and the KV
+    cache live there during inference.</p>
+    <p><strong>Arithmetic intensity:</strong> arithmetic operations divided by bytes moved. Prefill
+    reuses weights across many prompt tokens, so it has higher intensity than single-token decode.</p>
+  </div>
+</details>
+
 <div class="tw">
 <table>
 <tr><th></th><th>Prefill</th><th>Decode</th></tr>
@@ -33,16 +63,20 @@
 </div>
 
 <div class="box analogy">
-  <span class="lbl">The analogy</span>
-  <p>Decode is a chef who must walk to the pantry and carry back <em>every ingredient in the kitchen</em>
-  just to chop one onion. The chopping (the FLOPs) takes no time at all; the walking (loading 14 GB of
-  weights from HBM) is the whole cost. Batching is chopping thirty onions per trip — the walk is
-  amortised, and throughput multiplies for free.</p>
-  <p>That is why the single most valuable inference optimisation is usually not a clever kernel. It is
-  putting more requests in the batch.</p>
+  <span class="lbl">The support batch</span>
+  <p>During decode, producing one new support token requires reading the model weights even though the
+  step performs relatively little arithmetic. Serving several support requests together reuses that
+  weight read across several token computations, increasing throughput at the cost of shared capacity
+  and potentially more queueing latency.</p>
 </div>
 
 <h2 data-n="45.2">The techniques</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Inference techniques reduce repeated computation, reduce stored bytes, or schedule more requests onto the same hardware.</div>
+  <div class="why"><b>Why</b>Prefill, decode and KV storage stress different resources, so an optimisation must target the actual bottleneck.</div>
+  <div class="when"><b>Choose</b>Profile first: use kernels for compute, quantisation for weight traffic, batching for utilisation, and KV techniques for context capacity.</div>
+</div>
 
 <div class="terms">
 
@@ -117,11 +151,35 @@
 
 </div>
 
-<h2 data-n="45.3">Watch the KV cache grow</h2>
+<div class="interview-line"><b>Interview takeaway</b>Name the limiting resource before the technique; otherwise an optimisation can improve the wrong phase while worsening latency or capacity.</div>
+
+<h2 data-n="45.3">Calculate the cache before choosing an optimisation</h2>
+
+<div class="math-work" aria-label="Calculating KV cache memory for the running request">
+  <div class="step">serve eight camera-support requests together: batch size <span class="m">B = 8</span></div>
+  <div class="step">the chosen model has <span class="m">L = 32</span> layers and eight KV heads with 128 entries per head, so <span class="m">d<sub>kv</sub> = 8×128 = 1,024</span></div>
+  <div class="step">each request has cached its <span class="m">n = 1,000</span>-token troubleshooting history</div>
+  <div class="step">each fp16 entry occupies 2 bytes; every layer stores both a key tensor and a value tensor</div>
+  <div class="step">values = 2 × L × n × d<sub>kv</sub> × B</div>
+  <div class="step">values = 2 × 32 × 1,000 × 1,024 × 8 = 524,288,000</div>
+  <div class="step">bytes = 524,288,000 × 2 = 1,048,576,000 bytes</div>
+  <div class="step">GiB = 1,048,576,000 / 1,073,741,824 = <strong>0.977 GiB</strong></div>
+  <div class="meaning">Eight support requests with 1,000 cached tokens need about 0.98 GiB for this model's KV cache. Doubling context or batch doubles that memory.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>L</b><span>transformer layers, each with its own keys and values</span></span>
+    <span><b>n</b><span>tokens already processed and available to attend to</span></span>
+    <span><b>d<sub>kv</sub></b><span>numbers stored per key or value across the model's KV heads</span></span>
+    <span><b>B</b><span>requests whose caches occupy memory together</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Profile prefill and decode separately, then optimise the limiting resource: compute for prefill, bandwidth and KV capacity for decode.</div>
+
+<h2 data-n="45.4">Watch the KV cache grow</h2>
 
 <div class="viz" data-viz="kvcache"></div>
 
-<h2 data-n="45.4">Questions</h2>
+<h2 data-n="45.5">Questions</h2>
 
 <details class="q">
   <summary><span class="pip i">MID</span>What is the KV cache and why does it matter?</summary>

@@ -17,15 +17,28 @@
 
 <h2 data-n="44.1">Why post-training exists at all</h2>
 
+<div class="concept-brief">
+  <div class="what"><b>What</b>Post-training changes a pretrained model's response behaviour using demonstrations, preferences, or checkable rewards.</div>
+  <div class="why"><b>Why</b>Predicting plausible next tokens does not guarantee a direct, useful, safe answer to an instruction.</div>
+  <div class="when"><b>Use</b>After pretraining, when the model has useful capability but does not reliably express it in the required form.</div>
+</div>
+
 <div class="box analogy">
-  <span class="lbl">The analogy</span>
-  <p>Pretraining is reading the entire library. The model now knows how sentences continue — including
-  how a <em>bad</em> answer continues, because the library contains those too. Ask a raw base model a
-  question and a perfectly reasonable continuation is <em>five more questions</em>, because that is what
-  a page of questions looks like.</p>
-  <p>Post-training is the apprenticeship: first you are shown how the job is done (SFT), then someone
-  watches you work and tells you which of two attempts was better (RLHF/DPO), and in the subjects with
-  right answers, a marker grades you automatically (RLVR).</p>
+  <span class="lbl">The camera-support progression</span>
+  <p>Pretraining teaches the model how support conversations continue, including weak or unsafe ones.
+  Post-training turns that capability into the camera shop's required behaviour: SFT demonstrates the
+  troubleshooting order, preference data chooses the better of two replies, and a verifier supplies a
+  checkable reward when the task has an objectively testable result.</p>
+</div>
+
+<div class="bridge"><strong>base model</strong> → demonstrate good answers → compare candidate answers → optimise the preferred behaviour → compress it if needed</div>
+
+<div class="box mem">
+  <span class="lbl">Running example · the support assistant</span>
+  <p>A pretrained model must become a support assistant for a camera shop. For the prompt
+  “My camera will not turn on after charging,” a useful answer checks the power switch, battery
+  seating and charger before suggesting service. We will reuse this one task to see what each stage
+  contributes.</p>
 </div>
 
 <div class="box note">
@@ -39,6 +52,27 @@
 
 <h2 data-n="44.2">The stages</h2>
 
+<div class="concept-brief">
+  <div class="what"><b>What</b>SFT teaches demonstrations; preference methods rank behaviours; RLVR uses programmatically checkable outcomes; distillation transfers behaviour to a smaller model.</div>
+  <div class="why"><b>Why</b>No single data source supplies demonstrations, human judgement, exploration and low-cost deployment equally well.</div>
+  <div class="when"><b>Choose</b>Start with SFT, add offline preferences when comparisons exist, use online RL for exploration or verifiable rewards, and distil when serving cost matters.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Policy, loss, reward and reference model — the prerequisite words</summary>
+  <div class="deep-body">
+    <p><strong>Policy:</strong> the language model viewed as a probability distribution
+    <span class="m">π(y|x)</span> over response <span class="m">y</span> given prompt
+    <span class="m">x</span>.</p>
+    <p><strong>Loss:</strong> a number training tries to reduce. Lower loss means the model assigned
+    more probability to the desired training response.</p>
+    <p><strong>Reward:</strong> a number reinforcement learning tries to increase. Here it represents
+    how preferable a complete answer is.</p>
+    <p><strong>Reference model:</strong> a frozen copy of the SFT model, written
+    <span class="m">π<sub>ref</sub></span>, used to measure how far the changing policy moves.</p>
+  </div>
+</details>
+
 <div class="terms">
 
   <div class="term">
@@ -47,6 +81,8 @@
        loss usually masked to the response only.</p>
     <p class="wh">This is what turns a continuation engine into something that answers. Quality beats
        quantity dramatically: LIMA got strong results from 1,000 carefully curated examples.</p>
+    <p class="an"><strong>Camera example:</strong> train on the prompt paired with the ordered
+       troubleshooting answer. The response tokens are targets; the prompt tokens provide context.</p>
   </div>
 
   <div class="term">
@@ -55,6 +91,8 @@
     <p class="an">Judging two answers is far easier and more consistent than writing the ideal answer.
        That asymmetry — <em>evaluation is cheaper than generation</em> — is the whole reason preference
        learning works.</p>
+    <p class="wh"><strong>Camera example:</strong> choose “check battery seating first” over “replace
+       the camera immediately.” The pair records a comparison, not a numeric quality score.</p>
   </div>
 
   <div class="term">
@@ -87,9 +125,9 @@
     <div class="t">RLVR <span class="tag">senior</span></div>
     <p>Reinforcement Learning with Verifiable Rewards: skip the learned reward model where the answer
        can be <em>checked</em> — maths with a solution key, code with unit tests, formal proofs.</p>
-    <p class="wh">The reward is a program, so it cannot be gamed the way a learned reward model can.
-       This is the engine behind the reasoning models, and it is why they improved on maths and code
-       far faster than on essay quality.</p>
+    <p class="wh">A programmatic verifier avoids some learned-reward-model errors, but it can still be
+       gamed when its tests or checks do not represent the intended task. This is why maths and code
+       benefit strongly while verifier design remains part of the problem.</p>
   </div>
 
   <div class="term">
@@ -111,7 +149,29 @@
 
 </div>
 
-<h2 data-n="44.3">Questions</h2>
+<div class="interview-line"><b>Interview takeaway</b>Choose the simplest stage that matches the supervision available: demonstrations, comparisons, or verifiable outcomes.</div>
+
+<h2 data-n="44.3">Work one preference through the pipeline</h2>
+
+<div class="math-work" aria-label="Computing a reward-model preference probability and an RLHF objective">
+  <div class="step">chosen answer reward: r(y<sub>w</sub>) = 2.0 &nbsp;·&nbsp; rejected answer reward: r(y<sub>l</sub>) = 0.5</div>
+  <div class="step">reward gap = r(y<sub>w</sub>) − r(y<sub>l</sub>) = 2.0 − 0.5 = 1.5</div>
+  <div class="step">P(chosen wins) = σ(1.5) = 1/(1 + e⁻¹·⁵) = 1/(1 + 0.223) = 0.818</div>
+  <div class="step">preference loss = −log(0.818) = <strong>0.201</strong></div>
+  <div class="step">policy reward = 2.0 &nbsp;·&nbsp; β = 0.10 &nbsp;·&nbsp; KL(π ‖ π<sub>ref</sub>) = 3.0</div>
+  <div class="step">RLHF objective = 2.0 − 0.10(3.0) = <strong>1.7</strong></div>
+  <div class="meaning">The reward model assigns an 81.8% preference probability to the useful answer. The KL cost removes 0.3 reward because the policy moved away from the trusted SFT model.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b>y<sub>w</sub>, y<sub>l</sub></b><span>the chosen winner and rejected loser for the same camera prompt</span></span>
+    <span><b>σ</b><span>the sigmoid, which turns a real-valued reward gap into a probability from 0 to 1</span></span>
+    <span><b>β</b><span>a chosen strength for the KL penalty; larger β keeps the policy closer to the reference</span></span>
+    <span><b>KL</b><span>a non-negative measure of how different the policy's response probabilities are from the reference model's</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Post-training progresses from demonstrations to comparisons to optimisation; the reward says where to move, while the reference penalty limits how far.</div>
+
+<h2 data-n="44.4">Questions</h2>
 
 <details class="q">
   <summary><span class="pip i">MID</span>Walk me through RLHF end to end.</summary>

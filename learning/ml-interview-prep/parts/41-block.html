@@ -15,24 +15,73 @@
   parameters on a whiteboard without notes.</span>
 </h1>
 
+<div class="study-guide" aria-label="How to use this page">
+  <div><b>Scan</b>Follow one token through the six operations of a block.</div>
+  <div><b>Work it</b>Reproduce the residual update and parameter count.</div>
+  <div><b>Go deeper</b>Open a <span class="deep-q" aria-hidden="true">?</span> for position, norms or architecture trade-offs.</div>
+</div>
+
 <h2 data-n="41.1">The whole architecture in one pass</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A transformer block performs attention, then a feed-forward transformation, adding each result to a running token vector.</div>
+  <div class="why"><b>Why</b>Attention gathers context; the feed-forward network transforms the gathered information.</div>
+  <div class="when"><b>Where in ML</b>Stack the same block repeatedly to build decoder-only language models such as GPT.</div>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The running example continues from module 40</span>
+  <p>We keep <strong>“The animal was tired, so it rested.”</strong> Module 40 produced contextual
+  information for “it”. This page follows that same token vector through one complete block, then
+  counts the weights needed to repeat the block at scale.</p>
+</div>
 
 <div class="eq">tokens → embed → [ attention → FFN ] × L → final norm → unembed → logits<span class="note">every bracketed block reads from and writes to the same running vector per token</span></div>
 
 <p>Written out, one block is four lines:</p>
 
-<div class="eq">x = x + Attention( Norm(x) )<br>x = x + FFN( Norm(x) )<span class="note">pre-norm form, which is what every modern model uses — the original paper put the norm after</span></div>
+<div class="eq">x = x + Attention( Norm(x) )<br>x = x + FFN( Norm(x) )<span class="note">pre-norm form, used by many modern decoder-only transformers — the original paper put the norm after</span></div>
 
-<div class="box analogy">
-  <span class="lbl">The analogy — the residual stream as a conveyor belt</span>
-  <p>Each token has a vector travelling down a belt through every layer. A layer never replaces what
-  is on the belt; it reads it, computes something, and <em>adds</em> its contribution.</p>
-  <p>Attention adds information gathered from other tokens. The FFN adds information recalled from the
-  model's own weights. The belt itself is untouched, which is why the gradient can travel from the last
-  layer to the first without decaying — module 30.6.</p>
+<div class="math-work" aria-label="Worked transformer block update for the token it">
+  <div class="step">incoming “it” vector: <i>x</i><sub>0</sub> = <span class="matrix vector"><span>2</span><span>0</span></span></div>
+  <div class="step">feature mean = <span class="m">(2+0)/2 = 1</span>; centred vector = <span class="matrix vector"><span>2−1</span><span>0−1</span></span> = <span class="matrix vector"><span>1</span><span>−1</span></span></div>
+  <div class="step">feature variance = <span class="m">(1²+(−1)²)/2 = 1</span>; standard deviation = <span class="m">√1 = 1</span></div>
+  <div class="step">Norm(<i>x</i><sub>0</sub>) = <span class="matrix vector"><span>1/1</span><span>−1/1</span></span> = <span class="matrix vector"><span>1</span><span>−1</span></span></div>
+  <div class="step">reuse Module 40's derived attention context: <i>a</i> = <span class="matrix vector"><span>0.670</span><span>0.330</span></span></div>
+  <div class="step">first residual update: <i>x</i><sub>1</sub> = <i>x</i><sub>0</sub> + <i>a</i> = <span class="matrix vector"><span>2+0.670</span><span>0+0.330</span></span> = <span class="matrix vector"><span>2.670</span><span>0.330</span></span></div>
+  <div class="step">Norm(<i>x</i><sub>1</sub>): mean = <span class="m">(2.670+0.330)/2 = 1.500</span>; centred vector = <span class="matrix vector"><span>1.170</span><span>−1.170</span></span>; standard deviation = <span class="m">√((1.170²+(−1.170)²)/2) = 1.170</span></div>
+  <div class="step">Norm(<i>x</i><sub>1</sub>) = <span class="matrix vector"><span>1.170/1.170</span><span>−1.170/1.170</span></span> = <span class="matrix vector"><span>1</span><span>−1</span></span></div>
+  <div class="step">choose a two-unit teaching FFN: <i>W</i><sub>1</sub> = <span class="matrix"><span>1</span><span>0</span><span>0</span><span>1</span></span>; ReLU changes negative entries to zero</div>
+  <div class="step"><i>h</i> = ReLU(<i>W</i><sub>1</sub>Norm(<i>x</i><sub>1</sub>)) = ReLU(<span class="matrix vector"><span>1</span><span>−1</span></span>) = <span class="matrix vector"><span>1</span><span>0</span></span></div>
+  <div class="step"><i>W</i><sub>2</sub> = <span class="matrix"><span>−0.25</span><span>0</span><span>0.50</span><span>0</span></span>; <i>f</i> = <i>W</i><sub>2</sub><i>h</i> = <span class="matrix vector"><span>−0.25(1)+0(0)</span><span>0.50(1)+0(0)</span></span> = <span class="matrix vector"><span>−0.25</span><span>0.50</span></span></div>
+  <div class="step">second residual update: <i>x</i><sub>2</sub> = <i>x</i><sub>1</sub> + <i>f</i> = <span class="matrix vector"><span>2.670−0.25</span><span>0.330+0.50</span></span> = <span class="matrix vector"><span>2.420</span><span>0.830</span></span></div>
+  <div class="meaning">The block never replaces the token’s state. It adds contextual information, then adds a within-token transformation.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>x</i><sub>0</sub></b><span>the token vector entering this block</span></span>
+    <span><b><i>a</i></b><span>information gathered from allowed tokens by attention</span></span>
+    <span><b><i>f</i></b><span>the feed-forward network’s contribution for this token</span></span>
+    <span><b>residual update</b><span>add a sublayer’s contribution to the vector already on the stream</span></span>
+  </div>
 </div>
 
+<div class="box analogy">
+  <span class="lbl">Keep following “it”</span>
+  <p>The vector for “it” is the residual stream at this position. Attention adds information gathered
+  from “animal” and “tired”; the FFN then adds a within-token transformation. Neither sublayer erases
+  the vector that entered it, which leaves an additive path through the block.</p>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A block alternates cross-token communication through attention with per-token transformation through the FFN, preserving an additive residual path around both.</div>
+
 <h2 data-n="41.2">Position — the thing attention throws away</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Position information tells attention where each token occurs, not only what it contains.</div>
+  <div class="why"><b>Why</b>Without it, reordering identical token vectors merely reorders the outputs; word order has no learned meaning.</div>
+  <div class="when"><b>Where in ML</b>Choose a position scheme when defining a model’s context length and extrapolation behaviour.</div>
+</div>
+
+<div class="bridge"><strong>token identity</strong> + position information → order-aware queries and keys → order-sensitive attention</div>
 
 <p>Self-attention is <strong>permutation-equivariant</strong>: shuffle the input tokens and the outputs
 shuffle identically. It computes a set operation, not a sequence operation. "Dog bites man" and "man
@@ -56,7 +105,27 @@ the transformer lost when it deleted recurrence.</p>
 </table>
 </div>
 
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Why “animal rested” and “rested animal” otherwise look equivalent</summary>
+  <div class="deep-body">
+    <p>Self-attention applies the same query, key and value projections at every position. If the two
+    token vectors swap rows, the score matrix swaps the corresponding rows and columns, and the output
+    rows swap too. This property is <strong>permutation equivariance</strong>: reorder the input and
+    the same reorder appears at the output. A positional signal breaks that symmetry.</p>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>Attention knows token content but not sequence order; positional information breaks that symmetry, usually inside the query–key comparison.</div>
+
 <h2 data-n="41.3">The components</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Embeddings create the initial token state; normalisation stabilises it; attention and the FFN add new information to the residual stream.</div>
+  <div class="why"><b>Why</b>Each component solves a different constraint while preserving the same vector width between blocks.</div>
+  <div class="when"><b>Where in ML</b>Use this component map when reading model configurations, estimating parameters or diagnosing training stability.</div>
+</div>
+
+<div class="bridge"><strong>token ID</strong> → embedding + position → residual stream → norm → attention → residual add → norm → FFN → residual add</div>
 
 <div class="terms">
 
@@ -89,16 +158,18 @@ the transformer lost when it deleted recurrence.</p>
   <div class="term">
     <div class="t">RMSNorm <span class="tag">mid</span></div>
     <p>Drop the mean-centring and the bias: divide by the root-mean-square and scale.</p>
-    <p class="wh">Same quality, fewer operations, one less reduction over the feature axis. Llama and
-       most current models use it — a small change worth about 7–10 % of step time at scale.</p>
+    <p class="wh">It removes mean-centring and therefore one reduction over the feature axis. Many
+       modern decoder models use it, but its quality and runtime effect depend on the architecture,
+       kernel and hardware.</p>
   </div>
 
   <div class="term">
     <div class="t">Pre-norm vs post-norm <span class="tag">senior</span></div>
     <p><strong>Post-norm</strong> (original): x = Norm(x + Sublayer(x)). <strong>Pre-norm</strong>
-       (everything since): x = x + Sublayer(Norm(x)).</p>
+       (common in modern decoder models): x = x + Sublayer(Norm(x)).</p>
     <p class="wh">Pre-norm keeps the residual path completely clean — no normalisation sits on it — so
-       gradients reach layer 1 undisturbed and training is stable without a warmup schedule.</p>
+       gradients have a direct additive path to early layers and training is generally more stable.
+       The required warmup still depends on scale, initialisation and optimiser settings.</p>
   </div>
 
   <div class="term">
@@ -131,7 +202,15 @@ the transformer lost when it deleted recurrence.</p>
 
 </div>
 
+<div class="interview-line"><b>Interview takeaway</b>The residual stream is the shared state: embeddings initialise it, norms condition each read, and attention plus the FFN write additive updates.</div>
+
 <h2 data-n="41.4">Counting parameters by hand</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Count the independently learned entries in every weight matrix.</div>
+  <div class="why"><b>Why</b>Parameter count predicts model memory and gives a fast architecture sanity check.</div>
+  <div class="when"><b>Where in ML</b>Use it in model design, capacity estimates and interview whiteboard calculations.</div>
+</div>
 
 <p>A question that gets asked because it is checkable in thirty seconds and cannot be bluffed.</p>
 
@@ -149,7 +228,24 @@ the transformer lost when it deleted recurrence.</p>
 </table>
 </div>
 
-<div class="eq">GPT-3: L = 96, d = 12288 → 12 × 96 × 12288² ≈ 174 B<span class="note">the published figure is 175 B — the rest is embeddings</span></div>
+<div class="math-work" aria-label="Worked parameter count for GPT-3 sized blocks">
+  <div class="step">one attention matrix has <span class="m">d×d = d²</span> weights</div>
+  <div class="step">four attention matrices: <span class="m">W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>, W<sub>O</sub> → 4d²</span></div>
+  <div class="step">FFN up projection: <span class="m">d×4d = 4d²</span></div>
+  <div class="step">FFN down projection: <span class="m">4d×d = 4d²</span></div>
+  <div class="step">one block: <span class="m">4d² + 4d² + 4d² = 12d²</span></div>
+  <div class="step">96 blocks with <span class="m">d = 12,288</span>: <span class="m">12×96×12,288²</span></div>
+  <div class="step"><span class="m">12,288² = 150,994,944</span>; <span class="m">12×96 = 1,152</span></div>
+  <div class="step"><span class="m">1,152×150,994,944 = 173,946,175,488 ≈ 174 billion</span></div>
+  <div class="meaning">The published 175-billion total adds embeddings, norms and biases. The <span class="m">12Ld²</span> estimate intentionally counts the dominant block matrices.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>d</i></b><span>the width of every residual-stream token vector</span></span>
+    <span><b><i>L</i></b><span>the number of repeated transformer blocks</span></span>
+    <span><b><i>V</i></b><span>vocabulary size in the embedding term <span class="m">Vd</span></span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>A standard block is approximately <span class="m">12d²</span> parameters: <span class="m">4d²</span> attention plus <span class="m">8d²</span> FFN; multiply by <span class="m">L</span> and then add embeddings.</div>
 
 <h2 data-n="41.5">Questions</h2>
 
@@ -242,7 +338,8 @@ the transformer lost when it deleted recurrence.</p>
     and the LSTM cell state.</p>
     <p><strong>The empirical finding</strong> (Xiong et al., 2020) is precise: post-norm has very large
     gradients at initialisation in the last layers, which is exactly what warmup was silently
-    compensating for. With pre-norm you can remove warmup entirely and use a larger learning rate. At
+    compensating for. Pre-norm can reduce sensitivity to warmup and often tolerates a larger learning
+    rate, but it does not make a particular schedule universally safe. At
     the scale where a failed run costs six figures, "trains reliably" beats a small quality edge.</p>
     <p><strong>The honest counterpoint:</strong> well-tuned post-norm often reaches slightly
     <em>better</em> final quality, because pre-norm's residual stream grows in magnitude with depth,

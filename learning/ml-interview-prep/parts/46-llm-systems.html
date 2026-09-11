@@ -17,11 +17,27 @@
 
 <h2 data-n="46.1">RAG</h2>
 
+<div class="concept-brief">
+  <div class="what"><b>What</b>Retrieval-augmented generation (RAG) finds relevant source passages and places them in the model's prompt before generation.</div>
+  <div class="why"><b>Why</b>Model weights can be stale or incomplete; retrieved passages provide current, inspectable evidence.</div>
+  <div class="when"><b>Use</b>When answers depend on private, changing or source-citable knowledge rather than a behaviour change.</div>
+</div>
+
+<div class="bridge"><strong>documents</strong> → parse and chunk → embed and index → retrieve candidates → rerank → answer with citations → evaluate each stage</div>
+
+<div class="box mem">
+  <span class="lbl">Running example · the support assistant</span>
+  <p>The camera-shop assistant must answer “Can battery B-17 be used in camera C-200?” from product
+  manuals and a compatibility table. The exact identifiers make lexical search useful, while a query
+  such as “which power pack fits my camera?” benefits from semantic search. We will follow this request
+  from ingestion through evaluation and safe action.</p>
+</div>
+
 <div class="box analogy">
-  <span class="lbl">The analogy</span>
-  <p>A closed-book exam versus an open-book one. The base model sat the closed-book exam months ago and
-  answers from memory — confidently, including the bits it half-remembers. RAG hands it the textbook
-  open at the right page and says "answer from this".</p>
+  <span class="lbl">The camera assistant with and without retrieval</span>
+  <p>Without retrieval, the assistant answers the B-17 compatibility question from model memory,
+  including anything it only half-remembers. RAG instead places the relevant manual passage and
+  compatibility-table row in the prompt before the assistant answers.</p>
   <p>Which reframes the whole problem: <strong>most RAG failures are retrieval failures, not generation
   failures.</strong> If the right page was never handed over, no amount of prompt engineering rescues
   the answer.</p>
@@ -92,7 +108,66 @@
 
 </div>
 
-<h2 data-n="46.2">Questions</h2>
+<div class="interview-line"><b>Interview takeaway</b>A production RAG answer is only as strong as the corpus, retrieval, reranking and grounding stages that precede generation.</div>
+
+<h2 data-n="46.2">Score one retrieval result visibly</h2>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Embedding, nearest neighbour, BM25, RRF and recall@k</summary>
+  <div class="deep-body">
+    <p><strong>Embedding:</strong> a vector that represents text so semantically related text can be
+    close even when it uses different words.</p>
+    <p><strong>Nearest-neighbour search:</strong> finding indexed vectors closest to the query vector.
+    Approximate search trades a small amount of recall for much lower latency.</p>
+    <p><strong>BM25:</strong> a lexical ranker that rewards matching informative words, making it strong
+    on exact identifiers such as B-17 and C-200.</p>
+    <p><strong>RRF:</strong> reciprocal rank fusion. It combines rankings by adding
+    <span class="m">1/(k+r)</span> for each list, where <span class="m">r</span> is a document's rank
+    and <span class="m">k</span> is a fixed smoothing constant.</p>
+    <p><strong>recall@k:</strong> the fraction of questions for which at least one correct supporting
+    passage appears among the first <span class="m">k</span> retrieved passages.</p>
+  </div>
+</details>
+
+<div class="math-work" aria-label="Reciprocal rank fusion for the compatibility passage">
+  <div class="step">compatibility passage rank: BM25 <i>r</i><sub>b</sub> = 1 &nbsp;·&nbsp; dense <i>r</i><sub>d</sub> = 4</div>
+  <div class="step">use the conventional RRF smoothing constant <span class="m">k = 60</span>, which prevents the first-ranked result from dominating the combined score</div>
+  <div class="step">RRF score = 1/(k+r<sub>b</sub>) + 1/(k+r<sub>d</sub>)</div>
+  <div class="step">RRF score = 1/(60+1) + 1/(60+4)</div>
+  <div class="step">RRF score = 1/61 + 1/64</div>
+  <div class="step">RRF score = 0.01639 + 0.01563 = <strong>0.03202</strong></div>
+  <div class="meaning">The exact product codes put the correct table first lexically, while semantic retrieval ranks it fourth. RRF preserves evidence from both rankers without comparing incompatible raw scores.</div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Evaluate RAG as a sequence: corpus coverage, retrieval recall, reranker precision, grounded generation and product outcomes.</div>
+
+<h2 data-n="46.3">Agents, evaluation and guardrails</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>An agent lets a model choose tools repeatedly; evaluation measures its outputs; guardrails constrain unsafe inputs, outputs and actions.</div>
+  <div class="why"><b>Why</b>One plausible answer is not enough when a system can retrieve private data or change external state.</div>
+  <div class="when"><b>Choose</b>Use a fixed workflow when steps are known; use an agent only when intermediate results must determine the next tool.</div>
+</div>
+
+<div class="math-work" aria-label="Calculating compounded agent reliability">
+  <div class="step">for a simplified illustration, assume independent steps: success probability <span class="m">p = 0.95</span> &nbsp;·&nbsp; steps <span class="m">n = 20</span></div>
+  <div class="step">whole-task success = pⁿ</div>
+  <div class="step">whole-task success = 0.95²⁰</div>
+  <div class="step">0.95² = 0.9025 &nbsp;·&nbsp; 0.95⁴ = 0.8145 &nbsp;·&nbsp; 0.95¹⁰ = 0.5987</div>
+  <div class="step">0.95²⁰ = 0.5987² = <strong>0.3585 ≈ 36%</strong></div>
+  <div class="meaning">Under this simplifying independence assumption, strong individual decisions still produce a fragile 20-step workflow. Real errors may be correlated, so 36% illustrates compounding rather than predicting an exact production rate. Shorter paths and verification attack the multiplication directly.</div>
+</div>
+
+<div class="box trap">
+  <span class="lbl">Guardrail boundary</span>
+  <p>Prompt instructions are not access control. Filter documents by permission before retrieval,
+  validate tool arguments in code, make writes idempotent where possible, and require human approval
+  before irreversible actions.</p>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Prefer deterministic workflows; when an agent is necessary, bound its tools, steps and cost, verify intermediate state, and gate irreversible actions.</div>
+
+<h2 data-n="46.4">Questions</h2>
 
 <details class="q">
   <summary><span class="pip i">MID</span>Design a RAG system for a company's internal documentation.</summary>
@@ -267,7 +342,7 @@
     <li>Why hybrid beats dense-only, with the concrete case dense loses.</li>
     <li>The three evaluation layers, and why the judge must be calibrated before it is trusted.</li>
     <li>The real mechanism behind hallucination, and the three things that measurably reduce it.</li>
-    <li>0.95<sup>20</sup> ≈ 0.36, and what it implies for agent design.</li>
+    <li><span class="m">0.95²⁰ ≈ 0.36</span>, and what it implies for agent design.</li>
     <li>Permissions belong in the retrieval filter, never in the prompt.</li>
   </ul>
 </div>

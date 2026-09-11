@@ -15,36 +15,107 @@
   candidates. Everything in Part D builds on this module.</span>
 </h1>
 
+<div class="study-guide" aria-label="How to use this page">
+  <div><b>Scan</b>Read each What / Why / Where strip and the interview line.</div>
+  <div><b>Work it</b>Follow one pronoun through scoring, scaling, softmax and blending.</div>
+  <div><b>Go deeper</b>Open a <span class="deep-q" aria-hidden="true">?</span> for the derivation or implementation detail.</div>
+</div>
+
 <h2 data-n="40.1">What attention is doing</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Attention replaces each token vector with a weighted blend of information from allowed tokens.</div>
+  <div class="why"><b>Why</b>A token such as “it” needs surrounding words to acquire its meaning in this sentence.</div>
+  <div class="when"><b>Where in ML</b>Every transformer layer uses it to move information between sequence positions.</div>
+</div>
 
 <p>Module 33 ended on the jump from static to contextual embeddings. Attention <em>is</em> that jump,
 made mechanical. Each token starts as a context-free vector and, layer by layer, pulls in information
 from the tokens that give it meaning.</p>
 
 <div class="box analogy">
-  <span class="lbl">The analogy — a library lookup that returns a blend</span>
-  <p>You walk into a library with a <strong>question</strong> — that is the <strong>query</strong>.
-  Every book has a <strong>spine label</strong> saying what it is about — that is the
-  <strong>key</strong>. Every book also has <strong>contents</strong> — that is the
-  <strong>value</strong>.</p>
-  <p>You compare your question to every spine and get a relevance score. But instead of picking the
-  single best book, you take a <em>weighted blend</em> of all their contents, in proportion to
-  relevance. A book scoring 0.7 contributes 70 % of what you walk out with.</p>
-  <p>The blend is the point. It is differentiable, so the model can learn <em>what to ask</em> and
-  <em>how to label</em>, which a hard pick could not.</p>
+  <span class="lbl">The sentence as a lookup</span>
+  <p>In “The animal was tired, so it rested,” the token “it” sends a <strong>query</strong> describing
+  what context it needs. “Animal” and “tired” each expose a <strong>key</strong> describing when they
+  are relevant and a <strong>value</strong> containing the information they can contribute.</p>
+  <p>“It” compares its query with those keys, then takes a weighted blend of their values. The blend
+  is differentiable: changing a score changes the output smoothly, so training can learn which tokens
+  should contribute instead of relying on a hard, hand-written selection rule.</p>
 </div>
 
-<div class="eq">Attention(Q, K, V) = softmax( Q K<sup>⊤</sup> / √d<sub>k</sub> ) V<span class="note">score every query against every key · scale · normalise to weights that sum to 1 · take the weighted sum of values</span></div>
+<div class="box analogy">
+  <span class="lbl">The one example for this module</span>
+  <p>Everything below follows <strong>“The animal was tired, so it rested.”</strong> We track the
+  token “it”: first it asks which earlier word explains it, then it scores “animal” and “tired”,
+  turns those scores into weights, and blends their information. Later sections change the mechanism,
+  not the sentence.</p>
+</div>
+
+<div class="bridge"><strong>token vectors</strong> → queries, keys and values → dot-product scores → scale → softmax weights → weighted value blend</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>What every symbol in the attention equation means</summary>
+  <div class="deep-body">
+    <p><span class="m">Q</span> is the table of queries: one “what do I need?” vector per token.
+    <span class="m">K</span> is the table of keys: one “what do I contain?” vector per token.
+    <span class="m">V</span> is the table of values: the information each token can contribute.
+    <span class="m">d<sub>k</sub></span> counts the entries in one key or query vector. The transpose
+    <span class="m">Kᵀ</span> turns key rows into columns so every query can take a dot product with every key.</p>
+  </div>
+</details>
+
+<div class="eq">Attention(Q, K, V) = softmax(QKᵀ / √d<sub>k</sub>)V<span class="note">score every query against every key · scale · normalise to weights that sum to 1 · take the weighted sum of values</span></div>
 
 <p>In self-attention, Q, K and V are all linear projections of the <em>same</em> input — the sequence
 is asking questions of itself. Three learned matrices W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>
 produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back together.</p>
 
+<div class="math-work" aria-label="Worked attention calculation for the token it">
+  <div class="step">Use two teaching dimensions: entry 1 measures <strong>entity relevance</strong> and entry 2 measures <strong>state relevance</strong>.</div>
+  <div class="step"><i>q</i><sub>it</sub> = <span class="matrix vector"><span>1</span><span>1</span></span>,
+    <i>k</i><sub>animal</sub> = <span class="matrix vector"><span>1</span><span>1</span></span>,
+    <i>k</i><sub>tired</sub> = <span class="matrix vector"><span>1</span><span>0</span></span></div>
+  <div class="step">score(animal) = <i>q</i><sub>it</sub>·<i>k</i><sub>animal</sub> = 1(1) + 1(1) = 2</div>
+  <div class="step">score(tired) = <i>q</i><sub>it</sub>·<i>k</i><sub>tired</sub> = 1(1) + 1(0) = 1</div>
+  <div class="step">scaled scores = <span class="matrix vector"><span>2/√2</span><span>1/√2</span></span>
+    = <span class="matrix vector"><span>1.414</span><span>0.707</span></span></div>
+  <div class="step">exp scores = <span class="matrix vector"><span>e¹·⁴¹⁴</span><span>e⁰·⁷⁰⁷</span></span>
+    ≈ <span class="matrix vector"><span>4.113</span><span>2.028</span></span></div>
+  <div class="step">weights = <span class="matrix vector"><span>4.113/(4.113+2.028)</span><span>2.028/(4.113+2.028)</span></span>
+    ≈ <span class="matrix vector"><span>0.670</span><span>0.330</span></span></div>
+  <div class="step"><i>v</i><sub>animal</sub> = <span class="matrix vector"><span>1</span><span>0</span></span> carries entity information; <i>v</i><sub>tired</sub> = <span class="matrix vector"><span>0</span><span>1</span></span> carries state information</div>
+  <div class="step">output for “it” = 0.670<span class="matrix vector"><span>1</span><span>0</span></span> + 0.330<span class="matrix vector"><span>0</span><span>1</span></span></div>
+  <div class="step">= <span class="matrix vector"><span>0.670</span><span>0.330</span></span></div>
+  <div class="meaning">The updated “it” vector contains both kinds of context, with twice as much entity information from “animal” as state information from “tired”.</div>
+  <div class="legend"><span class="lt">what each symbol is</span>
+    <span><b><i>q</i><sub>it</sub></b><span>the query made by “it”</span></span>
+    <span><b><i>k</i></b><span>a candidate token’s key</span></span>
+    <span><b><i>v</i></b><span>the information that candidate contributes</span></span>
+    <span><b>exp</b><span>the exponential used by softmax; divide each exponential by their sum</span></span>
+  </div>
+</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Attention scores query–key compatibility, normalises the scores, then uses the resulting weights to blend values.</div>
+
 <h2 data-n="40.2">The attention matrix, seen</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>One row records where a single query distributes its attention; one column identifies a key position.</div>
+  <div class="why"><b>Why</b>The matrix exposes all token-to-token information routes in one layer.</div>
+  <div class="when"><b>Where in ML</b>Use it to reason about masks, context length and attention visualisations.</div>
+</div>
 
 <div class="viz" data-viz="attention"></div>
 
 <h2 data-n="40.3">The terms</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Masks control visibility, heads provide several learned attention patterns, and self/cross attention determines where keys and values originate.</div>
+  <div class="why"><b>Why</b>The basic weighted blend becomes useful only after the model can restrict and specialise its information routes.</div>
+  <div class="when"><b>Where in ML</b>Use these distinctions to explain decoder training, encoder–decoder models and KV-cache design.</div>
+</div>
+
+<div class="bridge"><strong>one attention operation</strong> → restrict visibility with a mask → repeat with several heads → combine the results</div>
 
 <div class="terms">
 
@@ -59,7 +130,7 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
 
   <div class="term">
     <div class="t">Attention weights <span class="tag">basic</span></div>
-    <p>The post-softmax row: a probability distribution over positions, summing to 1.</p>
+    <p>The post-softmax row: non-negative weights over positions, summing to 1.</p>
     <p class="warn-inline">Summing to 1 means attention is a <em>zero-sum</em> allocation. Attending
        more to one token necessarily means attending less to another — which is why models often dump
        spare attention onto a meaningless token (the "attention sink", usually the first one).</p>
@@ -84,7 +155,8 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
     <div class="t">Causal mask <span class="tag">basic</span></div>
     <p>Set scores for future positions to −∞ before the softmax, so their weight becomes exactly 0.</p>
     <p class="wh">−∞ before softmax rather than 0 after, because zeroing afterwards would break the
-       normalisation. This one line is the entire difference between BERT and GPT training.</p>
+       normalisation. The causal mask is a central difference between BERT-style bidirectional
+       training and GPT-style causal training; their objectives and model wiring also differ.</p>
   </div>
 
   <div class="term">
@@ -113,7 +185,24 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
 
 </div>
 
+<div class="interview-line"><b>Interview takeaway</b>A mask controls which routes exist; multiple heads learn several routes in parallel; self versus cross attention identifies the source of the information.</div>
+
 <h2 data-n="40.4">Cost — the number that governs everything downstream</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>For <span class="m">n</span> tokens, attention forms <span class="m">n²</span> query–key scores.</div>
+  <div class="why"><b>Why</b>Every query compares with every allowed key.</div>
+  <div class="when"><b>Where in ML</b>This determines long-context training memory, serving cost and optimisation choices.</div>
+</div>
+
+<div class="math-work" aria-label="Deriving attention compute from matrix shapes">
+  <div class="step"><i>Q</i>: <span class="m">n×d</span> &nbsp;·&nbsp; <i>K</i>ᵀ: <span class="m">d×n</span></div>
+  <div class="step"><i>QK</i>ᵀ shape = <span class="m">(n×d)(d×n) → n×n</span></div>
+  <div class="step">number of scores = <span class="m">n·n = n²</span>; each score uses <span class="m">d</span> multiply-adds</div>
+  <div class="step">score work = <span class="m">n²d</span>; multiplying weights by <i>V</i> adds another <span class="m">n²d</span></div>
+  <div class="step">total attention work = <span class="m">2n²d</span> → <strong>O(n²d)</strong></div>
+  <div class="meaning">Doubling <span class="m">n</span> multiplies the quadratic part by <span class="m">2² = 4</span>; constants disappear only in Big-O notation, not in runtime.</div>
+</div>
 
 <div class="tw">
 <table>
@@ -134,7 +223,7 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
   <div class="a">
     <div class="tldr">Every word looks at every other word, decides how relevant each one is, and
     updates itself into a weighted blend of them. That is how "it" finds out which noun it refers to.</div>
-    <p>Take "The animal didn't cross the street because it was too tired." To represent "it" properly
+    <p>Take “The animal was tired, so it rested.” To represent “it” properly
     the model must know it means the animal, not the street. Attention is the mechanism: the vector for
     "it" is turned into a <em>query</em>, every other token offers a <em>key</em>, the dot products
     score relevance, a softmax turns those into weights that sum to 1, and the output is the weighted
@@ -189,7 +278,9 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
     subject–verb agreement.</p>
     <p><strong>The cost argument:</strong> with d = 512 and 8 heads, each head works in 64 dimensions.
     Total FLOPs are essentially the same as one 512-dimensional head; you are partitioning capacity,
-    not buying more. The extra parameters are only W<sub>O</sub>.</p>
+    not buying more. Splitting one attention operation into several heads does not materially change
+    the standard projection parameter count: W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> and
+    W<sub>O</sub> are required in either case.</p>
     <p><strong>Honesty about specialisation:</strong> the tidy story — this head does syntax, that one
     does coreference — is partly true and often overstated. Michel et al. showed a large fraction of
     heads can be pruned after training with little loss, and Voita et al. found only a minority are
@@ -228,7 +319,7 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
     <div class="tldr">O(n²·d) compute and, naively, O(n²) memory per head — so doubling context
     quadruples the attention cost. At inference the binding constraint is different again: a KV cache
     that grows linearly with every token generated.</div>
-    <p><strong>Where the quadratic comes from:</strong> QK<sup>⊤</sup> is n×d times d×n, producing an
+    <p><strong>Where the quadratic comes from:</strong> QKᵀ is n×d times d×n, producing an
     n×n matrix — n² dot products of length d. Then that matrix multiplies V, another n²·d. At n = 128k
     the score matrix alone is 16 billion entries per head per layer, which is not storable.</p>
     <p><strong>The most important practical correction:</strong> for realistic n the naive
@@ -266,9 +357,9 @@ produce them, and a fourth, W<sub>O</sub>, mixes the heads' outputs back togethe
       <li><strong>Sharpness with differentiability.</strong> It approximates a hard selection while
           remaining smooth — that combination is the reason it works.</li>
     </ul>
-    <p><strong>The cost of keeping it:</strong> the softmax is what forces materialising QK<sup>⊤</sup>
+    <p><strong>The cost of keeping it:</strong> the softmax is what forces materialising QKᵀ
     before multiplying by V. Drop it and the associativity of matrix multiplication lets you compute
-    (K<sup>⊤</sup>V) first — a d×d matrix — giving O(n·d²) instead of O(n²·d). That is precisely how
+    (KᵀV) first — a d×d matrix — giving O(n·d²) instead of O(n²·d). That is precisely how
     linear attention gets its complexity, and it is why the softmax is the thing every efficient
     variant attacks.</p>
     <p><strong>What happens when you do:</strong> linear attention (Katharopoulos et al., Performer)
