@@ -15,7 +15,27 @@
   data pipeline, the scaling laws, and what the laws do and do not predict.</span>
 </h1>
 
+<div class="study-guide" aria-label="How to use this page">
+  <div><b>Scan</b>Follow the data pipeline, then the compute calculation.</div>
+  <div><b>Work it</b>Plan one 1B-parameter support model from tokens to FLOPs.</div>
+  <div><b>Go deeper</b>Open a <span class="deep-q" aria-hidden="true">?</span> for assumptions, trade-offs and run failures.</div>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The running example</span>
+  <p>You are planning a <strong>1-billion-parameter support assistant</strong>. Its corpus contains
+  support articles, resolved tickets and approved replies. The page progressively decides what data
+  reaches training, how many tokens to use, what the run costs, and why the deployed model may justify
+  training longer.</p>
+</div>
+
 <h2 data-n="43.1">The data pipeline — the part nobody publishes and everybody fights</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A sequence of collection, cleaning, filtering, deduplication, decontamination and source mixing steps.</div>
+  <div class="why"><b>Why</b>The next-token objective learns every repeated mistake, leaked answer and low-quality pattern that survives the pipeline.</div>
+  <div class="when"><b>For our model</b>Turn raw support pages and tickets into a reproducible stream of approved training tokens.</div>
+</div>
 
 <p>Pretraining is one loss function and an enormous amount of data engineering. In rough order:</p>
 
@@ -40,6 +60,21 @@
 </table>
 </div>
 
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Walk one refund article through the pipeline</summary>
+  <div class="deep-body">
+    <ol>
+      <li><strong>Acquire:</strong> ingest the refund article and resolved refund tickets with source IDs.</li>
+      <li><strong>Extract:</strong> remove menus, cookie banners and repeated footers from the article HTML.</li>
+      <li><strong>Filter:</strong> retain the target language and reject corrupted or unapproved replies.</li>
+      <li><strong>Deduplicate:</strong> keep one copy when the same policy appears at several URLs; near-duplicate matching catches small formatting changes.</li>
+      <li><strong>Decontaminate:</strong> remove any evaluation question and its answer from training.</li>
+      <li><strong>Mix:</strong> choose how often policy text, tickets and replies appear in the final token stream.</li>
+    </ol>
+    <p><strong>MinHash</strong> is a compact signature used to estimate set overlap; <strong>locality-sensitive hashing (LSH)</strong> groups likely-similar signatures so every document need not be compared with every other document.</p>
+  </div>
+</details>
+
 <div class="box trap">
   <span class="lbl">The claim worth being able to defend</span>
   <p>At fixed compute, improving the data has produced larger gains in the last few years than
@@ -48,13 +83,47 @@
   this model", data work is usually the correct first answer, and it is the one most candidates skip.</p>
 </div>
 
+<div class="interview-line"><b>Interview takeaway</b>Track provenance at ingestion, deduplicate before mixing, and decontaminate against the exact evaluation set before trusting benchmark gains.</div>
+
 <h2 data-n="43.2">Scaling laws</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>Empirical curves relate validation loss to parameters, training tokens and computation.</div>
+  <div class="why"><b>Why</b>Small pilot runs can estimate a larger run before the expensive commitment is made.</div>
+  <div class="when"><b>For our model</b>Use a published ratio as a baseline, then fit pilots on the actual support-data mixture.</div>
+</div>
+
+<details class="deep" open>
+  <summary><span class="deep-q" aria-hidden="true">?</span>Derive the 1B-parameter baseline from start to finish</summary>
+  <div class="deep-body">
+    <p>Let <span class="m">N</span> be the number of model parameters, <span class="m">D</span> the
+    number of training tokens, and <span class="m">C</span> the approximate training computation in
+    floating-point operations (FLOPs). Use the Chinchilla rule of thumb
+    <span class="m">D ≈ 20N</span> and the dense-transformer estimate <span class="m">C ≈ 6ND</span>.</p>
+    <div class="math-work" aria-label="Compute baseline for a one-billion-parameter model">
+      <div class="step"><i>N</i> = 1 billion = 1 × 10⁹ parameters</div>
+      <div class="step"><i>D</i> ≈ 20<i>N</i> = 20 × 1 × 10⁹ = <strong>2 × 10¹⁰ tokens</strong> = 20 billion tokens</div>
+      <div class="step"><i>C</i> ≈ 6<i>ND</i></div>
+      <div class="step">= 6 × (1 × 10⁹) × (2 × 10¹⁰)</div>
+      <div class="step">= 12 × 10¹⁹ = <strong>1.2 × 10²⁰ FLOPs</strong></div>
+      <div class="meaning">This is a training-compute baseline, not a guarantee of model quality or the best lifetime product cost.</div>
+      <div class="legend"><span class="lt">what each symbol means</span>
+        <span><b><i>N</i></b><span>trainable parameters in the support model</span></span>
+        <span><b><i>D</i></b><span>tokens processed during training, including repeated tokens</span></span>
+        <span><b><i>C</i></b><span>approximate arithmetic work of the training run</span></span>
+        <span><b>6</b><span>roughly 2ND for the forward pass plus 4ND for backward computation</span></span>
+      </div>
+    </div>
+  </div>
+</details>
+
+<div class="bridge"><strong>small pilot runs</strong> → fit loss curve → choose N and D under budget → train → measure serving demand → <strong>revise for lifetime cost</strong></div>
 
 <div class="terms">
 
   <div class="term">
     <div class="t">Scaling law <span class="tag">mid</span></div>
-    <p>Test loss falls as a power law in model size, dataset size and compute — a straight line on a
+    <p>Validation loss often falls approximately as a power law in model size, dataset size and compute — a straight line on a
        log–log plot, over many orders of magnitude.</p>
     <p class="an">Not a discovery about intelligence; a discovered regularity, like a materials curve.
        It lets you predict a big run's loss from small runs, which is the only reason anyone dares
@@ -119,7 +188,7 @@
     <div class="tldr">An empirical power-law relationship between loss and compute, data or parameters,
     straight on a log–log plot. Its value is prediction: fit it on cheap small runs and forecast what a
     100× larger run will achieve before committing the budget.</div>
-    <p>The form is L(x) = a·x<sup>−α</sup> + L<sub>∞</sub> — loss falls as a power of the resource and
+    <p>The form is <span class="m">L(x) = ax⁻ᵅ + L<sub>∞</sub></span> — loss falls as a power of the resource and
     asymptotes to an irreducible floor set by the entropy of language itself (module 13). It holds
     across roughly seven orders of magnitude, which is remarkable and not theoretically explained.</p>
     <p><strong>Why it changed how the field works:</strong> before scaling laws, "will a bigger model
@@ -193,15 +262,22 @@
     <div class="tldr">Start from C ≈ 6ND, apply the Chinchilla ratio of ~20 tokens per parameter as a
     baseline, then move deliberately toward a smaller, longer-trained model in proportion to how much
     inference you expect to serve.</div>
-    <p><strong>The arithmetic.</strong> With 10²³ FLOPs: 6ND = 10²³ and D = 20N give N ≈ 9 B
-    parameters and D ≈ 180 B tokens. That is the compute-optimal starting point.</p>
+    <p><strong>The arithmetic.</strong> With <span class="m">C = 10²³</span> FLOPs,
+    <span class="m">C ≈ 6ND</span>, and <span class="m">D ≈ 20N</span>:</p>
+    <div class="math-work" aria-label="Solve model and data size from a compute budget">
+      <div class="step">10²³ ≈ 6<i>N</i>(20<i>N</i>) = 120<i>N</i>²</div>
+      <div class="step"><i>N</i>² ≈ 10²³ / 120 = 8.33 × 10²⁰</div>
+      <div class="step"><i>N</i> ≈ √(8.33 × 10²⁰) = 2.89 × 10¹⁰ = <strong>28.9B parameters</strong></div>
+      <div class="step"><i>D</i> ≈ 20<i>N</i> = 20 × 28.9B = <strong>578B tokens</strong></div>
+      <div class="meaning">Substitution checks the budget: 6 × 28.9 × 10⁹ × 578 × 10⁹ ≈ 1.00 × 10²³ FLOPs.</div>
+    </div>
     <p><strong>Then the adjustments, in the order I would raise them:</strong></p>
     <ul>
       <li><strong>Inference volume.</strong> If this serves a high-traffic product, shrink N and raise
           D. Serving cost is ~2N FLOPs per token forever; training is a one-off. A 7 B model trained on
           2 T tokens will usually beat a 13 B on 260 B tokens in total lifetime value.</li>
-      <li><strong>Data availability and quality.</strong> The ratio assumes you <em>have</em> 180 B
-          good tokens. If you do not, repeating data works for a few epochs — Muennighoff et al. found
+      <li><strong>Data availability and quality.</strong> For this worked budget, the ratio assumes you
+          have approximately <strong>578B suitable training tokens</strong>. If you do not, repeating data works for a few epochs — Muennighoff et al. found
           up to about 4 epochs is nearly as good as fresh data, then returns collapse. Do not train a
           bigger model just because you ran out of tokens; think about the quality filter first.</li>
       <li><strong>Memory and topology.</strong> N determines whether the model fits your parallelism
@@ -217,6 +293,8 @@
     de-risking available.</p>
   </div>
 </details>
+
+<div class="interview-line"><b>Interview takeaway</b>State the objective first: Chinchilla balances one training run; a high-volume product may spend more training compute to obtain a smaller model that is cheaper on every served token.</div>
 
 <details class="q">
   <summary><span class="pip a">SENIOR</span>What actually goes wrong during a large pretraining run?</summary>
@@ -256,6 +334,8 @@
     <li>Four failure modes of a large run and the standard mitigation for each.</li>
   </ul>
 </div>
+
+<span data-completion-prompt hidden></span>
 
 <div class="partnav">
   <a href="../index.html#42" target="_top"><span class="k">Back</span>← 42 · Model families</a>

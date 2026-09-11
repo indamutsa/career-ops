@@ -15,7 +15,26 @@
   question and a cheap way to sound like you have shipped things.</span>
 </h1>
 
+<div class="study-guide" aria-label="How to use this page">
+  <div><b>Scan</b>Compare the three families and read each interview takeaway.</div>
+  <div><b>Work it</b>Follow one support ticket through understanding, retrieval and reply generation.</div>
+  <div><b>Go deeper</b>Open a <span class="deep-q" aria-hidden="true">?</span> when an objective or attention pattern is unfamiliar.</div>
+</div>
+
+<div class="box analogy">
+  <span class="lbl">The running example</span>
+  <p>A customer writes <strong>“My refund has not arrived.”</strong> The same support system may need
+  to label it <em>billing</em>, retrieve the refund policy, or write a reply. Every section asks which
+  model family best performs one of those jobs.</p>
+</div>
+
 <h2 data-n="42.1">The three architectures</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>The transformer block is wired as an encoder, a decoder, or one of each.</div>
+  <div class="why"><b>Why</b>Each wiring controls which tokens are visible and therefore which tasks training matches.</div>
+  <div class="when"><b>Choose</b>Encoder for a fixed-input judgement, decoder for open generation, encoder–decoder for source-to-target transformation.</div>
+</div>
 
 <div class="tw">
 <table>
@@ -26,23 +45,49 @@
     plus cross-attention</td></tr>
 <tr><td>Objective</td><td>Masked LM — predict 15 % hidden tokens</td><td>Next token</td><td>Span
     corruption / denoising</td></tr>
-<tr><td>Can generate?</td><td>No</td><td>Yes</td><td>Yes</td></tr>
-<tr><td>Signal per sequence</td><td>~15 % of tokens</td><td>100 % of tokens</td><td>The corrupted
+<tr><td>Can generate naturally?</td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Prediction targets per sequence</td><td>~15 % of positions</td><td>Every position except the last</td><td>The corrupted
     spans only</td></tr>
 <tr><td>Still used for</td><td>Classification, NER, retrieval embeddings, reranking</td><td>Everything
     generative</td><td>Translation, some structured seq2seq</td></tr>
 </table>
 </div>
 
-<div class="box analogy">
-  <span class="lbl">The analogy</span>
-  <p><strong>BERT</strong> is a proofreader: it sees the whole page at once, including what comes
-  after, and fills in the blanked-out words. Excellent judgement, cannot write a page.</p>
-  <p><strong>GPT</strong> is a writer: it only ever sees what it has written so far, and its whole job
-  is the next word. Weaker at reading comprehension per parameter, but it can produce.</p>
+<div class="box mem">
+  <span class="lbl">The support-ticket roles</span>
+  <p><strong>BERT</strong> reads the complete refund ticket before assigning a label or embedding.
+  <strong>GPT</strong> writes the reply left to right, seeing only the reply prefix already produced.
+  An <strong>encoder–decoder</strong> reads the complete ticket once, then writes a separate reply while
+  consulting the encoded ticket through cross-attention.</p>
 </div>
 
+<div class="bridge"><strong>complete ticket</strong> → encoder → label or embedding &nbsp;·&nbsp; <strong>partial reply</strong> → decoder → next token &nbsp;·&nbsp; <strong>ticket + reply</strong> → encoder–decoder → transformed output</div>
+
+<div class="interview-line"><b>Interview takeaway</b>Choose the family from the required information flow: read all, write left-to-right, or read a source then write a separate target.</div>
+
 <h2 data-n="42.2">The terms</h2>
+
+<div class="concept-brief">
+  <div class="what"><b>What</b>A training objective defines the prediction errors that update the model.</div>
+  <div class="why"><b>Why</b>The objective determines whether the model practises filling blanks, predicting next tokens, or reconstructing spans.</div>
+  <div class="when"><b>In the ticket</b>MLM learns ticket representations; causal LM writes replies; span corruption learns source-to-target generation.</div>
+</div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>Work the two token-prediction counts</summary>
+  <div class="deep-body">
+    <p>Suppose one training batch contains <strong>1,000 support-ticket tokens</strong>. BERT selects
+    15% as MLM targets; a causal model predicts the next token at every position except the final one.</p>
+    <div class="math-work" aria-label="MLM and causal prediction counts">
+      <div class="step">MLM targets = 0.15 × 1,000 = <strong>150</strong></div>
+      <div class="step">[MASK] replacements = 0.80 × 150 = <strong>120</strong></div>
+      <div class="step">random replacements = 0.10 × 150 = <strong>15</strong></div>
+      <div class="step">unchanged selected tokens = 0.10 × 150 = <strong>15</strong></div>
+      <div class="step">causal next-token targets = 1,000 − 1 = <strong>999</strong></div>
+      <div class="meaning">The comparison is 150 selected MLM targets versus 999 causal targets in this batch—not a universal claim that every target carries equal information.</div>
+    </div>
+  </div>
+</details>
 
 <div class="terms">
 
@@ -57,9 +102,9 @@
   <div class="term">
     <div class="t">Causal language modelling <span class="tag">basic</span></div>
     <p>Predict the next token, everywhere, from the left context only.</p>
-    <p class="wh">Every position yields a training signal from one forward pass, so a sequence of
-       length n gives n supervised examples rather than BERT's 0.15n. That efficiency compounds
-       enormously at scale.</p>
+    <p class="wh">Every position except the final one yields a next-token target, so a sequence of
+       length <span class="m">n</span> gives <span class="m">n−1</span> causal targets. Under the
+       simplified 15% MLM recipe, BERT selects approximately <span class="m">0.15n</span> targets.</p>
   </div>
 
   <div class="term">
@@ -96,6 +141,22 @@
   </div>
 
 </div>
+
+<details class="deep">
+  <summary><span class="deep-q" aria-hidden="true">?</span>How a decoder assigns probability to a complete reply</summary>
+  <div class="deep-body">
+    <p>A causal model turns one sequence probability into next-token conditional probabilities. For
+    the reply “refund is pending”, suppose the successive probabilities are 0.50, 0.25 and 0.80.</p>
+    <div class="math-work" aria-label="Causal factorisation of a support reply">
+      <div class="step"><i>P</i>(refund, is, pending) = <i>P</i>(refund) × <i>P</i>(is | refund) × <i>P</i>(pending | refund, is)</div>
+      <div class="step">= 0.50 × 0.25 × 0.80</div>
+      <div class="step">= 0.125 × 0.80 = <strong>0.10</strong></div>
+      <div class="meaning">The vertical bar means “given”. Each generated token becomes context for the next prediction.</div>
+    </div>
+  </div>
+</details>
+
+<div class="interview-line"><b>Interview takeaway</b>The objective must rehearse the serving task: MLM for contextual representations, causal LM for continuation, and denoising for source-to-target reconstruction.</div>
 
 <h2 data-n="42.3">Questions</h2>
 
@@ -206,6 +267,8 @@
     <li>Why MLM cannot generate: no factorisation, no length mechanism.</li>
   </ul>
 </div>
+
+<span data-completion-prompt hidden></span>
 
 <div class="partnav">
   <a href="../index.html#41" target="_top"><span class="k">Back</span>← 41 · The transformer block</a>
